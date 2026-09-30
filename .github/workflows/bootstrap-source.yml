@@ -1,0 +1,42 @@
+name: Bootstrap MyTube Source
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.bootstrap/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bootstrap
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct project archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/chunk-* > /tmp/mytube-project.b64
+          base64 -d /tmp/mytube-project.b64 > /tmp/mytube-project.zip
+          echo "3ae75f0bfc457f10d2ba8757639863fe858007aa6fcc4e866dcdeeec1c2c9839  /tmp/mytube-project.zip" | sha256sum -c -
+          rm -rf /tmp/mytube-stage
+          mkdir -p /tmp/mytube-stage
+          unzip -q /tmp/mytube-project.zip -d /tmp/mytube-stage
+
+      - name: Install reconstructed source into repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --exclude '.git/' --exclude '.github/' /tmp/mytube-stage/ ./
+          rm -rf .bootstrap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bootstrap MyTube v1.2.2 Whisper source"
+          git push origin HEAD:main

@@ -35,6 +35,63 @@ jobs:
           echo "Detected project: $PROJECT_DIR"
           find "$PROJECT_DIR" -maxdepth 2 -type f \( -name 'settings.gradle.kts' -o -name 'build.gradle.kts' -o -name 'gradle.properties' \) -print
 
+      - name: Apply Media3 PCM tap compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["PROJECT_DIR"]) / "app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt"
+          s = p.read_text(encoding="utf-8")
+
+          if "import androidx.media3.exoplayer.DefaultRenderersFactory" not in s:
+              s = s.replace(
+                  "import androidx.media3.exoplayer.ExoPlayer\n",
+                  "import androidx.media3.exoplayer.ExoPlayer\nimport androidx.media3.exoplayer.DefaultRenderersFactory\n"
+              )
+          if "import androidx.media3.exoplayer.audio.AudioSink" not in s:
+              s = s.replace(
+                  "import androidx.media3.exoplayer.audio.DefaultAudioSink\n",
+                  "import androidx.media3.exoplayer.audio.DefaultAudioSink\nimport androidx.media3.exoplayer.audio.AudioSink\n"
+              )
+
+          old = """    val exoPlayer = remember(media.id) {
+                  val audioSink = DefaultAudioSink.Builder(context)
+                      .setAudioProcessors(arrayOf(pcmTap))
+                      .build()
+                  ExoPlayer.Builder(context)
+                      .setAudioSink(audioSink)
+                      .setTrackSelector(trackSelector)
+                      .setBandwidthMeter(bandwidthMeter)
+                      .build()
+              }"""
+          new = """    val exoPlayer = remember(media.id) {
+                  val renderersFactory = object : DefaultRenderersFactory(context) {
+                      override fun buildAudioSink(
+                          context: Context,
+                          enableFloatOutput: Boolean,
+                          enableAudioTrackPlaybackParams: Boolean
+                      ): AudioSink {
+                          return DefaultAudioSink.Builder(context)
+                              .setEnableFloatOutput(enableFloatOutput)
+                              .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                              .setAudioProcessors(arrayOf(pcmTap))
+                              .build()
+                      }
+                  }
+                  ExoPlayer.Builder(context, renderersFactory)
+                      .setTrackSelector(trackSelector)
+                      .setBandwidthMeter(bandwidthMeter)
+                      .build()
+              }"""
+          if old not in s:
+              raise SystemExit("Expected ExoPlayer audio-sink block not found")
+          p.write_text(s.replace(old, new), encoding="utf-8")
+          print("Patched", p)
+          PY
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:

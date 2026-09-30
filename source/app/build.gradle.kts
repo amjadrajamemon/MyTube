@@ -1,10 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
-    .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
-    .orElse("")
-    .get()
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,11 +14,11 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.2.4"
+        versionCode = 18
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -45,7 +40,6 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true
     }
     androidResources {
         noCompress += "bin"
@@ -77,9 +71,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.newpipe.extractor)
     implementation(libs.mlkit.translate)
-    implementation("androidx.credentials:credentials:1.6.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)

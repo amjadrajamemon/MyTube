@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths-ignore:
       - '.bootstrap/**'
+      - '.ci-patches/**'
       - 'dist/**'
   workflow_dispatch:
 
@@ -14,7 +15,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: Checkout repository
@@ -35,62 +36,17 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Detected project: $PROJECT_DIR"
 
-      - name: Apply Media3 PCM tap compatibility fix
+      - name: Apply consolidated v1.2.3 stability patch
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          p = Path(os.environ["PROJECT_DIR"]) / "app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt"
-          s = p.read_text(encoding="utf-8")
-
-          if "import androidx.media3.exoplayer.DefaultRenderersFactory" not in s:
-              s = s.replace(
-                  "import androidx.media3.exoplayer.ExoPlayer\n",
-                  "import androidx.media3.exoplayer.ExoPlayer\nimport androidx.media3.exoplayer.DefaultRenderersFactory\n"
-              )
-          if "import androidx.media3.exoplayer.audio.AudioSink" not in s:
-              s = s.replace(
-                  "import androidx.media3.exoplayer.audio.DefaultAudioSink\n",
-                  "import androidx.media3.exoplayer.audio.DefaultAudioSink\nimport androidx.media3.exoplayer.audio.AudioSink\n"
-              )
-
-          old = """    val exoPlayer = remember(media.id) {
-                  val audioSink = DefaultAudioSink.Builder(context)
-                      .setAudioProcessors(arrayOf(pcmTap))
-                      .build()
-                  ExoPlayer.Builder(context)
-                      .setAudioSink(audioSink)
-                      .setTrackSelector(trackSelector)
-                      .setBandwidthMeter(bandwidthMeter)
-                      .build()
-              }"""
-          new = """    val exoPlayer = remember(media.id) {
-                  val renderersFactory = object : DefaultRenderersFactory(context) {
-                      override fun buildAudioSink(
-                          context: Context,
-                          enableFloatOutput: Boolean,
-                          enableAudioTrackPlaybackParams: Boolean
-                      ): AudioSink {
-                          return DefaultAudioSink.Builder(context)
-                              .setEnableFloatOutput(enableFloatOutput)
-                              .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                              .setAudioProcessors(arrayOf(pcmTap))
-                              .build()
-                      }
-                  }
-                  ExoPlayer.Builder(context, renderersFactory)
-                      .setTrackSelector(trackSelector)
-                      .setBandwidthMeter(bandwidthMeter)
-                      .build()
-              }"""
-          if old in s:
-              s = s.replace(old, new)
-          p.write_text(s, encoding="utf-8")
-          print("Media3 compatibility patch checked:", p)
-          PY
+          cat "$GITHUB_WORKSPACE"/.ci-patches/v1.2.3.patch.gz.b64.part*             | base64 -d             | gzip -d > /tmp/v1.2.3.patch
+          cd "$PROJECT_DIR"
+          patch --dry-run -p1 < /tmp/v1.2.3.patch
+          patch -p1 < /tmp/v1.2.3.patch
+          grep -q 'versionName = "1.2.3"' app/build.gradle.kts
+          grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
+          echo "v1.2.3 consolidated patch applied."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -115,15 +71,15 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Provision multilingual Whisper Tiny model
+      - name: Provision multilingual Whisper Tiny Q5_1 model
         shell: bash
         run: |
           set -euo pipefail
-          MODEL="$PROJECT_DIR/app/src/main/assets/models/ggml-tiny.bin"
-          EXPECTED_SHA1=bd577a113a864445d4c299885e0cb97d4ba92b5f
+          MODEL="$PROJECT_DIR/app/src/main/assets/models/ggml-tiny-q5_1.bin"
+          EXPECTED_SHA1=2827a03e495b1ed3048ef28a6a4620537db4ee51
           mkdir -p "$(dirname "$MODEL")"
           if [ ! -s "$MODEL" ]; then
-            curl -fL --retry 3 --retry-delay 3               https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin               -o "$MODEL"
+            curl -fL --retry 3 --retry-delay 3               https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin               -o "$MODEL"
           fi
           echo "$EXPECTED_SHA1  $MODEL" | sha1sum -c -
           ls -lh "$MODEL"
@@ -134,30 +90,58 @@ jobs:
       - name: Build debug APK
         run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
 
-      - name: Stage APK
+      - name: Stage APK and complete source
         shell: bash
         run: |
           set -euo pipefail
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.2-Whisper-debug.apk"
-          cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.2.2-Whisper-debug.apk > dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
-          ls -lh dist/MyTube-v1.2.2-Whisper-debug.apk
-          cat dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
+          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.3-Stable-Whisper-debug.apk"
 
-      - name: Publish compiled APK as GitHub Release
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip"
+          (
+            cd "$PROJECT_DIR"
+            zip -qr "$SOURCE_ZIP" .               -x '.gradle/*'               -x '*/build/*'               -x 'local.properties'
+          )
+
+          cd "$GITHUB_WORKSPACE"
+          sha256sum dist/MyTube-v1.2.3-Stable-Whisper-debug.apk > dist/MyTube-v1.2.3-Stable-Whisper-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip.sha256
+          ls -lh dist/
+          cat dist/*.sha256
+
+      - name: Publish v1.2.3 APK and source as GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.2.2-whisper-debug"
+          TAG="v1.2.3-stable-whisper-debug"
+          NOTES="MyTube r6.5 LiveDub v1.2.3 stability build.
+
+          Highlights:
+          - Native Whisper lifecycle/inference hardening for the reported Android 15 libwhisper/ggml crash.
+          - Multilingual Tiny Q5_1 model to reduce native RAM/CPU pressure.
+          - Playback-safe PCM tap and larger/recovery-oriented ExoPlayer buffering.
+          - Taller portrait video viewport with Zoom default.
+          - Caption language dropdown.
+          - Dubbing method selector: Auto (prefer captions), Captions, Audio (Whisper).
+          - Left/right press-and-hold continuous rewind/fast-forward.
+          - YouTube-style Home with topic chips, persisted History, real related-video recommendations and Up next.
+          - Unit tests and assembleDebug must pass before this release is published."
+
+          ASSETS=(
+            dist/MyTube-v1.2.3-Stable-Whisper-debug.apk
+            dist/MyTube-v1.2.3-Stable-Whisper-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip.sha256
+          )
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG"               dist/MyTube-v1.2.2-Whisper-debug.apk               dist/MyTube-v1.2.2-Whisper-debug.apk.sha256               --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG"               dist/MyTube-v1.2.2-Whisper-debug.apk               dist/MyTube-v1.2.2-Whisper-debug.apk.sha256               --target "$GITHUB_SHA"               --title "MyTube v1.2.2 Whisper Debug APK"               --notes "GitHub-built debug APK with multilingual Whisper Tiny model bundled. Unit tests and assembleDebug completed successfully."
+            gh release create "$TAG" "${ASSETS[@]}"               --target "$GITHUB_SHA"               --title "MyTube v1.2.3 Stable Whisper Debug"               --notes "$NOTES"
           fi
           gh release view "$TAG"

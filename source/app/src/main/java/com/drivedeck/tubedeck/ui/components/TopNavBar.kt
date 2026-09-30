@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.ui.theme.*
+import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +43,8 @@ fun TopNavBar(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenOffline: () -> Unit,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
@@ -70,6 +73,7 @@ fun TopNavBar(
                 // Only Nav controls on the right.
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
                     IconButton(onClick = onBack, enabled = canGoBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (canGoBack) Color.White else Color.DarkGray)
                     }

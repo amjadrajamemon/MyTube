@@ -147,17 +147,17 @@ jobs:
           ls -lh dist/MyTube-v1.2.2-Whisper-debug.apk
           cat dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
 
-      - name: Publish compiled APK to repository
+      - name: Publish compiled APK as GitHub Release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/MyTube-v1.2.2-Whisper-debug.apk dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
-          if git diff --cached --quiet; then
-            echo "APK is unchanged; nothing to publish."
-            exit 0
+          TAG="v1.2.2-whisper-debug"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG"               dist/MyTube-v1.2.2-Whisper-debug.apk               dist/MyTube-v1.2.2-Whisper-debug.apk.sha256               --clobber
+          else
+            gh release create "$TAG"               dist/MyTube-v1.2.2-Whisper-debug.apk               dist/MyTube-v1.2.2-Whisper-debug.apk.sha256               --target "$GITHUB_SHA"               --title "MyTube v1.2.2 Whisper Debug APK"               --notes "GitHub-built debug APK with multilingual Whisper Tiny model bundled. Unit tests and assembleDebug completed successfully."
           fi
-          git commit -m "Publish compiled MyTube v1.2.2 APK [skip ci]"
-          git push origin HEAD:main
+          gh release view "$TAG"

@@ -1241,6 +1241,7 @@ private fun PortraitCompanionPanel(
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var comments by remember(media.id) { mutableStateOf<List<YoutubeStreamResolver.NativeComment>>(emptyList()) }
     var commentsLoading by remember(media.id) { mutableStateOf(false) }
     var commentsLoaded by remember(media.id) { mutableStateOf(false) }

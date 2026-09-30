@@ -137,7 +137,7 @@ jobs:
           - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and yt-dlp.
           - Universal: includes arm64-v8a, armeabi-v7a, x86 and x86_64 native support from compatible bundled components, intended for broader/older/rooted-device compatibility.
           - On non-ARM64 devices the current Whisper native AAR is not available, so MyTube disables native Whisper safely and retains caption-based dubbing instead of crashing.
-          - Minimum Android API is 23 (Android 6.0).
+          - Minimum Android API is 24 (Android 7.0), matching the maintained yt-dlp runtime requirement.
           - No root-detection or root-blocking logic is used.
           - Back-to-PiP, quality chooser, comments fallback, simple Google account chooser, weekly/manual yt-dlp updates and earlier v1.2.5 refinements remain.
           - Unit tests, both APK builds and ABI verification must pass before release publication."

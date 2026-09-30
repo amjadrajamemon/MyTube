@@ -129,6 +129,11 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
 
+    // System Back behaves like YouTube: keep playback alive in PiP.
+    BackHandler(enabled = !isPipMode(activity)) {
+        if (pipEnabled) onEnterPip() else onClose()
+    }
+
     // Preserve the caller's orientation instead of forcing landscape. This lets the player
     // start and remain in portrait when the device is portrait, while still allowing users
     // to rotate explicitly from the player controls.
@@ -340,6 +345,7 @@ fun NativeExoPlayer(
     var qualityLabel by remember { mutableStateOf("Auto") }
     var hasCaptions by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showQualityMenu by remember { mutableStateOf(false) }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
     var gestureOverlayVisible by remember { mutableStateOf(false) }
@@ -943,12 +949,70 @@ fun NativeExoPlayer(
                             ) {
                                 Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                             }
-                            TextButton(
-                                onClick = { showSettings = true; controlsVisible = true },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                            ) {
-                                Text(if (autoQuality) "Auto" else qualityLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                            Box {
+                                TextButton(
+                                    onClick = {
+                                        showQualityMenu = true
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.height(30.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        if (autoQuality) "Auto" else qualityLabel,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp
+                                    )
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        "Video quality",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showQualityMenu,
+                                    onDismissRequest = { showQualityMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (autoQuality) {
+                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                Text("Auto")
+                                            }
+                                        },
+                                        onClick = {
+                                            showQualityMenu = false
+                                            switchQuality(null)
+                                        }
+                                    )
+                                    resolved?.options
+                                        ?.map { it.height }
+                                        ?.distinct()
+                                        ?.sortedDescending()
+                                        .orEmpty()
+                                        .forEach { height ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (!autoQuality && selectedHeight == height) {
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                            Spacer(Modifier.width(6.dp))
+                                                        }
+                                                        Text(height.toString() + "p")
+                                                    }
+                                                },
+                                                onClick = {
+                                                    showQualityMenu = false
+                                                    switchQuality(height)
+                                                }
+                                            )
+                                        }
+                                }
                             }
                             Surface(
                                 color = Color.Black.copy(alpha = .42f),
@@ -1192,7 +1256,7 @@ private fun PortraitCompanionPanel(
         commentsLoading = true
         commentsError = null
         try {
-            comments = YoutubeStreamResolver.comments(media.mediaUri)
+            comments = YoutubeStreamResolver.comments(context, media.mediaUri)
             commentsLoaded = true
         } catch (cancel: CancellationException) {
             throw cancel
@@ -1285,7 +1349,7 @@ private fun PortraitCompanionPanel(
                 showComments -> {
                     if (comments.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopStart) {
-                            Text("No comments are available for this video.", color = TubeDeckTextSecondary, fontSize = 13.sp)
+                            Text("No public comments were returned. Tap Refresh to try again.", color = TubeDeckTextSecondary, fontSize = 13.sp)
                         }
                     } else {
                         LazyColumn(

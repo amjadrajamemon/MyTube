@@ -149,7 +149,7 @@ fun SettingsScreen(
 
             SettingsCard(title = "Google account") {
                 Text(
-                    "Tap the account icon on Home, Browser or ExoPlayer to choose a Google account already on this device. No client ID is required in Settings.",
+                    "Tap the account icon on Home, Browser or ExoPlayer to sign in through Google's secure account chooser. MyTube only shows a signed-in account after Google Identity returns a valid credential.",
                     color = Color.LightGray,
                     fontSize = 12.sp
                 )

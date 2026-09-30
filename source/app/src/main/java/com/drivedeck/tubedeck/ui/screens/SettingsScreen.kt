@@ -75,6 +75,7 @@ fun SettingsScreen(
     val parallelCount = parallelText.toIntOrNull()
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
+    var googleWebClientId by remember { mutableStateOf(currentSettings.googleWebClientId) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
     var blockVideoAds by remember { mutableStateOf(currentSettings.blockVideoAds) }
@@ -137,6 +138,35 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            SettingsCard(title = "Google Account") {
+                Text(
+                    "MyTube uses Android Credential Manager for Google sign-in. Enter the Web OAuth client ID from your Google Auth project once; the same signed-in identity is then shared by Home, Browser and ExoPlayer.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = googleWebClientId,
+                    onValueChange = { googleWebClientId = it.trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Google Web OAuth client ID") },
+                    placeholder = { Text("xxxxxxxx.apps.googleusercontent.com") },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = TubeDeckAccentCyan,
+                        unfocusedBorderColor = Color.DarkGray
+                    )
+                )
+                Text(
+                    "You may alternatively provide GOOGLE_WEB_CLIENT_ID as a build/GitHub Actions secret.",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
             }
 
             SettingsCard(title = "Download folder") {
@@ -225,6 +255,7 @@ fun SettingsScreen(
                             playlistMode = playlistMode,
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
+                            googleWebClientId = googleWebClientId,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,
                             blockBannerAds = blockBannerAds,

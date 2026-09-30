@@ -32,6 +32,7 @@ import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(

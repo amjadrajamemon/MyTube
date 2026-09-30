@@ -48,6 +48,9 @@ class WhisperAudioAsr(
         private const val MIN_CLIP_SECONDS = 0.75
         private const val MAX_CLIP_SECONDS = 3.8
         private const val END_SILENCE_MS = 360
+
+        fun nativeWhisperSupported(): Boolean =
+            android.os.Build.SUPPORTED_ABIS.any { it.equals("arm64-v8a", ignoreCase = true) }
     }
 
     private data class PcmPacket(val bytes: ByteArray, val sampleRate: Int, val channels: Int)
@@ -84,6 +87,13 @@ class WhisperAudioAsr(
     }
 
     fun setEnabled(value: Boolean, languageHint: String?) {
+        if (value && !nativeWhisperSupported()) {
+            enabled = false
+            sourceLanguage = languageHint?.substringBefore('-')?.takeUnless { it == "auto" }
+            synchronized(lock) { resetLocked() }
+            onStatus("Native Whisper requires ARM64 on this build • using captions when available")
+            return
+        }
         enabled = value && !closing
         sourceLanguage = languageHint?.substringBefore('-')?.takeUnless { it == "auto" }
         if (!enabled) {

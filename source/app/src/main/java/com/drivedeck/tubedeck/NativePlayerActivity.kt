@@ -1,5 +1,7 @@
 package com.drivedeck.tubedeck
 
+import android.accounts.AccountManager
+import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.res.Configuration
 import android.os.Build
@@ -8,12 +10,13 @@ import android.util.Rational
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -69,34 +72,27 @@ class NativePlayerActivity : ComponentActivity() {
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
-                val googleAccountScope = rememberCoroutineScope()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
-                val activeGoogleClientId = settings.googleWebClientId.ifBlank { BuildConfig.GOOGLE_WEB_CLIENT_ID }
+                val googleAccountPicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == Activity.RESULT_OK) {
+                        val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+                        if (!accountName.isNullOrBlank()) {
+                            googleSession.selectDeviceAccount(accountName)
+                            Toast.makeText(this@NativePlayerActivity, "Google account selected", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
-                    } else if (activeGoogleClientId.isBlank()) {
-                        Toast.makeText(
-                            this@NativePlayerActivity,
-                            "Add your Google Web OAuth client ID in MyTube Settings first.",
-                            Toast.LENGTH_LONG
-                        ).show()
                     } else {
-                        googleAccountScope.launch {
-                            googleSession.signIn(this@NativePlayerActivity, activeGoogleClientId)
-                                .onSuccess {
-                                    Toast.makeText(this@NativePlayerActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
-                                }
-                                .onFailure {
-                                    Toast.makeText(
-                                        this@NativePlayerActivity,
-                                        it.message ?: "Google sign-in failed",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                        }
+                        googleAccountPicker.launch(
+                            GoogleAccountSession.chooserIntent(googleAccount?.email)
+                        )
                     }
                 }
 
@@ -122,7 +118,7 @@ class NativePlayerActivity : ComponentActivity() {
                         GoogleAccountDialog(
                             account = account,
                             onSignOut = {
-                                googleAccountScope.launch {
+                                lifecycleScope.launch {
                                     googleSession.signOut()
                                     showGoogleAccountDialog = false
                                 }

@@ -60,12 +60,13 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         val google = GoogleIdTokenCredential.createFrom(custom.data)
+        @Suppress("DEPRECATION")
+        val accountId = google.id
         val profile = GoogleAccountProfile(
-            uniqueId = google.uniqueId,
-            email = google.email.orEmpty(),
+            uniqueId = accountId,
+            email = accountId,
             displayName = google.displayName?.takeIf { it.isNotBlank() }
-                ?: google.email?.substringBefore('@').orEmpty()
-                .ifBlank { "Google Account" },
+                ?: accountId.substringBefore('@').ifBlank { "Google Account" },
             photoUrl = google.profilePictureUri?.toString()
         )
         saveProfile(profile)

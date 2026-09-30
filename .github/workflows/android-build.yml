@@ -16,15 +16,30 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract uploaded Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name 'MyTube-*-AndroidStudio-Source.zip' -print -quit)"
+          test -n "$ZIP"
+          rm -rf "$GITHUB_WORKSPACE/.ci-src"
+          mkdir -p "$GITHUB_WORKSPACE/.ci-src"
+          unzip -q "$ZIP" -d "$GITHUB_WORKSPACE/.ci-src"
+          SETTINGS="$(find "$GITHUB_WORKSPACE/.ci-src" -type f -name settings.gradle.kts -print -quit)"
+          test -n "$SETTINGS"
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Detected project: $PROJECT_DIR"
+          find "$PROJECT_DIR" -maxdepth 2 -type f \( -name 'settings.gradle.kts' -o -name 'build.gradle.kts' -o -name 'gradle.properties' \) -print
+
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -41,25 +56,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p app/src/main/assets/models
-          MODEL=app/src/main/assets/models/ggml-tiny.bin
+          MODEL="$PROJECT_DIR/app/src/main/assets/models/ggml-tiny.bin"
           EXPECTED_SHA1=bd577a113a864445d4c299885e0cb97d4ba92b5f
+          mkdir -p "$(dirname "$MODEL")"
           if [ ! -s "$MODEL" ]; then
-            curl -fL --retry 3 --retry-delay 3               https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin               -o "$MODEL"
+            curl -fL --retry 3 --retry-delay 3 \
+              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
+              -o "$MODEL"
           fi
           echo "$EXPECTED_SHA1  $MODEL" | sha1sum -c -
           ls -lh "$MODEL"
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: gradle -p "$PROJECT_DIR" testDebugUnitTest --stacktrace
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
 
       - name: Stage APK
+        shell: bash
         run: |
-          mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/MyTube-v1.2.2-Whisper-debug.apk
+          set -euo pipefail
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.2-Whisper-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/dist/MyTube-v1.2.2-Whisper-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

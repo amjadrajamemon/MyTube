@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.HomeVideo
+import com.drivedeck.tubedeck.auth.GoogleAccountProfile
+import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.theme.*
 
 @Composable
@@ -36,6 +38,8 @@ fun DriveDeckScreen(
     onSearchQueryChange: (String) -> Unit,
     onExecuteSearch: (String) -> Unit,
     onOpenDownloads: () -> Unit,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     watchHistory: List<HomeVideo> = emptyList(),
     suggestedVideos: List<HomeVideo> = emptyList(),
     onOpenVideo: (HomeVideo) -> Unit = {},
@@ -57,7 +61,9 @@ fun DriveDeckScreen(
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
             onSearch = { onExecuteSearch(searchQuery) },
-            onOpenDownloads = onOpenDownloads
+            onOpenDownloads = onOpenDownloads,
+            googleAccount = googleAccount,
+            onGoogleAccountClick = onGoogleAccountClick
         )
 
         LazyColumn(
@@ -233,6 +239,8 @@ fun DriveDeckTopHeader(
     onSearchQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onOpenDownloads: () -> Unit,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -245,6 +253,7 @@ fun DriveDeckTopHeader(
                 Icon(Icons.Default.PlayCircleFilled, null, tint = Color.Red, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.width(7.dp))
                 Text("MyTube", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
                 IconButton(onClick = onOpenDownloads, modifier = Modifier.size(42.dp)) {
                     Icon(Icons.Default.FileDownload, contentDescription = "Downloads", tint = Color.White)
                 }

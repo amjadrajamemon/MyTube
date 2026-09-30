@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.aistudio.tubedeck.kxmvd"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 36
         versionCode = 19
         versionName = "1.2.6"
@@ -56,6 +56,11 @@ android {
     }
     androidResources {
         noCompress += "bin"
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 

@@ -1,11 +1,18 @@
 package com.drivedeck.tubedeck.auth
 
-import android.accounts.AccountManager
+import android.app.Activity
 import android.content.Context
-import android.content.Intent
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.SecureRandom
+import android.util.Base64
 
 data class GoogleAccountProfile(
     val uniqueId: String,
@@ -14,13 +21,6 @@ data class GoogleAccountProfile(
     val photoUrl: String?
 )
 
-/**
- * App-wide selected Google account.
- *
- * MyTube only needs a simple account identity for a YouTube-like account chooser across Home,
- * Browser and ExoPlayer. Android's account chooser is used instead of asking the user for an
- * OAuth client id in the app UI. No password or Google auth token is read or stored.
- */
 class GoogleAccountSession private constructor(context: Context) {
     companion object {
         @Volatile private var instance: GoogleAccountSession? = null
@@ -29,41 +29,54 @@ class GoogleAccountSession private constructor(context: Context) {
             instance ?: synchronized(this) {
                 instance ?: GoogleAccountSession(context.applicationContext).also { instance = it }
             }
-
-        fun chooserIntent(currentEmail: String? = null): Intent =
-            AccountManager.newChooseAccountIntent(
-                currentEmail?.takeIf { it.isNotBlank() }?.let {
-                    android.accounts.Account(it, "com.google")
-                },
-                null,
-                arrayOf("com.google"),
-                "Choose the Google Account to use with MyTube",
-                null,
-                null,
-                null
-            )
     }
 
     private val appContext = context.applicationContext
+    private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences("google_account_session", Context.MODE_PRIVATE)
     private val _account = MutableStateFlow(loadProfile())
     val account: StateFlow<GoogleAccountProfile?> = _account.asStateFlow()
 
-    fun selectDeviceAccount(accountName: String): GoogleAccountProfile {
-        val email = accountName.trim()
-        require(email.isNotBlank()) { "Google account selection was empty" }
+    suspend fun signIn(activity: Activity, webClientId: String): Result<GoogleAccountProfile> = runCatching {
+        require(webClientId.isNotBlank()) {
+            "Google sign-in is not configured for this build."
+        }
+
+        val option = GetSignInWithGoogleOption.Builder(webClientId.trim())
+            .setNonce(generateNonce())
+            .build()
+
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .build()
+
+        val result = CredentialManager.create(activity).getCredential(
+            context = activity,
+            request = request
+        )
+        val custom = result.credential as? CustomCredential
+            ?: error("Google did not return a supported credential")
+        require(custom.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            "Unexpected Google credential type"
+        }
+
+        val google = GoogleIdTokenCredential.createFrom(custom.data)
+        @Suppress("DEPRECATION")
+        val accountId = google.id
         val profile = GoogleAccountProfile(
-            uniqueId = email.lowercase(),
-            email = email,
-            displayName = email.substringBefore('@').ifBlank { "Google Account" },
-            photoUrl = null
+            uniqueId = accountId,
+            email = accountId,
+            displayName = google.displayName?.takeIf { it.isNotBlank() }
+                ?: accountId.substringBefore('@').ifBlank { "Google Account" },
+            photoUrl = google.profilePictureUri?.toString()
         )
         saveProfile(profile)
         _account.value = profile
-        return profile
+        profile
     }
 
     suspend fun signOut() {
+        runCatching { credentialManager.clearCredentialState(ClearCredentialStateRequest()) }
         prefs.edit().clear().apply()
         _account.value = null
     }
@@ -85,5 +98,11 @@ class GoogleAccountSession private constructor(context: Context) {
             displayName = prefs.getString("display_name", "Google Account").orEmpty().ifBlank { "Google Account" },
             photoUrl = prefs.getString("photo_url", null)
         )
+    }
+
+    private fun generateNonce(byteLength: Int = 32): String {
+        val bytes = ByteArray(byteLength)
+        SecureRandom().nextBytes(bytes)
+        return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
     }
 }

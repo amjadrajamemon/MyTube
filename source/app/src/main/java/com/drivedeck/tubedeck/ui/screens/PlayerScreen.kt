@@ -25,6 +25,7 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -48,9 +49,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -86,6 +89,7 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.SponsorSegment
@@ -96,6 +100,7 @@ import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -117,6 +122,8 @@ fun PlayerScreen(
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -142,6 +149,8 @@ fun PlayerScreen(
             onClose = onClose,
             onDownloadVideo = onDownloadVideo,
             onDownloadPlaylist = onDownloadPlaylist,
+            googleAccount = googleAccount,
+            onGoogleAccountClick = onGoogleAccountClick,
             modifier = modifier.fillMaxSize()
         )
 
@@ -155,6 +164,8 @@ fun PlayerScreen(
             onDownloadVideo = onDownloadVideo,
             onDownloadPlaylist = onDownloadPlaylist,
             onPlayRelated = onPlayRelated,
+            googleAccount = googleAccount,
+            onGoogleAccountClick = onGoogleAccountClick,
             modifier = modifier.fillMaxSize()
         )
     }
@@ -167,6 +178,8 @@ fun WebPlayer(
     onClose: () -> Unit,
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -259,6 +272,13 @@ fun WebPlayer(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)
                     .background(Color.Black.copy(alpha = .55f), CircleShape)
             ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+
+            GoogleAccountButton(
+                account = googleAccount,
+                onClick = onGoogleAccountClick,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 12.dp, end = 12.dp)
+                    .background(Color.Black.copy(alpha = .55f), CircleShape)
+            )
 
             AnimatedVisibility(
                 visible = downloadActionsVisible && (onDownloadVideo != null || onDownloadPlaylist != null),
@@ -829,15 +849,9 @@ fun NativeExoPlayer(
                                 }
                             }) { Icon(Icons.Default.PictureInPictureAlt, "Picture in picture", tint = Color.White) }
                         }
-                        IconButton(onClick = { isFullscreen = !isFullscreen }) {
-                            Icon(
-                                if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
-                                tint = Color.White
-                            )
-                        }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, "Player settings", tint = Color.White)
+                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                        IconButton(onClick = { showSettings = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.Settings, "Player settings", tint = Color.White, modifier = Modifier.size(21.dp))
                         }
                     }
 
@@ -850,23 +864,24 @@ fun NativeExoPlayer(
                     }
 
                     Row(
-                        Modifier.align(Alignment.Center),
+                        Modifier.align(Alignment.Center)
+                            .offset(y = if (compactPortrait) 34.dp else 24.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 18.dp else 30.dp)
+                        horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
                     ) {
                         HoldSeekButton(Icons.Default.FastRewind, "Reverse", -1, exoPlayer, duration)
                         Surface(
                             onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                             shape = CircleShape,
                             color = TubeDeckAccentCyan,
-                            modifier = Modifier.size(if (compactPortrait) 64.dp else 78.dp)
+                            modifier = Modifier.size(if (compactPortrait) 52.dp else 60.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     "Play/Pause",
                                     tint = Color.Black,
-                                    modifier = Modifier.size(if (compactPortrait) 38.dp else 44.dp)
+                                    modifier = Modifier.size(if (compactPortrait) 30.dp else 34.dp)
                                 )
                             }
                         }
@@ -876,8 +891,8 @@ fun NativeExoPlayer(
                     Column(
                         Modifier.fillMaxWidth()
                             .align(Alignment.BottomCenter)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .then(if (compactPortrait) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+                            .padding(horizontal = 10.dp, vertical = 1.dp)
                     ) {
                         // Keep auxiliary actions above the timeline in compact portrait mode so
                         // the seek bar itself stays anchored to the physical bottom edge of video.
@@ -886,19 +901,52 @@ fun NativeExoPlayer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            TextButton(onClick = { playbackSpeed = cycleSpeed(exoPlayer); controlsVisible = true }) {
-                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            TextButton(
+                                onClick = { playbackSpeed = cycleSpeed(exoPlayer); controlsVisible = true },
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                             }
-                            TextButton(onClick = { showSettings = true; controlsVisible = true }) {
-                                Text(if (autoQuality) "Auto" else qualityLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            TextButton(
+                                onClick = { showSettings = true; controlsVisible = true },
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text(if (autoQuality) "Auto" else qualityLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                             }
-                            TextButton(onClick = {
-                                resizeMode = nextResizeMode(resizeMode)
-                                controlsVisible = true
-                            }) {
-                                Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Surface(
+                                color = Color.Black.copy(alpha = .42f),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(
+                                        onClick = {
+                                            resizeMode = nextResizeMode(resizeMode)
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.height(30.dp),
+                                        contentPadding = PaddingValues(start = 7.dp, end = 3.dp, top = 0.dp, bottom = 0.dp)
+                                    ) {
+                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(3.dp))
+                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            isFullscreen = !isFullscreen
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                            if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
+                                }
                             }
                             IconButton(
                                 onClick = {
@@ -908,45 +956,46 @@ fun NativeExoPlayer(
                                         .build()
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.size(40.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
                                     Icons.Default.ClosedCaption,
                                     "Captions",
                                     tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
                             TextButton(
                                 onClick = {
                                     liveDubEnabled = !liveDubEnabled
                                     controlsVisible = true
-                                }
+                                },
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                             ) {
                                 Icon(
                                     Icons.Default.RecordVoiceOver,
                                     "Live Dub",
                                     tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 10.sp
                                 )
                             }
                         }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(formatDuration(currentPosition), color = Color.White, fontSize = 11.sp)
+                            Text(formatDuration(currentPosition), color = Color.White, fontSize = 9.sp)
                             Spacer(Modifier.weight(1f))
-                            Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 11.sp)
+                            Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
-                        Slider(
-                            value = if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                            onValueChange = { exoPlayer.seekTo((it * duration).toLong()) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 22.dp)
+                        CompactSeekBar(
+                            progress = if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                            onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) }
                         )
                     }
                 }
@@ -1610,7 +1659,7 @@ private fun HoldSeekButton(
             val target = exoPlayer.currentPosition + direction * 10_000L
             exoPlayer.seekTo(target.coerceIn(0L, duration.coerceAtLeast(0L)))
         },
-        modifier = Modifier.pointerInput(direction, duration) {
+        modifier = Modifier.size(44.dp).pointerInput(direction, duration) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val releasedQuickly = withTimeoutOrNull(450L) { waitForUpOrCancellation() } != null
@@ -1626,7 +1675,58 @@ private fun HoldSeekButton(
             }
         }
     ) {
-        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(50.dp))
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(34.dp))
+    }
+}
+
+@Composable
+private fun CompactSeekBar(
+    progress: Float,
+    onSeek: (Float) -> Unit
+) {
+    val normalized = progress.coerceIn(0f, 1f)
+    Canvas(
+        modifier = Modifier.fillMaxWidth()
+            .height(16.dp)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    fun update(x: Float) {
+                        if (size.width > 0) onSeek((x / size.width.toFloat()).coerceIn(0f, 1f))
+                    }
+                    update(down.position.x)
+                    down.consume()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        update(change.position.x)
+                        change.consume()
+                        if (!change.pressed) break
+                    }
+                }
+            }
+    ) {
+        val y = size.height / 2f
+        val activeX = size.width * normalized
+        drawLine(
+            color = Color.White.copy(alpha = .32f),
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = 3.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = TubeDeckAccentCyan,
+            start = Offset(0f, y),
+            end = Offset(activeX, y),
+            strokeWidth = 3.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = TubeDeckAccentCyan,
+            radius = 4.5.dp.toPx(),
+            center = Offset(activeX, y)
+        )
     }
 }
 

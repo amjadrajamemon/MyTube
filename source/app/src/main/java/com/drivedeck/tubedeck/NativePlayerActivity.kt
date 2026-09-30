@@ -13,12 +13,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.OfflineMedia
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.screens.PlayerScreen
 import com.drivedeck.tubedeck.ui.components.DownloadModal
+import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
@@ -64,8 +67,38 @@ class NativePlayerActivity : ComponentActivity() {
             TubeDeckTheme {
                 val settings by repository.settings.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
+                val googleSession = remember { GoogleAccountSession.get(applicationContext) }
+                val googleAccount by googleSession.account.collectAsStateWithLifecycle()
+                val googleAccountScope = rememberCoroutineScope()
+                var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
+                val activeGoogleClientId = settings.googleWebClientId.ifBlank { BuildConfig.GOOGLE_WEB_CLIENT_ID }
+                val onGoogleAccountClick: () -> Unit = {
+                    if (googleAccount != null) {
+                        showGoogleAccountDialog = true
+                    } else if (activeGoogleClientId.isBlank()) {
+                        Toast.makeText(
+                            this@NativePlayerActivity,
+                            "Add your Google Web OAuth client ID in MyTube Settings first.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        googleAccountScope.launch {
+                            googleSession.signIn(this@NativePlayerActivity, activeGoogleClientId)
+                                .onSuccess {
+                                    Toast.makeText(this@NativePlayerActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        this@NativePlayerActivity,
+                                        it.message ?: "Google sign-in failed",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                        }
+                    }
+                }
 
                 PlayerScreen(
                     media = media,
@@ -80,8 +113,25 @@ class NativePlayerActivity : ComponentActivity() {
                     onDownloadPlaylist = if (YoutubeUrls.videoId(media.mediaUri) != null) {
                         { playlistMode = true; showDownload = true }
                     } else null,
-                    onPlayRelated = { related -> launchRelatedPlayer(related) }
+                    onPlayRelated = { related -> launchRelatedPlayer(related) },
+                    googleAccount = googleAccount,
+                    onGoogleAccountClick = onGoogleAccountClick
                 )
+                if (showGoogleAccountDialog) {
+                    googleAccount?.let { account ->
+                        GoogleAccountDialog(
+                            account = account,
+                            onSignOut = {
+                                googleAccountScope.launch {
+                                    googleSession.signOut()
+                                    showGoogleAccountDialog = false
+                                }
+                            },
+                            onDismiss = { showGoogleAccountDialog = false }
+                        )
+                    }
+                }
+
                 if (showDownload) {
                     androidx.compose.runtime.key(playlistMode) {
                         DownloadModal(

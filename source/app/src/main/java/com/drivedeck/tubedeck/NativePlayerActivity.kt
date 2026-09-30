@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.util.Rational
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,6 +54,22 @@ class NativePlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                    playerActive &&
+                    !closingPlayer &&
+                    !isPipMode &&
+                    repository.settings.value.pipEnabled
+                ) {
+                    enterPlayerPip()
+                } else {
+                    finishPlayer()
+                }
+            }
+        })
 
         val media = OfflineMedia(
             id = intent.getStringExtra(EXTRA_MEDIA_ID) ?: UUID.randomUUID().toString(),

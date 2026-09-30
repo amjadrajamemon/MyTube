@@ -304,6 +304,8 @@ fun NativeExoPlayer(
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current

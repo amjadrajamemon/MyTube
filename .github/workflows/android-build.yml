@@ -55,6 +55,24 @@ jobs:
           grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
           echo "v1.2.3 consolidated patch applied."
 
+      - name: Materialize patched Android project source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/source"
+          mkdir -p "$GITHUB_WORKSPACE/source"
+          cp -a "$PROJECT_DIR/." "$GITHUB_WORKSPACE/source/"
+          rm -rf "$GITHUB_WORKSPACE/source/.gradle" "$GITHUB_WORKSPACE/source/app/build"
+          rm -rf "$GITHUB_WORKSPACE/source/app/src/main/assets/models"
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add source
+          if ! git diff --cached --quiet; then
+            git commit -m "Materialize patched MyTube v1.2.3 source [skip ci]"
+            git push origin HEAD:main
+          fi
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:

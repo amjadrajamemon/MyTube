@@ -30,6 +30,7 @@ import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+        YtDlpUpdateManager.scheduleWeekly(applicationContext)
         inboundUrl = intent?.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
 
         setContent {
@@ -156,8 +158,12 @@ class MainActivity : ComponentActivity() {
                         showAdBlockSheet -> { showAdBlockSheet = false }
                         showDownloadModal -> { showDownloadModal = false }
                         currentScreen == ActiveScreen.PLAYER -> {
-                            currentScreen = playerReturnScreen
-                            playingMedia = null
+                            if (settings.pipEnabled) {
+                                triggerPip()
+                            } else {
+                                currentScreen = playerReturnScreen
+                                playingMedia = null
+                            }
                         }
                         webViewInstance?.canGoBack() == true && currentScreen == ActiveScreen.BROWSER -> {
                             webViewInstance?.goBack()

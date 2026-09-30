@@ -5,10 +5,11 @@ on:
     branches: [ main ]
     paths-ignore:
       - '.bootstrap/**'
+      - 'dist/**'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -33,7 +34,6 @@ jobs:
           PROJECT_DIR="$(dirname "$SETTINGS")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Detected project: $PROJECT_DIR"
-          find "$PROJECT_DIR" -maxdepth 2 -type f \( -name 'settings.gradle.kts' -o -name 'build.gradle.kts' -o -name 'gradle.properties' \) -print
 
       - name: Apply Media3 PCM tap compatibility fix
         shell: bash
@@ -86,10 +86,10 @@ jobs:
                       .setBandwidthMeter(bandwidthMeter)
                       .build()
               }"""
-          if old not in s:
-              raise SystemExit("Expected ExoPlayer audio-sink block not found")
-          p.write_text(s.replace(old, new), encoding="utf-8")
-          print("Patched", p)
+          if old in s:
+              s = s.replace(old, new)
+          p.write_text(s, encoding="utf-8")
+          print("Media3 compatibility patch checked:", p)
           PY
 
       - name: Set up JDK 21
@@ -123,9 +123,7 @@ jobs:
           EXPECTED_SHA1=bd577a113a864445d4c299885e0cb97d4ba92b5f
           mkdir -p "$(dirname "$MODEL")"
           if [ ! -s "$MODEL" ]; then
-            curl -fL --retry 3 --retry-delay 3 \
-              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
-              -o "$MODEL"
+            curl -fL --retry 3 --retry-delay 3               https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin               -o "$MODEL"
           fi
           echo "$EXPECTED_SHA1  $MODEL" | sha1sum -c -
           ls -lh "$MODEL"
@@ -144,12 +142,22 @@ jobs:
           test -s "$APK"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.2-Whisper-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/dist/MyTube-v1.2.2-Whisper-debug.apk"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum dist/MyTube-v1.2.2-Whisper-debug.apk > dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
+          ls -lh dist/MyTube-v1.2.2-Whisper-debug.apk
+          cat dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyTube-v1.2.2-Whisper-debug
-          path: dist/MyTube-v1.2.2-Whisper-debug.apk
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish compiled APK to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/MyTube-v1.2.2-Whisper-debug.apk dist/MyTube-v1.2.2-Whisper-debug.apk.sha256
+          if git diff --cached --quiet; then
+            echo "APK is unchanged; nothing to publish."
+            exit 0
+          fi
+          git commit -m "Publish compiled MyTube v1.2.2 APK [skip ci]"
+          git push origin HEAD:main

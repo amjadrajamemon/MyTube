@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.data.model.DownloadMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
+import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 
@@ -42,6 +43,12 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val updateScope = rememberCoroutineScope()
+    val ytDlpState by YtDlpUpdateManager.state.collectAsState()
+    LaunchedEffect(Unit) {
+        YtDlpUpdateManager.scheduleWeekly(context)
+        YtDlpUpdateManager.refreshState(context)
+    }
     var downloadDir by remember { mutableStateOf(currentSettings.downloadDir) }
     var downloadTreeUri by remember { mutableStateOf(currentSettings.downloadTreeUri) }
     var folderError by remember { mutableStateOf<String?>(null) }
@@ -75,7 +82,6 @@ fun SettingsScreen(
     val parallelCount = parallelText.toIntOrNull()
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
-    var googleWebClientId by remember { mutableStateOf(currentSettings.googleWebClientId) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
     var blockVideoAds by remember { mutableStateOf(currentSettings.blockVideoAds) }
@@ -140,33 +146,63 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "Google Account") {
+            SettingsCard(title = "Google account") {
                 Text(
-                    "MyTube uses Android Credential Manager for Google sign-in. Enter the Web OAuth client ID from your Google Auth project once; the same signed-in identity is then shared by Home, Browser and ExoPlayer.",
+                    "Tap the account icon on Home, Browser or ExoPlayer to choose a Google account already on this device. No client ID is required in Settings.",
                     color = Color.LightGray,
                     fontSize = 12.sp
                 )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = googleWebClientId,
-                    onValueChange = { googleWebClientId = it.trim() },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Google Web OAuth client ID") },
-                    placeholder = { Text("xxxxxxxx.apps.googleusercontent.com") },
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = TubeDeckAccentCyan,
-                        unfocusedBorderColor = Color.DarkGray
-                    )
+            }
+
+            SettingsCard(title = "yt-dlp engine") {
+                Text(
+                    "Stable yt-dlp updates are checked automatically every 7 days when a network connection is available.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Version: " + (ytDlpState.version ?: "Bundled / not initialized"),
+                    color = Color.White,
+                    fontSize = 12.sp
                 )
                 Text(
-                    "You may alternatively provide GOOGLE_WEB_CLIENT_ID as a build/GitHub Actions secret.",
-                    color = Color.Gray,
+                    "Last update check: " + ytDlpState.lastCheckedLabel,
+                    color = TubeDeckTextSecondary,
                     fontSize = 11.sp
                 )
+                Text(
+                    ytDlpState.message,
+                    color = if (ytDlpState.message.contains("failed", ignoreCase = true)) MaterialTheme.colorScheme.error else TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        updateScope.launch {
+                            YtDlpUpdateManager.updateNow(context)
+                        }
+                    },
+                    enabled = !ytDlpState.updating,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TubeDeckAccentCyan,
+                        contentColor = Color.Black
+                    )
+                ) {
+                    if (ytDlpState.updating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.Black
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Updating…")
+                    } else {
+                        Icon(Icons.Default.SystemUpdate, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Check/update yt-dlp now")
+                    }
+                }
             }
 
             SettingsCard(title = "Download folder") {
@@ -255,7 +291,6 @@ fun SettingsScreen(
                             playlistMode = playlistMode,
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
-                            googleWebClientId = googleWebClientId,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,
                             blockBannerAds = blockBannerAds,

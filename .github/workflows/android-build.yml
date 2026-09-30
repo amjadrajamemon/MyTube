@@ -3,75 +3,35 @@ name: Build MyTube Android APK
 on:
   push:
     branches: [ main ]
-    paths-ignore:
-      - '.bootstrap/**'
-      - '.ci-patches/**'
-      - 'dist/**'
+    paths:
       - 'source/**'
+      - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract uploaded Android project
+      - name: Verify v1.2.4 source
         shell: bash
         run: |
           set -euo pipefail
-          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name 'MyTube-*-AndroidStudio-Source.zip' -print -quit)"
-          test -n "$ZIP"
-          rm -rf "$GITHUB_WORKSPACE/.ci-src"
-          mkdir -p "$GITHUB_WORKSPACE/.ci-src"
-          unzip -q "$ZIP" -d "$GITHUB_WORKSPACE/.ci-src"
-          SETTINGS="$(find "$GITHUB_WORKSPACE/.ci-src" -type f -name settings.gradle.kts -print -quit)"
-          test -n "$SETTINGS"
-          PROJECT_DIR="$(dirname "$SETTINGS")"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Detected project: $PROJECT_DIR"
-
-      - name: Apply consolidated v1.2.3 stability patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat "$GITHUB_WORKSPACE"/.ci-patches/v1.2.3.patch.gz.b64.part*             | base64 -d             | gzip -d > /tmp/v1.2.3.patch
-          cd "$PROJECT_DIR"
-          patch --dry-run -p1 < /tmp/v1.2.3.patch
-          patch -p1 < /tmp/v1.2.3.patch
-          for HOTFIX in "$GITHUB_WORKSPACE"/.ci-patches/v1.2.3-hotfix*.patch; do
-            [ -e "$HOTFIX" ] || continue
-            echo "Applying $(basename "$HOTFIX")"
-            patch --dry-run -p1 < "$HOTFIX"
-            patch -p1 < "$HOTFIX"
-          done
-          grep -q 'versionName = "1.2.3"' app/build.gradle.kts
-          grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "v1.2.3 consolidated patch applied."
-
-      - name: Materialize patched Android project source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf "$GITHUB_WORKSPACE/source"
-          mkdir -p "$GITHUB_WORKSPACE/source"
-          cp -a "$PROJECT_DIR/." "$GITHUB_WORKSPACE/source/"
-          rm -rf "$GITHUB_WORKSPACE/source/.gradle" "$GITHUB_WORKSPACE/source/app/build"
-          rm -rf "$GITHUB_WORKSPACE/source/app/src/main/assets/models"
-          cd "$GITHUB_WORKSPACE"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add source
-          if ! git diff --cached --quiet; then
-            git commit -m "Materialize patched MyTube v1.2.3 source [skip ci]"
-            git push origin HEAD:main
-          fi
+          test -f source/settings.gradle.kts
+          grep -q 'versionName = "1.2.4"' source/app/build.gradle.kts
+          grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
+          grep -q 'GoogleAccountSession' source/app/src/main/java/com/drivedeck/tubedeck/auth/GoogleAccountSession.kt
+          echo "Building materialized MyTube v1.2.4 source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -100,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          MODEL="$PROJECT_DIR/app/src/main/assets/models/ggml-tiny-q5_1.bin"
+          MODEL="$GITHUB_WORKSPACE/source/app/src/main/assets/models/ggml-tiny-q5_1.bin"
           EXPECTED_SHA1=2827a03e495b1ed3048ef28a6a4620537db4ee51
           mkdir -p "$(dirname "$MODEL")"
           if [ ! -s "$MODEL" ]; then
@@ -110,63 +70,65 @@ jobs:
           ls -lh "$MODEL"
 
       - name: Run unit tests
-        run: gradle -p "$PROJECT_DIR" testDebugUnitTest --stacktrace
+        run: gradle -p source testDebugUnitTest --stacktrace
 
       - name: Build debug APK
-        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
+        run: gradle -p source assembleDebug --stacktrace
 
       - name: Stage APK and complete source
         shell: bash
         run: |
           set -euo pipefail
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          APK="$GITHUB_WORKSPACE/source/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.3-Stable-Whisper-debug.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip"
           (
-            cd "$PROJECT_DIR"
+            cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" .               -x '.gradle/*'               -x '*/build/*'               -x 'local.properties'
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.2.3-Stable-Whisper-debug.apk > dist/MyTube-v1.2.3-Stable-Whisper-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk > dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.2.3 APK and source as GitHub Release
+      - name: Publish v1.2.4 APK and source as GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.2.3-stable-whisper-debug"
-          NOTES="MyTube r6.5 LiveDub v1.2.3 stability build.
+          TAG="v1.2.4-ui-google-whisper-debug"
+          NOTES="MyTube r6.5 LiveDub v1.2.4.
 
-          Highlights:
-          - Native Whisper lifecycle/inference hardening for the reported Android 15 libwhisper/ggml crash.
-          - Multilingual Tiny Q5_1 model to reduce native RAM/CPU pressure.
-          - Playback-safe PCM tap and larger/recovery-oriented ExoPlayer buffering.
-          - Taller portrait video viewport with Zoom default.
-          - Caption language dropdown.
-          - Dubbing method selector: Auto (prefer captions), Captions, Audio (Whisper).
-          - Left/right press-and-hold continuous rewind/fast-forward.
-          - YouTube-style Home with topic chips, persisted History, real related-video recommendations and Up next.
-          - Unit tests and assembleDebug must pass before this release is published."
+          - Direct source-tree build; no transient CI patching.
+          - Redmi/Android 15 Whisper hardening with Tiny Q5_1, single-flight inference, bounded PCM capture and capture pause during native inference.
+          - Fresh YouTube stream re-resolution on retryable Media3 failures.
+          - Taller portrait ExoPlayer viewport and reduced companion-panel share.
+          - Smaller/lower transport controls and compact thin seek bar based on supplied marked screenshots.
+          - Fullscreen moved from the top-right strip into the lower Zoom/aspect control group.
+          - Caption language dropdown and dubbing method selector retained.
+          - Left/right press-and-hold rewind/fast-forward retained.
+          - YouTube-style Home recommendations, history and Up next retained.
+          - Google Credential Manager account session shared by Home, Browser and ExoPlayer.
+          - Google Web OAuth client ID can be entered in Settings or supplied as GOOGLE_WEB_CLIENT_ID GitHub secret.
+          - Unit tests and assembleDebug must pass before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.2.3-Stable-Whisper-debug.apk
-            dist/MyTube-v1.2.3-Stable-Whisper-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.2.3-Stable-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk
+            dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" "${ASSETS[@]}"               --target "$GITHUB_SHA"               --title "MyTube v1.2.3 Stable Whisper Debug"               --notes "$NOTES"
+            gh release create "$TAG" "${ASSETS[@]}"               --target "$GITHUB_SHA"               --title "MyTube v1.2.4 UI + Google + Whisper Debug"               --notes "$NOTES"
           fi
           gh release view "$TAG"

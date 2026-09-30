@@ -22,12 +22,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
+import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
 import com.drivedeck.tubedeck.ui.screens.*
@@ -61,6 +63,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             TubeDeckTheme {
                 val settings by repository.settings.collectAsStateWithLifecycle()
+                val googleSession = remember { GoogleAccountSession.get(applicationContext) }
+                val googleAccount by googleSession.account.collectAsStateWithLifecycle()
+                val googleAccountScope = rememberCoroutineScope()
+                var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 val downloadQueue by repository.downloadQueue.collectAsStateWithLifecycle()
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
@@ -83,6 +89,35 @@ class MainActivity : ComponentActivity() {
                 var deckSearchQuery by rememberSaveable { mutableStateOf("") }
                 var canGoBack by remember { mutableStateOf(false) }
                 var canGoForward by remember { mutableStateOf(false) }
+
+                val activeGoogleClientId = settings.googleWebClientId.ifBlank { BuildConfig.GOOGLE_WEB_CLIENT_ID }
+                val onGoogleAccountClick: () -> Unit = {
+                    if (googleAccount != null) {
+                        showGoogleAccountDialog = true
+                    } else if (activeGoogleClientId.isBlank()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Add your Google Web OAuth client ID in Settings first.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        previousScreen = currentScreen
+                        currentScreen = ActiveScreen.SETTINGS
+                    } else {
+                        googleAccountScope.launch {
+                            googleSession.signIn(this@MainActivity, activeGoogleClientId)
+                                .onSuccess {
+                                    Toast.makeText(this@MainActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        it.message ?: "Google sign-in failed",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                        }
+                    }
+                }
 
                 LaunchedEffect(inboundUrl, settings.playerMode) {
                     inboundUrl?.let {
@@ -190,7 +225,9 @@ class MainActivity : ComponentActivity() {
                                     onOpenSettings = { 
                                         previousScreen = currentScreen
                                         currentScreen = ActiveScreen.SETTINGS 
-                                    }
+                                    },
+                                    googleAccount = googleAccount,
+                                    onGoogleAccountClick = onGoogleAccountClick
                                 )
                                 GlobalProgressBar(isVisible = hasActiveDownloads, progress = averageProgress)
                             }
@@ -243,6 +280,8 @@ class MainActivity : ComponentActivity() {
                                         downloadsInitialTab = 1
                                         currentScreen = ActiveScreen.DOWNLOADS
                                     },
+                                    googleAccount = googleAccount,
+                                    onGoogleAccountClick = onGoogleAccountClick,
                                     watchHistory = watchHistory,
                                     suggestedVideos = homeSuggestions,
                                     onOpenVideo = { item ->
@@ -369,7 +408,9 @@ class MainActivity : ComponentActivity() {
                                             repository.fetchSponsorSegments(related.videoId)
                                             playingMedia = related
                                             currentScreen = ActiveScreen.PLAYER
-                                        }
+                                        },
+                                        googleAccount = googleAccount,
+                                        onGoogleAccountClick = onGoogleAccountClick
                                     )
                                 }
                             }
@@ -409,6 +450,21 @@ class MainActivity : ComponentActivity() {
                                 onResetStats = { repository.resetBlockedAdsCount() },
                                 onDismiss = { showAdBlockSheet = false }
                             )
+                        }
+
+                        if (showGoogleAccountDialog) {
+                            googleAccount?.let { account ->
+                                GoogleAccountDialog(
+                                    account = account,
+                                    onSignOut = {
+                                        googleAccountScope.launch {
+                                            googleSession.signOut()
+                                            showGoogleAccountDialog = false
+                                        }
+                                    },
+                                    onDismiss = { showGoogleAccountDialog = false }
+                                )
+                            }
                         }
                     }
                 }

@@ -1,7 +1,5 @@
 package com.drivedeck.tubedeck
 
-import android.accounts.AccountManager
-import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
@@ -13,8 +11,6 @@ import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -95,24 +91,23 @@ class MainActivity : ComponentActivity() {
                 var canGoBack by remember { mutableStateOf(false) }
                 var canGoForward by remember { mutableStateOf(false) }
 
-                val googleAccountPicker = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult()
-                ) { result ->
-                    if (result.resultCode == Activity.RESULT_OK) {
-                        val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-                        if (!accountName.isNullOrBlank()) {
-                            googleSession.selectDeviceAccount(accountName)
-                            Toast.makeText(this@MainActivity, "Google account selected", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
                     } else {
-                        googleAccountPicker.launch(
-                            GoogleAccountSession.chooserIntent(googleAccount?.email)
-                        )
+                        lifecycleScope.launch {
+                            googleSession.signIn(this@MainActivity, BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                                .onSuccess {
+                                    Toast.makeText(this@MainActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        it.message ?: "Google sign-in failed",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                        }
                     }
                 }
 
@@ -143,7 +138,7 @@ class MainActivity : ComponentActivity() {
                 var showAdBlockSheet by remember { mutableStateOf(false) }
                 
                 SideEffect {
-                    playerActive = currentScreen == ActiveScreen.PLAYER
+                    playerActive = currentScreen == ActiveScreen.PLAYER || (currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null)
                     autoPipEnabled = settings.pipEnabled
                 }
 
@@ -164,6 +159,11 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = playerReturnScreen
                                 playingMedia = null
                             }
+                        }
+                        currentScreen == ActiveScreen.BROWSER &&
+                            YoutubeUrls.videoId(currentUrl) != null &&
+                            settings.pipEnabled -> {
+                            triggerPip()
                         }
                         webViewInstance?.canGoBack() == true && currentScreen == ActiveScreen.BROWSER -> {
                             webViewInstance?.goBack()

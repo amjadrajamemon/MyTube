@@ -272,9 +272,13 @@ object YoutubeStreamResolver {
 
             val collected = mutableListOf<NativeComment>()
             var extractorFailure: Throwable? = null
+            var commentsDisabledByVideo = false
 
             runCatching {
                 val info = CommentsInfo.getInfo(url)
+                if (info != null && info.isCommentsDisabled) {
+                    commentsDisabledByVideo = true
+                }
                 if (info != null && !info.isCommentsDisabled) {
                     fun append(items: List<org.schabi.newpipe.extractor.comments.CommentsInfoItem>) {
                         items.forEach { item ->
@@ -310,6 +314,7 @@ object YoutubeStreamResolver {
             if (collected.isNotEmpty()) {
                 return@withContext collected.distinctBy { it.id }.take(60)
             }
+            if (commentsDisabledByVideo) return@withContext emptyList()
 
             val fallback = runCatching { ytDlpComments(context.applicationContext, url) }
                 .getOrElse { ytError ->
@@ -332,14 +337,13 @@ object YoutubeStreamResolver {
         YtDlpUpdateManager.ensureInitialized(context)
         val request = YoutubeDLRequest(url)
             .addOption("--skip-download")
-            .addOption("--get-comments")
+            .addOption("--write-comments")
             .addOption("--dump-single-json")
             .addOption("--no-warnings")
-            .addOption("--ignore-errors")
 
         val response = YoutubeDL.execute(request)
         val root = JSONObject(response.out)
-        val comments = root.optJSONArray("comments") ?: return emptyList()
+        val comments = root.optJSONArray("comments") ?: throw IOException("yt-dlp returned no comments data")
         val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
             .withZone(ZoneId.systemDefault())
 

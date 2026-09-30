@@ -16,6 +16,9 @@ class PlaybackPcmTapProcessor(
     private val shouldCapture: () -> Boolean,
     private val consumer: (ByteArray, Int, Int) -> Unit
 ) : BaseAudioProcessor() {
+    companion object {
+        private const val MAX_CAPTURE_BYTES = 256 * 1024
+    }
     private var sampleRate = 0
     private var channels = 0
     private var encoding = C.ENCODING_INVALID
@@ -34,8 +37,10 @@ class PlaybackPcmTapProcessor(
         // Mirror only the format WhisperAudioAsr currently expects. All other encodings remain
         // valid playback formats and are passed through without throwing.
         if (encoding == C.ENCODING_PCM_16BIT && sampleRate > 0 && channels > 0 && shouldCapture()) {
+            val captureSize = size.coerceAtMost(MAX_CAPTURE_BYTES)
             val duplicate = inputBuffer.duplicate()
-            val copy = ByteArray(size)
+            duplicate.limit(duplicate.position() + captureSize)
+            val copy = ByteArray(captureSize)
             duplicate.get(copy)
             runCatching { consumer(copy, sampleRate, channels) }
         }

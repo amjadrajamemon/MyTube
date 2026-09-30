@@ -1,6 +1,9 @@
 package com.drivedeck.tubedeck.player
 
 import android.content.Context
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
@@ -16,6 +19,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -259,27 +265,114 @@ object YoutubeStreamResolver {
         }
 
 
-    suspend fun comments(url: String): List<NativeComment> =
+    suspend fun comments(context: Context, url: String): List<NativeComment> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             ensureInitialized()
             require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
-            val info = CommentsInfo.getInfo(url)
-            if (info.isCommentsDisabled) return@withContext emptyList()
-            info.relatedItems.mapNotNull { item ->
-                val text = item.commentText?.content.orEmpty().trim()
-                if (text.isBlank()) return@mapNotNull null
-                NativeComment(
-                    id = item.commentId.orEmpty().ifBlank { item.url.orEmpty() + ":" + item.uploaderName.orEmpty() },
-                    author = item.uploaderName.orEmpty().ifBlank { "YouTube user" },
-                    text = text,
-                    publishedText = item.textualUploadDate.orEmpty(),
-                    likeText = item.textualLikeCount.orEmpty(),
-                    replyCount = item.replyCount.coerceAtLeast(0),
-                    pinned = item.isPinned,
-                    channelOwner = item.isChannelOwner
-                )
-            }.distinctBy { it.id }.take(60)
+
+            val collected = mutableListOf<NativeComment>()
+            var extractorFailure: Throwable? = null
+
+            runCatching {
+                val info = CommentsInfo.getInfo(url)
+                if (info != null && !info.isCommentsDisabled) {
+                    fun append(items: List<org.schabi.newpipe.extractor.comments.CommentsInfoItem>) {
+                        items.forEach { item ->
+                            val text = item.commentText?.content.orEmpty().trim()
+                            if (text.isBlank()) return@forEach
+                            collected += NativeComment(
+                                id = item.commentId.orEmpty()
+                                    .ifBlank { item.url.orEmpty() + ":" + item.uploaderName.orEmpty() + ":" + collected.size },
+                                author = item.uploaderName.orEmpty().ifBlank { "YouTube user" },
+                                text = text,
+                                publishedText = item.textualUploadDate.orEmpty(),
+                                likeText = item.textualLikeCount.orEmpty(),
+                                replyCount = item.replyCount.coerceAtLeast(0),
+                                pinned = item.isPinned,
+                                channelOwner = item.isChannelOwner
+                            )
+                        }
+                    }
+
+                    append(info.relatedItems)
+                    var next = info.nextPage
+                    var pages = 0
+                    while (collected.size < 60 && next != null && pages < 4) {
+                        currentCoroutineContext().ensureActive()
+                        val page = CommentsInfo.getMoreItems(info, next)
+                        append(page.items)
+                        next = page.nextPage
+                        pages += 1
+                    }
+                }
+            }.onFailure { extractorFailure = it }
+
+            if (collected.isNotEmpty()) {
+                return@withContext collected.distinctBy { it.id }.take(60)
+            }
+
+            val fallback = runCatching { ytDlpComments(context.applicationContext, url) }
+                .getOrElse { ytError ->
+                    val cause = extractorFailure?.message?.takeIf { it.isNotBlank() }
+                    val fallbackCause = ytError.message?.takeIf { it.isNotBlank() }
+                    throw IOException(
+                        listOfNotNull(
+                            "Could not load YouTube comments",
+                            cause?.let { "Extractor: " + it },
+                            fallbackCause?.let { "yt-dlp: " + it }
+                        ).joinToString(" • "),
+                        ytError
+                    )
+                }
+
+            fallback.distinctBy { it.id }.take(60)
         }
+
+    private suspend fun ytDlpComments(context: Context, url: String): List<NativeComment> {
+        YtDlpUpdateManager.ensureInitialized(context)
+        val request = YoutubeDLRequest(url)
+            .addOption("--skip-download")
+            .addOption("--get-comments")
+            .addOption("--dump-single-json")
+            .addOption("--no-warnings")
+            .addOption("--ignore-errors")
+
+        val response = YoutubeDL.execute(request)
+        val root = JSONObject(response.out)
+        val comments = root.optJSONArray("comments") ?: return emptyList()
+        val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
+            .withZone(ZoneId.systemDefault())
+
+        return buildList {
+            for (index in 0 until comments.length()) {
+                val item = comments.optJSONObject(index) ?: continue
+                val text = item.optString("text").trim()
+                if (text.isBlank()) continue
+
+                val timestamp = item.optLong("timestamp", 0L)
+                val published = if (timestamp > 0L) {
+                    runCatching { formatter.format(Instant.ofEpochSecond(timestamp)) }.getOrDefault("")
+                } else {
+                    item.optString("time_text")
+                }
+
+                val likes = item.optLong("like_count", -1L)
+                add(
+                    NativeComment(
+                        id = item.optString("id").ifBlank { "yt-dlp-" + index + "-" + text.hashCode() },
+                        author = item.optString("author").ifBlank { "YouTube user" },
+                        text = text,
+                        publishedText = published,
+                        likeText = if (likes > 0L) likes.toString() else "",
+                        replyCount = 0,
+                        pinned = item.optBoolean("is_pinned", false),
+                        channelOwner = item.optBoolean("author_is_uploader", false)
+                    )
+                )
+                if (size >= 60) break
+            }
+        }
+    }
 
     suspend fun playlistItems(url: String): List<org.schabi.newpipe.extractor.stream.StreamInfoItem> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

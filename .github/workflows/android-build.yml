@@ -44,6 +44,12 @@ jobs:
           cd "$PROJECT_DIR"
           patch --dry-run -p1 < /tmp/v1.2.3.patch
           patch -p1 < /tmp/v1.2.3.patch
+          for HOTFIX in "$GITHUB_WORKSPACE"/.ci-patches/v1.2.3-hotfix*.patch; do
+            [ -e "$HOTFIX" ] || continue
+            echo "Applying $(basename "$HOTFIX")"
+            patch --dry-run -p1 < "$HOTFIX"
+            patch -p1 < "$HOTFIX"
+          done
           grep -q 'versionName = "1.2.3"' app/build.gradle.kts
           grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
           echo "v1.2.3 consolidated patch applied."

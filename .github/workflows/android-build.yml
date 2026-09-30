@@ -1,0 +1,67 @@
+name: Build MyTube Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Provision multilingual Whisper Tiny model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets/models
+          MODEL=app/src/main/assets/models/ggml-tiny.bin
+          if [ ! -s "$MODEL" ]; then
+            curl -fL --retry 3 --retry-delay 3               https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin               -o "$MODEL"
+          fi
+          test -s "$MODEL"
+          ls -lh "$MODEL"
+
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --stacktrace
+
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/MyTube-v1.2.2-Whisper-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTube-v1.2.2-Whisper-debug
+          path: dist/MyTube-v1.2.2-Whisper-debug.apk
+          if-no-files-found: error
+          retention-days: 30

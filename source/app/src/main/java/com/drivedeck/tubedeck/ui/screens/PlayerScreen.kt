@@ -356,6 +356,8 @@ fun NativeExoPlayer(
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
+    var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
+    val playbackScope = rememberCoroutineScope()
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
@@ -486,7 +488,38 @@ fun NativeExoPlayer(
                     error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
-                if (retryable && playbackRecoveryAttempts < 2) {
+                if (retryable && youtubeVideo && playbackRecoveryAttempts < 3 && !playbackRecoveryActive) {
+                    playbackRecoveryAttempts += 1
+                    playbackRecoveryActive = true
+                    resolveError = null
+                    playbackScope.launch {
+                        try {
+                            delay(350)
+                            val fresh = YoutubeStreamResolver.resolve(context, media.mediaUri)
+                            resolved = fresh
+                            hasCaptions = fresh.subtitles.isNotEmpty()
+                            val target = if (autoQuality) {
+                                chooseAutoHeight(context, fresh.options.map { it.height }, bandwidthMeter.bitrateEstimate)
+                            } else {
+                                selectedHeight.takeIf { it > 0 }
+                                    ?: fresh.options.maxOfOrNull { it.height }
+                                    ?: 720
+                            }
+                            loadResolvedStream(
+                                sourceMedia = fresh,
+                                requestedHeight = target,
+                                autoSelected = autoQuality,
+                                preservePosition = true
+                            )
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (recoveryError: Throwable) {
+                            resolveError = "Playback recovery failed: ${recoveryError.message ?: recoveryError.javaClass.simpleName}"
+                        } finally {
+                            playbackRecoveryActive = false
+                        }
+                    }
+                } else if (retryable && playbackRecoveryAttempts < 3) {
                     playbackRecoveryAttempts += 1
                     resolveError = null
                     exoPlayer.prepare()
@@ -649,7 +682,7 @@ fun NativeExoPlayer(
     Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
         Box(
             modifier = if (compactPortrait) {
-                Modifier.fillMaxWidth().aspectRatio(16f / 11f).background(Color.Black)
+                Modifier.fillMaxWidth().aspectRatio(16f / 13f).background(Color.Black)
             } else {
                 Modifier.fillMaxSize().background(Color.Black)
             }

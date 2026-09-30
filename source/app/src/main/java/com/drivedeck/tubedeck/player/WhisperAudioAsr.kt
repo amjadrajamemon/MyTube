@@ -46,7 +46,7 @@ class WhisperAudioAsr(
         const val MODEL_SHA1 = "2827a03e495b1ed3048ef28a6a4620537db4ee51"
         private const val WHISPER_SAMPLE_RATE = 16_000
         private const val MIN_CLIP_SECONDS = 0.75
-        private const val MAX_CLIP_SECONDS = 4.5
+        private const val MAX_CLIP_SECONDS = 3.8
         private const val END_SILENCE_MS = 360
     }
 
@@ -93,7 +93,7 @@ class WhisperAudioAsr(
         }
     }
 
-    fun isCapturing(): Boolean = enabled && !closing && model != null
+    fun isCapturing(): Boolean = enabled && !closing && model != null && !transcribing.get()
 
     fun modelInstalled(): Boolean = modelFile.isFile && modelFile.length() > 25_000_000L
 
@@ -178,6 +178,7 @@ class WhisperAudioAsr(
     private fun submitClip(samples: ShortArray, sampleRate: Int) {
         if (closing || !enabled || samples.isEmpty()) return
         if (!transcribing.compareAndSet(false, true)) return
+        onStatus("Whisper is processing locally…")
 
         scope.launch {
             val wav = File(appContext.cacheDir, "livedub-${System.nanoTime()}.wav")

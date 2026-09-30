@@ -1,7 +1,5 @@
 package com.drivedeck.tubedeck
 
-import android.accounts.AccountManager
-import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.res.Configuration
 import android.os.Build
@@ -11,8 +9,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -92,24 +88,23 @@ class NativePlayerActivity : ComponentActivity() {
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
-                val googleAccountPicker = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult()
-                ) { result ->
-                    if (result.resultCode == Activity.RESULT_OK) {
-                        val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-                        if (!accountName.isNullOrBlank()) {
-                            googleSession.selectDeviceAccount(accountName)
-                            Toast.makeText(this@NativePlayerActivity, "Google account selected", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
                     } else {
-                        googleAccountPicker.launch(
-                            GoogleAccountSession.chooserIntent(googleAccount?.email)
-                        )
+                        lifecycleScope.launch {
+                            googleSession.signIn(this@NativePlayerActivity, BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                                .onSuccess {
+                                    Toast.makeText(this@NativePlayerActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        this@NativePlayerActivity,
+                                        it.message ?: "Google sign-in failed",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                        }
                     }
                 }
 
@@ -209,7 +204,10 @@ class NativePlayerActivity : ComponentActivity() {
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
                 .build()
-            enterPictureInPictureMode(params)
+            val entered = enterPictureInPictureMode(params)
+            if (!entered) {
+                Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
+            }
         } else {
             finish()
         }

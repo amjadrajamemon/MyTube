@@ -1,9 +1,9 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
     .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
     .orElse("")
     .get()
-
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -23,7 +23,7 @@ android {
         versionName = "1.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\\"" + googleWebClientId.replace("\\"", "\\\\"") + "\\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\\\"$googleWebClientId\\\"")
     }
 
     buildTypes {

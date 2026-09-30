@@ -12,13 +12,26 @@ android {
 
     defaultConfig {
         applicationId = "com.aistudio.tubedeck.kxmvd"
-        minSdk = 26
+        minSdk = 23
         targetSdk = 36
         versionCode = 18
         versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+
+    flavorDimensions += "abi"
+    productFlavors {
+        create("arm64") {
+            dimension = "abi"
+            ndk { abiFilters += "arm64-v8a" }
+        }
+        create("universal") {
+            dimension = "abi"
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            }
+        }
     }
 
     buildTypes {

@@ -1,0 +1,1773 @@
+package com.drivedeck.tubedeck.ui.screens
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
+import android.os.Build
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaItem.SubtitleConfiguration
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.text.CueGroup
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
+import androidx.media3.session.MediaSession
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.data.model.PlayerMode
+import com.drivedeck.tubedeck.data.model.SponsorSegment
+import com.drivedeck.tubedeck.player.LiveDubEngine
+import com.drivedeck.tubedeck.player.LiveDubLanguages
+import com.drivedeck.tubedeck.player.LiveDubInputMode
+import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
+import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
+import com.drivedeck.tubedeck.player.YoutubeStreamResolver
+import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.ui.theme.*
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+@OptIn(UnstableApi::class)
+@Composable
+fun PlayerScreen(
+    media: OfflineMedia,
+    playerMode: PlayerMode,
+    sponsorSegments: List<SponsorSegment> = emptyList(),
+    pipEnabled: Boolean = true,
+    onClose: () -> Unit,
+    onEnterPip: () -> Unit,
+    onDownloadVideo: (() -> Unit)? = null,
+    onDownloadPlaylist: (() -> Unit)? = null,
+    onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    // Preserve the caller's orientation instead of forcing landscape. This lets the player
+    // start and remain in portrait when the device is portrait, while still allowing users
+    // to rotate explicitly from the player controls.
+    DisposableEffect(activity) {
+        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        onDispose {
+            activity?.let { setFullscreen(it, false) }
+            activity?.requestedOrientation = originalOrientation
+        }
+    }
+
+    var useWebFallback by remember(media.id) { mutableStateOf(false) }
+    val youtube = YoutubeUrls.videoId(media.mediaUri) != null
+
+    when {
+        youtube && (playerMode == PlayerMode.WEB || useWebFallback) -> WebPlayer(
+            media = media,
+            onClose = onClose,
+            onDownloadVideo = onDownloadVideo,
+            onDownloadPlaylist = onDownloadPlaylist,
+            modifier = modifier.fillMaxSize()
+        )
+
+        else -> NativeExoPlayer(
+            media = media,
+            sponsorSegments = sponsorSegments,
+            pipEnabled = pipEnabled,
+            onClose = onClose,
+            onEnterPip = onEnterPip,
+            onWebFallback = { useWebFallback = true },
+            onDownloadVideo = onDownloadVideo,
+            onDownloadPlaylist = onDownloadPlaylist,
+            onPlayRelated = onPlayRelated,
+            modifier = modifier.fillMaxSize()
+        )
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+@Composable
+fun WebPlayer(
+    media: OfflineMedia,
+    onClose: () -> Unit,
+    onDownloadVideo: (() -> Unit)? = null,
+    onDownloadPlaylist: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    var customView by remember { mutableStateOf<View?>(null) }
+    var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    var isCustomViewShowing by remember { mutableStateOf(false) }
+    var downloadActionsVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(downloadActionsVisible, isCustomViewShowing) {
+        if (downloadActionsVisible && !isCustomViewShowing) {
+            delay(3800)
+            downloadActionsVisible = false
+        }
+    }
+
+    BackHandler(enabled = isCustomViewShowing) { customViewCallback?.onCustomViewHidden() }
+    DisposableEffect(Unit) {
+        onDispose {
+            customView?.let { view -> (activity?.window?.decorView as? FrameLayout)?.removeView(view) }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(-1, -1)
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.cacheMode = WebSettings.LOAD_DEFAULT
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    setOnTouchListener { _, event ->
+                        if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                            downloadActionsVisible = true
+                        }
+                        false
+                    }
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
+                            request?.url?.scheme != "https"
+                    }
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                            val decor = activity?.window?.decorView as? FrameLayout ?: return
+                            if (view == null) return
+                            customView?.let { decor.removeView(it) }
+                            customView = view
+                            customViewCallback = callback
+                            isCustomViewShowing = true
+                            decor.addView(view, FrameLayout.LayoutParams(-1, -1))
+                        }
+
+                        override fun onHideCustomView() {
+                            val decor = activity?.window?.decorView as? FrameLayout
+                            customView?.let { decor?.removeView(it) }
+                            customView = null
+                            customViewCallback = null
+                            isCustomViewShowing = false
+                            downloadActionsVisible = true
+                        }
+                    }
+                    val videoId = YoutubeUrls.videoId(media.mediaUri) ?: media.videoId
+                    val embedHtml = """
+                        <!doctype html><html><head>
+                        <meta name="referrer" content="strict-origin-when-cross-origin">
+                        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+                        <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}iframe{position:fixed;inset:0;width:100%;height:100%;border:0}</style>
+                        </head><body>
+                        <iframe type="text/html" src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&enablejsapi=1&rel=0&origin=https%3A%2F%2Fwww.youtube-nocookie.com&widget_referrer=https%3A%2F%2Fwww.youtube-nocookie.com%2F"
+                            referrerpolicy="strict-origin-when-cross-origin"
+                            allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+                        </body></html>
+                    """.trimIndent()
+                    loadDataWithBaseURL("https://www.youtube-nocookie.com/", embedHtml, "text/html", "UTF-8", "https://www.youtube-nocookie.com/")
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            onRelease = { view -> view.stopLoading(); view.destroy() }
+        )
+
+        if (!isCustomViewShowing) {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)
+                    .background(Color.Black.copy(alpha = .55f), CircleShape)
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
+
+            AnimatedVisibility(
+                visible = downloadActionsVisible && (onDownloadVideo != null || onDownloadPlaylist != null),
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 68.dp, end = 12.dp)
+            ) {
+                DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
+            }
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+fun NativeExoPlayer(
+    media: OfflineMedia,
+    sponsorSegments: List<SponsorSegment>,
+    pipEnabled: Boolean,
+    onClose: () -> Unit,
+    onEnterPip: () -> Unit,
+    onWebFallback: () -> Unit,
+    onDownloadVideo: (() -> Unit)? = null,
+    onDownloadPlaylist: (() -> Unit)? = null,
+    onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val trackSelector = remember(media.id) { DefaultTrackSelector(context) }
+    val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
+    val dataSourceFactory = remember(media.id) {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0 Mobile Safari/537.36")
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
+            .setAllowCrossProtocolRedirects(true)
+        DefaultDataSource.Factory(context, httpFactory).setTransferListener(bandwidthMeter)
+    }
+
+    var resolved by remember(media.id) { mutableStateOf<YoutubeStreamResolver.ResolvedMedia?>(null) }
+    var resolveError by remember(media.id) { mutableStateOf<String?>(null) }
+    var selectedHeight by remember(media.id) { mutableIntStateOf(0) }
+    var autoQuality by remember(media.id) { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(1L) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
+    var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_ZOOM) }
+    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var captionsEnabled by remember { mutableStateOf(true) }
+    var captionLanguageTag by rememberSaveable(media.id) { mutableStateOf("auto") }
+    var qualityLabel by remember { mutableStateOf("Auto") }
+    var hasCaptions by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var gestureEnabled by remember { mutableStateOf(true) }
+    var autoHideControls by remember { mutableStateOf(true) }
+    var gestureOverlayVisible by remember { mutableStateOf(false) }
+    var gestureIcon by remember { mutableStateOf(Icons.AutoMirrored.Filled.VolumeUp) }
+    var gestureValue by remember { mutableFloatStateOf(0f) }
+    var showComments by rememberSaveable(media.id) { mutableStateOf(false) }
+    var liveDubEnabled by rememberSaveable(media.id) { mutableStateOf(false) }
+    var dubSourceCode by rememberSaveable(media.id) { mutableStateOf("auto") }
+    var dubMethod by rememberSaveable(media.id) { mutableStateOf("auto") }
+    var dubTargetCode by rememberSaveable(media.id) { mutableStateOf("ur") }
+    var dubVoiceProfile by rememberSaveable(media.id) { mutableStateOf("natural") }
+    var dubOriginalVolume by rememberSaveable(media.id) { mutableFloatStateOf(0.18f) }
+    var dubStatus by remember(media.id) { mutableStateOf("Live Dub off") }
+    var currentCueText by remember(media.id) { mutableStateOf("") }
+    var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
+    var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
+    val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
+    val pcmTap = remember(media.id) {
+        PlaybackPcmTapProcessor(
+            shouldCapture = liveDubEngine::isAudioCaptureEnabled,
+            consumer = liveDubEngine::onPlaybackPcm
+        )
+    }
+
+    val exoPlayer = remember(media.id) {
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(pcmTap))
+                    .build()
+            }
+        }
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                35_000,
+                120_000,
+                1_500,
+                3_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+        ExoPlayer.Builder(context, renderersFactory)
+            .setTrackSelector(trackSelector)
+            .setBandwidthMeter(bandwidthMeter)
+            .setLoadControl(loadControl)
+            .build()
+    }
+    val mediaSession = remember(exoPlayer) {
+        MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}").build()
+    }
+    val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
+    val compactPortrait = isPortrait && !isFullscreen && !isPipMode(activity)
+
+    fun loadResolvedStream(
+        sourceMedia: YoutubeStreamResolver.ResolvedMedia,
+        requestedHeight: Int,
+        autoSelected: Boolean,
+        preservePosition: Boolean
+    ) {
+        val option = sourceMedia.options
+            .filter { it.height <= requestedHeight }
+            .maxByOrNull { it.height }
+            ?: sourceMedia.options.maxByOrNull { it.height }
+            ?: return
+        val position = if (preservePosition) exoPlayer.currentPosition else 0L
+        exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
+        selectedHeight = option.height
+        autoQuality = autoSelected
+        qualityLabel = if (autoSelected) "Auto" else "${option.height}p"
+    }
+
+    fun switchQuality(height: Int?) {
+        val sourceMedia = resolved ?: return
+        if (height == null) {
+            val target = chooseAutoHeight(context, sourceMedia.options.map { it.height }, bandwidthMeter.bitrateEstimate)
+            loadResolvedStream(sourceMedia, target, autoSelected = true, preservePosition = true)
+        } else {
+            loadResolvedStream(sourceMedia, height, autoSelected = false, preservePosition = true)
+        }
+        controlsVisible = true
+    }
+
+    fun rotatePlayer() {
+        activity ?: return
+        activity.requestedOrientation = if (isPortrait) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+        controlsVisible = true
+    }
+
+    DisposableEffect(exoPlayer, mediaSession) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+                if (!playing && !exoPlayer.playWhenReady && liveDubEnabled) liveDubEngine.pauseForPlayback()
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) {
+                    duration = exoPlayer.duration.coerceAtLeast(1L)
+                    playbackRecoveryAttempts = 0
+                    if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
+                }
+            }
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                hasCaptions = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSupported } || resolved?.subtitles?.isNotEmpty() == true
+            }
+            override fun onCues(cueGroup: CueGroup) {
+                val cue = cueGroup.cues
+                    .mapNotNull { it.text?.toString()?.trim() }
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                    .trim()
+                if (cue.isNotBlank()) {
+                    currentCueText = cue
+                    currentCuePresentationUs = cueGroup.presentationTimeUs
+                }
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT ||
+                    reason == Player.DISCONTINUITY_REASON_SKIP
+                ) {
+                    currentCueText = ""
+                    currentCuePresentationUs = -1L
+                    if (liveDubEnabled) liveDubEngine.resetForSeek()
+                }
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                val retryable = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+                if (retryable && playbackRecoveryAttempts < 2) {
+                    playbackRecoveryAttempts += 1
+                    resolveError = null
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                } else {
+                    resolveError = "Media3 playback error: ${error.errorCodeName}"
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            liveDubEngine.close()
+            mediaSession.release()
+            exoPlayer.release()
+        }
+    }
+
+    LaunchedEffect(media.id, media.mediaUri) {
+        val online = YoutubeUrls.videoId(media.mediaUri) != null
+        if (online) {
+            resolveError = null
+            try {
+                val result = YoutubeStreamResolver.resolve(context, media.mediaUri)
+                resolved = result
+                hasCaptions = result.subtitles.isNotEmpty()
+                val target = chooseAutoHeight(context, result.options.map { it.height }, bandwidthMeter.bitrateEstimate)
+                loadResolvedStream(result, target, autoSelected = true, preservePosition = false)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (t: Exception) {
+                resolveError = "Could not resolve video stream: ${t.message ?: t.javaClass.simpleName}"
+            }
+        } else {
+            if (media.mediaUri.isBlank()) {
+                resolveError = "The downloaded file is missing."
+                return@LaunchedEffect
+            }
+            val targetUri = Uri.parse(media.mediaUri)
+            val subtitleConfigurations = emptyList<SubtitleConfiguration>()
+            exoPlayer.setMediaItem(MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build())
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+            autoQuality = false
+            qualityLabel = media.qualityLabel.ifBlank { "Local" }
+        }
+    }
+
+    val activeDubSourceTag = remember(resolved, dubSourceCode) {
+        chooseDubSourceTag(resolved, dubSourceCode)
+    }
+    val captionDubbingActive = liveDubEnabled && (
+        dubMethod == "captions" || (dubMethod == "auto" && activeDubSourceTag != null)
+    )
+    val audioDubbingActive = liveDubEnabled && !captionDubbingActive
+
+    LaunchedEffect(
+        liveDubEnabled, activeDubSourceTag, dubTargetCode, dubVoiceProfile, dubMethod,
+        captionsEnabled, captionLanguageTag
+    ) {
+        if (!liveDubEnabled) {
+            liveDubEngine.stop()
+            dubStatus = "Live Dub off"
+            exoPlayer.volume = 1f
+        } else if (captionDubbingActive) {
+            val sourceTag = activeDubSourceTag
+            if (sourceTag == null) {
+                liveDubEngine.stop()
+                dubStatus = "Caption dubbing unavailable • choose Audio (Whisper)"
+            } else {
+                exoPlayer.volume = dubOriginalVolume.coerceIn(0f, 1f)
+                liveDubEngine.configure(
+                    sourceTag,
+                    dubTargetCode,
+                    dubVoiceProfile,
+                    LiveDubInputMode.CAPTIONS
+                ) { status -> dubStatus = status }
+            }
+        } else if (audioDubbingActive) {
+            val sourceHint = dubSourceCode.ifBlank { "auto" }
+            exoPlayer.volume = dubOriginalVolume.coerceIn(0f, 1f)
+            liveDubEngine.configure(
+                sourceHint,
+                dubTargetCode,
+                dubVoiceProfile,
+                LiveDubInputMode.AUDIO
+            ) { status -> dubStatus = status }
+        }
+
+        val textBuilder = exoPlayer.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !captionsEnabled && !captionDubbingActive)
+        when {
+            captionDubbingActive && activeDubSourceTag != null -> textBuilder.setPreferredTextLanguage(activeDubSourceTag)
+            captionsEnabled && captionLanguageTag != "auto" -> textBuilder.setPreferredTextLanguage(captionLanguageTag)
+            else -> textBuilder.setPreferredTextLanguage(null)
+        }
+        exoPlayer.trackSelectionParameters = textBuilder.build()
+    }
+
+    LaunchedEffect(liveDubEnabled, dubOriginalVolume) {
+        exoPlayer.volume = if (liveDubEnabled) {
+            dubOriginalVolume.coerceIn(0f, 1f)
+        } else {
+            1f
+        }
+    }
+
+    LaunchedEffect(currentCueText, currentCuePresentationUs, captionDubbingActive, activeDubSourceTag, dubTargetCode) {
+        if (captionDubbingActive && currentCueText.isNotBlank() && activeDubSourceTag != null) {
+            liveDubEngine.speak(currentCueText, currentCuePresentationUs)
+        }
+    }
+
+    // Direct YouTube URLs are discrete representations. Rebuilding Media3 every few seconds
+    // caused visible black frames and decoder churn, so Auto chooses the safest representation
+    // when playback starts (or when the user explicitly re-selects Auto) and keeps it stable.
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            currentPosition = exoPlayer.currentPosition
+            val seconds = currentPosition / 1000f
+            sponsorSegments.firstOrNull { seconds >= it.startTime && seconds < it.endTime - .1f }?.let {
+                exoPlayer.seekTo((it.endTime * 1000).toLong())
+            }
+            delay(250)
+        }
+    }
+
+    LaunchedEffect(controlsVisible, autoHideControls) {
+        if (controlsVisible && autoHideControls) {
+            delay(4200)
+            controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(gestureOverlayVisible, gestureValue) {
+        if (gestureOverlayVisible) {
+            delay(900)
+            gestureOverlayVisible = false
+        }
+    }
+
+    BackHandler(enabled = !isPipMode(activity)) {
+        when {
+            showSettings -> showSettings = false
+            showComments && compactPortrait -> showComments = false
+            isFullscreen -> isFullscreen = false
+            else -> {
+                liveDubEngine.stop()
+                exoPlayer.pause()
+                onClose()
+            }
+        }
+    }
+
+    LaunchedEffect(activity, isFullscreen) {
+        activity?.let { setFullscreen(it, isFullscreen) }
+    }
+
+    Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            modifier = if (compactPortrait) {
+                Modifier.fillMaxWidth().aspectRatio(16f / 11f).background(Color.Black)
+            } else {
+                Modifier.fillMaxSize().background(Color.Black)
+            }
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        setKeepContentOnPlayerReset(true)
+                        this.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        layoutParams = FrameLayout.LayoutParams(-1, -1)
+                    }
+                },
+                update = { view ->
+                    view.resizeMode = resizeMode
+                    view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
+                },
+                modifier = Modifier.fillMaxSize(),
+                onRelease = { view -> view.player = null }
+            )
+
+            if (gestureEnabled) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .pointerInput(gestureEnabled, duration) {
+                            detectTapGestures(
+                                onPress = { position ->
+                                    coroutineScope {
+                                        val direction = if (position.x < size.width / 2f) -1 else 1
+                                        val seekJob = launch {
+                                            delay(380)
+                                            var ticks = 0
+                                            while (isActive) {
+                                                val stepMs = if (ticks < 10) 750L else 1_250L
+                                                val target = (exoPlayer.currentPosition + direction * stepMs)
+                                                    .coerceIn(0L, duration.coerceAtLeast(0L))
+                                                exoPlayer.seekTo(target)
+                                                gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
+                                                gestureValue = (target.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                                                gestureOverlayVisible = true
+                                                controlsVisible = true
+                                                ticks++
+                                                delay(90)
+                                            }
+                                        }
+                                        tryAwaitRelease()
+                                        seekJob.cancel()
+                                    }
+                                },
+                                onTap = { controlsVisible = !controlsVisible },
+                                onDoubleTap = { position ->
+                                    val direction = if (position.x < size.width / 2f) -1 else 1
+                                    exoPlayer.seekTo(
+                                        (exoPlayer.currentPosition + direction * 10_000L)
+                                            .coerceIn(0L, duration.coerceAtLeast(0L))
+                                    )
+                                    gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
+                                    gestureValue = (exoPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                                    gestureOverlayVisible = true
+                                    controlsVisible = true
+                                }
+                            )
+                        }
+                        .pointerInput(gestureEnabled, duration) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var totalDy = 0f
+                                var dragging = false
+                                var pinching = false
+                                var pinchDistance = 0f
+                                val rightSide = down.position.x > size.width / 2f
+                                val startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                                val startBrightness = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: .5f
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.size >= 2) {
+                                        pinching = true
+                                        val previousDistance = (pressed[0].previousPosition - pressed[1].previousPosition).getDistance()
+                                        val currentDistance = (pressed[0].position - pressed[1].position).getDistance()
+                                        if (previousDistance > 1f) pinchDistance += currentDistance - previousDistance
+                                        val steps = (pinchDistance / 32f).toInt()
+                                        if (steps != 0) {
+                                            pinchDistance -= steps * 32f
+                                            exoPlayer.seekTo(
+                                                (exoPlayer.currentPosition + steps * 5_000L)
+                                                    .coerceIn(0L, duration.coerceAtLeast(0L))
+                                            )
+                                            gestureIcon = if (steps > 0) Icons.Default.FastForward else Icons.Default.FastRewind
+                                            gestureValue = (exoPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                                            gestureOverlayVisible = true
+                                            controlsVisible = true
+                                        }
+                                        pressed.forEach { it.consume() }
+                                        continue
+                                    }
+                                    if (pinching && pressed.isEmpty()) break
+                                    if (pinching) continue
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    val dy = change.position.y - change.previousPosition.y
+                                    totalDy += dy
+                                    if (!dragging && kotlin.math.abs(totalDy) > 12f) {
+                                        dragging = true
+                                        gestureOverlayVisible = true
+                                        controlsVisible = true
+                                    }
+                                    if (dragging) {
+                                        change.consume()
+                                        val fraction = (-totalDy / size.height.toFloat()).coerceIn(-1f, 1f)
+                                        if (rightSide) {
+                                            val value = (startVolume + fraction * maxVolume).toInt().coerceIn(0, maxVolume)
+                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0)
+                                            gestureIcon = if (value == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
+                                            gestureValue = value / maxVolume.toFloat()
+                                        } else {
+                                            val value = (startBrightness + fraction).coerceIn(.01f, 1f)
+                                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = value }
+                                            gestureIcon = Icons.Default.Brightness6
+                                            gestureValue = value
+                                        }
+                                    }
+                                }
+                                gestureOverlayVisible = false
+                            }
+                        }
+                )
+            }
+
+            if (gestureOverlayVisible) {
+                Surface(
+                    color = Color.Black.copy(alpha = .78f),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.align(Alignment.Center).width(180.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(22.dp)) {
+                        Icon(gestureIcon, null, tint = TubeDeckAccentCyan, modifier = Modifier.size(52.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            when (gestureIcon) {
+                                Icons.Default.Brightness6 -> "Brightness"
+                                Icons.Default.FastForward -> "Forward"
+                                Icons.Default.FastRewind -> "Rewind"
+                                else -> "Volume"
+                            },
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { gestureValue },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                        )
+                    }
+                }
+            }
+
+            FadeVisibility(visible = controlsVisible) {
+                Box(
+                    Modifier.fillMaxSize()
+                        .background(Color.Black.copy(alpha = .35f))
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            liveDubEngine.stop()
+                            exoPlayer.pause()
+                            onClose()
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${if (autoQuality) "Auto • ${selectedHeight}p" else qualityLabel} • ${playbackSpeed}x • ${resizeModeLabel(resizeMode)}${if (liveDubEnabled) " • Dub ${LiveDubLanguages.label(dubTargetCode)}" else ""}",
+                                color = Color.White.copy(alpha = .72f),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = ::rotatePlayer) {
+                            Icon(Icons.Default.ScreenRotation, "Rotate portrait/landscape", tint = Color.White)
+                        }
+                        if (!compactPortrait) {
+                            IconButton(onClick = {
+                                if (pipEnabled) {
+                                    isFullscreen = false
+                                    activity?.let { setFullscreen(it, false) }
+                                    onEnterPip()
+                                } else {
+                                    Toast.makeText(context, "PiP is disabled in Settings", Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Icon(Icons.Default.PictureInPictureAlt, "Picture in picture", tint = Color.White) }
+                        }
+                        IconButton(onClick = { isFullscreen = !isFullscreen }) {
+                            Icon(
+                                if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Settings, "Player settings", tint = Color.White)
+                        }
+                    }
+
+                    if (!compactPortrait && (onDownloadVideo != null || onDownloadPlaylist != null)) {
+                        Box(
+                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 54.dp, end = 8.dp)
+                        ) {
+                            DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
+                        }
+                    }
+
+                    Row(
+                        Modifier.align(Alignment.Center),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 18.dp else 30.dp)
+                    ) {
+                        HoldSeekButton(Icons.Default.FastRewind, "Reverse", -1, exoPlayer, duration)
+                        Surface(
+                            onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
+                            shape = CircleShape,
+                            color = TubeDeckAccentCyan,
+                            modifier = Modifier.size(if (compactPortrait) 64.dp else 78.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    "Play/Pause",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(if (compactPortrait) 38.dp else 44.dp)
+                                )
+                            }
+                        }
+                        HoldSeekButton(Icons.Default.FastForward, "Fast forward", 1, exoPlayer, duration)
+                    }
+
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        // Keep auxiliary actions above the timeline in compact portrait mode so
+                        // the seek bar itself stays anchored to the physical bottom edge of video.
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            TextButton(onClick = { playbackSpeed = cycleSpeed(exoPlayer); controlsVisible = true }) {
+                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                            TextButton(onClick = { showSettings = true; controlsVisible = true }) {
+                                Text(if (autoQuality) "Auto" else qualityLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                            TextButton(onClick = {
+                                resizeMode = nextResizeMode(resizeMode)
+                                controlsVisible = true
+                            }) {
+                                Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                            IconButton(
+                                onClick = {
+                                    captionsEnabled = !captionsEnabled
+                                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !captionsEnabled && !captionDubbingActive)
+                                        .build()
+                                    controlsVisible = true
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ClosedCaption,
+                                    "Captions",
+                                    tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    liveDubEnabled = !liveDubEnabled
+                                    controlsVisible = true
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.RecordVoiceOver,
+                                    "Live Dub",
+                                    tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDuration(currentPosition), color = Color.White, fontSize = 11.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 11.sp)
+                        }
+                        Slider(
+                            value = if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                            onValueChange = { exoPlayer.seekTo((it * duration).toLong()) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 22.dp)
+                        )
+                    }
+                }
+            }
+
+            if (resolveError != null) {
+                Surface(
+                    color = Color.Black.copy(alpha = .92f),
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(42.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("Native stream unavailable", color = Color.White, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Text(resolveError.orEmpty(), color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                        Spacer(Modifier.height(12.dp))
+                        if (YoutubeUrls.videoId(media.mediaUri) != null) {
+                            Text("The web player may work for this video.", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                            TextButton(onClick = onWebFallback) { Text("Open web player") }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (compactPortrait) {
+            PortraitCompanionPanel(
+                media = media,
+                showComments = showComments,
+                commentsAvailable = youtubeVideo,
+                onToggleComments = { showComments = !showComments },
+                onEnterPip = {
+                    if (pipEnabled) onEnterPip()
+                    else Toast.makeText(context, "PiP is disabled in Settings", Toast.LENGTH_SHORT).show()
+                },
+                downloadActionsVisible = controlsVisible,
+                onDownloadVideo = onDownloadVideo,
+                onDownloadPlaylist = onDownloadPlaylist,
+                relatedVideos = resolved?.relatedVideos.orEmpty(),
+                onPlayRelated = onPlayRelated,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
+        }
+    }
+
+    if (showSettings) {
+        PlayerSettingsDialog(
+            captionsEnabled = captionsEnabled,
+            hasCaptions = hasCaptions,
+            gestureEnabled = gestureEnabled,
+            autoHideControls = autoHideControls,
+            fullscreen = isFullscreen,
+            qualityOptions = resolved?.options?.map { it.height }?.distinct()?.sortedDescending().orEmpty(),
+            currentQuality = qualityLabel,
+            autoQuality = autoQuality,
+            resizeMode = resizeMode,
+            liveDubEnabled = liveDubEnabled,
+            dubSourceCode = dubSourceCode,
+            dubMethod = dubMethod,
+            captionLanguageTag = captionLanguageTag,
+            dubTargetCode = dubTargetCode,
+            dubVoiceProfile = dubVoiceProfile,
+            dubOriginalVolume = dubOriginalVolume,
+            dubStatus = dubStatus,
+            availableSubtitles = resolved?.subtitles.orEmpty(),
+            onLiveDub = { liveDubEnabled = it },
+            onDubMethod = { dubMethod = it },
+            onCaptionLanguage = { tag ->
+                captionLanguageTag = tag
+                if (tag != "auto") captionsEnabled = true
+            },
+            onDubSource = { dubSourceCode = it },
+            onDubTarget = { dubTargetCode = it },
+            onDubVoiceProfile = { dubVoiceProfile = it; liveDubEngine.setVoiceProfile(it) },
+            onDubOriginalVolume = { dubOriginalVolume = it },
+            onCaptions = { enabled ->
+                captionsEnabled = enabled
+                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled && !captionDubbingActive)
+                    .build()
+            },
+            onGestures = { gestureEnabled = it },
+            onAutoHide = { autoHideControls = it },
+            onQuality = { height -> switchQuality(height) },
+            onResizeMode = { resizeMode = it },
+            onRotate = ::rotatePlayer,
+            onFullscreen = { isFullscreen = it },
+            onPip = {
+                if (pipEnabled) {
+                    isFullscreen = false
+                    activity?.let { setFullscreen(it, false) }
+                    onEnterPip()
+                } else {
+                    Toast.makeText(context, "PiP is disabled in Settings", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showSettings = false }
+        )
+    }
+}
+
+@Composable
+private fun DownloadActionStrip(
+    onDownloadVideo: (() -> Unit)?,
+    onDownloadPlaylist: (() -> Unit)?
+) {
+    Surface(
+        color = Color.Black.copy(alpha = .64f),
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            onDownloadVideo?.let { action ->
+                IconButton(onClick = action, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.Download, "Download this video", tint = TubeDeckAccentCyan, modifier = Modifier.size(21.dp))
+                }
+            }
+            onDownloadPlaylist?.let { action ->
+                IconButton(onClick = action, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.PlaylistAdd, "Choose playlist videos", tint = TubeDeckAccentMint, modifier = Modifier.size(21.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortraitCompanionPanel(
+    media: OfflineMedia,
+    showComments: Boolean,
+    commentsAvailable: Boolean,
+    onToggleComments: () -> Unit,
+    onEnterPip: () -> Unit,
+    downloadActionsVisible: Boolean,
+    onDownloadVideo: (() -> Unit)?,
+    onDownloadPlaylist: (() -> Unit)?,
+    relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    onPlayRelated: ((OfflineMedia) -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    var comments by remember(media.id) { mutableStateOf<List<YoutubeStreamResolver.NativeComment>>(emptyList()) }
+    var commentsLoading by remember(media.id) { mutableStateOf(false) }
+    var commentsLoaded by remember(media.id) { mutableStateOf(false) }
+    var commentsError by remember(media.id) { mutableStateOf<String?>(null) }
+
+    fun refreshComments() {
+        commentsLoaded = false
+        commentsError = null
+    }
+
+    LaunchedEffect(showComments, media.mediaUri, commentsLoaded) {
+        if (!showComments || !commentsAvailable || commentsLoaded || commentsLoading) return@LaunchedEffect
+        commentsLoading = true
+        commentsError = null
+        try {
+            comments = YoutubeStreamResolver.comments(media.mediaUri)
+            commentsLoaded = true
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (t: Throwable) {
+            commentsError = t.message ?: "Comments are temporarily unavailable"
+            commentsLoaded = true
+        } finally {
+            commentsLoading = false
+        }
+    }
+
+    Column(modifier = modifier.background(TubeDeckSurface)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("Portrait player", color = TubeDeckTextSecondary, fontSize = 11.sp)
+            }
+            if (commentsAvailable) {
+                FilledTonalButton(
+                    onClick = onToggleComments,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+                ) {
+                    Icon(if (showComments) Icons.Default.Close else Icons.Default.Comment, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (showComments) "Hide comments" else "Comments", fontSize = 12.sp)
+                }
+                if (showComments) {
+                    IconButton(onClick = ::refreshComments, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Default.Refresh, "Refresh comments", tint = TubeDeckTextSecondary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            IconButton(onClick = onEnterPip) {
+                Icon(Icons.Default.PictureInPictureAlt, "Picture in picture", tint = Color.White)
+            }
+        }
+
+        if (onDownloadVideo != null || onDownloadPlaylist != null) {
+            AnimatedVisibility(
+                visible = downloadActionsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
+                }
+            }
+        }
+
+        HorizontalDivider(color = TubeDeckBorder)
+
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            when {
+                showComments && commentsLoading -> {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text("Loading comments…", color = TubeDeckTextSecondary, fontSize = 12.sp)
+                    }
+                }
+
+                showComments && commentsError != null -> {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Comments unavailable", color = Color.White, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(5.dp))
+                        Text(commentsError.orEmpty(), color = TubeDeckTextSecondary, fontSize = 11.sp)
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(onClick = ::refreshComments) { Text("Retry") }
+                    }
+                }
+
+                showComments -> {
+                    if (comments.isEmpty()) {
+                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopStart) {
+                            Text("No comments are available for this video.", color = TubeDeckTextSecondary, fontSize = 13.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(comments, key = { it.id }) { comment ->
+                                NativeCommentRow(comment)
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    if (relatedVideos.isEmpty()) {
+                        Column(
+                            Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(
+                                if (commentsAvailable) "Related videos will appear here when available. Tap Comments for the discussion."
+                                else "Related videos are unavailable for this item.",
+                                color = TubeDeckTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            item { Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                            items(relatedVideos, key = { "related-${it.videoId}" }) { related ->
+                                RelatedVideoRow(related) {
+                                    onPlayRelated?.invoke(
+                                        OfflineMedia(
+                                            id = "related-${related.videoId}-${System.nanoTime()}",
+                                            title = related.title,
+                                            videoId = related.videoId,
+                                            thumbnailUrl = related.thumbnailUrl,
+                                            mediaUri = related.url
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelatedVideoRow(
+    video: YoutubeStreamResolver.RelatedVideo,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = true, onClick = onClick),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(modifier = Modifier.width(150.dp).aspectRatio(16f / 9f)) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+            )
+            if (video.durationSeconds > 0L) {
+                Surface(
+                    color = Color.Black.copy(alpha = .82f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                ) {
+                    Text(formatDuration(video.durationSeconds * 1000L), color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                }
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(video.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+        }
+        Icon(Icons.Default.MoreVert, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun NativeCommentRow(comment: YoutubeStreamResolver.NativeComment) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    comment.author.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    comment.author,
+                    color = Color.White,
+                    fontWeight = if (comment.channelOwner) FontWeight.Bold else FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (comment.pinned) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("Pinned", color = TubeDeckAccentCyan, fontSize = 9.sp)
+                }
+                if (comment.publishedText.isNotBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(comment.publishedText, color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+            }
+            Text(comment.text, color = Color.White.copy(alpha = .92f), fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (comment.likeText.isNotBlank()) {
+                    Icon(Icons.Default.ThumbUp, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(comment.likeText, color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+                if (comment.replyCount > 0) {
+                    if (comment.likeText.isNotBlank()) Spacer(Modifier.width(14.dp))
+                    Icon(Icons.Default.ChatBubbleOutline, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("${comment.replyCount} replies", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerSettingsDialog(
+    captionsEnabled: Boolean,
+    hasCaptions: Boolean,
+    gestureEnabled: Boolean,
+    autoHideControls: Boolean,
+    fullscreen: Boolean,
+    qualityOptions: List<Int>,
+    currentQuality: String,
+    autoQuality: Boolean,
+    resizeMode: Int,
+    liveDubEnabled: Boolean,
+    dubSourceCode: String,
+    dubMethod: String,
+    captionLanguageTag: String,
+    dubTargetCode: String,
+    dubVoiceProfile: String,
+    dubOriginalVolume: Float,
+    dubStatus: String,
+    availableSubtitles: List<YoutubeStreamResolver.Subtitle>,
+    onLiveDub: (Boolean) -> Unit,
+    onDubMethod: (String) -> Unit,
+    onCaptionLanguage: (String) -> Unit,
+    onDubSource: (String) -> Unit,
+    onDubTarget: (String) -> Unit,
+    onDubVoiceProfile: (String) -> Unit,
+    onDubOriginalVolume: (Float) -> Unit,
+    onCaptions: (Boolean) -> Unit,
+    onGestures: (Boolean) -> Unit,
+    onAutoHide: (Boolean) -> Unit,
+    onQuality: (Int?) -> Unit,
+    onResizeMode: (Int) -> Unit,
+    onRotate: () -> Unit,
+    onFullscreen: (Boolean) -> Unit,
+    onPip: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Player settings") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Gestures", Modifier.weight(1f))
+                    Switch(gestureEnabled, onGestures)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Auto-hide controls", Modifier.weight(1f))
+                    Switch(autoHideControls, onAutoHide)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (hasCaptions) "Captions" else "Captions unavailable", Modifier.weight(1f))
+                    Switch(captionsEnabled, onCaptions, enabled = hasCaptions)
+                }
+                if (hasCaptions) {
+                    var captionMenuExpanded by remember { mutableStateOf(false) }
+                    Text("Caption language", fontWeight = FontWeight.SemiBold)
+                    Box {
+                        OutlinedButton(onClick = { captionMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                if (captionLanguageTag == "auto") "Auto"
+                                else availableSubtitles.firstOrNull { it.languageTag == captionLanguageTag }?.displayName
+                                    ?: captionLanguageTag
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Icon(Icons.Default.ArrowDropDown, null)
+                        }
+                        DropdownMenu(expanded = captionMenuExpanded, onDismissRequest = { captionMenuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Auto") },
+                                onClick = { captionMenuExpanded = false; onCaptionLanguage("auto") }
+                            )
+                            availableSubtitles.distinctBy { it.languageTag + ":" + it.autoGenerated }.forEach { subtitle ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            subtitle.displayName + if (subtitle.autoGenerated) " • Auto-generated" else ""
+                                        )
+                                    },
+                                    onClick = { captionMenuExpanded = false; onCaptionLanguage(subtitle.languageTag) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Live Dub", fontWeight = FontWeight.Bold)
+                        Text("Choose stable caption dubbing or native Whisper audio recognition", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(liveDubEnabled, onLiveDub)
+                }
+                Text(dubStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                var dubMethodMenuExpanded by remember { mutableStateOf(false) }
+                Text("Dubbing method", fontWeight = FontWeight.SemiBold)
+                Box {
+                    val methodLabel = when (dubMethod) {
+                        "audio" -> "Audio (Whisper)"
+                        "captions" -> "Captions"
+                        else -> "Auto • prefer captions"
+                    }
+                    OutlinedButton(onClick = { dubMethodMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(methodLabel)
+                        Spacer(Modifier.weight(1f))
+                        Icon(Icons.Default.ArrowDropDown, null)
+                    }
+                    DropdownMenu(expanded = dubMethodMenuExpanded, onDismissRequest = { dubMethodMenuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Auto • prefer captions") },
+                            onClick = { dubMethodMenuExpanded = false; onDubMethod("auto") }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Captions") },
+                            onClick = { dubMethodMenuExpanded = false; onDubMethod("captions") }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Audio (Whisper)") },
+                            onClick = { dubMethodMenuExpanded = false; onDubMethod("audio") }
+                        )
+                    }
+                }
+
+                Text("Dub source", fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = dubSourceCode == "auto",
+                        onClick = { onDubSource("auto") },
+                        label = { Text("Auto") }
+                    )
+                    LiveDubLanguages.supported.forEach { lang ->
+                        val present = availableSubtitles.any { it.languageTag.substringBefore('-').equals(lang.code, ignoreCase = true) }
+                        FilterChip(
+                            selected = dubSourceCode == lang.code,
+                            onClick = { onDubSource(lang.code) },
+                            enabled = true,
+                            label = { Text(lang.label) }
+                        )
+                    }
+                }
+
+                Text("Dub target", fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    LiveDubLanguages.supported.forEach { lang ->
+                        FilterChip(
+                            selected = dubTargetCode == lang.code,
+                            onClick = { onDubTarget(lang.code) },
+                            label = { Text(lang.label) }
+                        )
+                    }
+                }
+
+                Text("Voice profile", fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    LiveDubVoiceProfiles.supported.forEach { voice ->
+                        FilterChip(
+                            selected = dubVoiceProfile == voice.id,
+                            onClick = { onDubVoiceProfile(voice.id) },
+                            label = { Text(voice.label) }
+                        )
+                    }
+                }
+
+                Text("Original audio while dubbing: ${(dubOriginalVolume * 100).toInt()}%", fontSize = 12.sp)
+                Slider(
+                    value = dubOriginalVolume,
+                    onValueChange = onDubOriginalVolume,
+                    valueRange = 0f..0.45f
+                )
+                Text(
+                    "Supported both ways: English, Urdu, Hindi, Arabic, Spanish, French, German, Portuguese, Russian and Chinese.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider()
+                Text("Quality", fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(selected = autoQuality, onClick = { onQuality(null) }, label = { Text("Auto") })
+                    qualityOptions.forEach { h ->
+                        FilterChip(
+                            selected = !autoQuality && currentQuality == "${h}p",
+                            onClick = { onQuality(h) },
+                            label = { Text("${h}p") }
+                        )
+                    }
+                }
+
+                Text("Video size / aspect", fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
+                        AspectRatioFrameLayout.RESIZE_MODE_FILL to "Stretch"
+                    ).forEach { (mode, label) ->
+                        FilterChip(selected = resizeMode == mode, onClick = { onResizeMode(mode) }, label = { Text(label) })
+                    }
+                }
+
+                OutlinedButton(onClick = onRotate, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.ScreenRotation, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Switch portrait / landscape")
+                }
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Fullscreen", Modifier.weight(1f))
+                    Switch(fullscreen, onFullscreen)
+                }
+                Button(onClick = onPip, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.PictureInPictureAlt, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Enter Picture-in-Picture")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun HoldSeekButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    direction: Int,
+    exoPlayer: ExoPlayer,
+    duration: Long
+) {
+    var holding by remember { mutableStateOf(false) }
+    LaunchedEffect(holding) {
+        while (holding) {
+            val target = exoPlayer.currentPosition + direction * 350L
+            exoPlayer.seekTo(target.coerceIn(0L, duration.coerceAtLeast(0L)))
+            delay(60)
+        }
+    }
+    IconButton(
+        onClick = {
+            val target = exoPlayer.currentPosition + direction * 10_000L
+            exoPlayer.seekTo(target.coerceIn(0L, duration.coerceAtLeast(0L)))
+        },
+        modifier = Modifier.pointerInput(direction, duration) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val releasedQuickly = withTimeoutOrNull(450L) { waitForUpOrCancellation() } != null
+                if (!releasedQuickly) {
+                    holding = true
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                    }
+                    holding = false
+                }
+            }
+        }
+    ) {
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(50.dp))
+    }
+}
+
+@Composable
+private fun FadeVisibility(
+    visible: Boolean,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+        content()
+    }
+}
+
+private fun chooseDubSourceTag(
+    resolved: YoutubeStreamResolver.ResolvedMedia?,
+    requestedCode: String
+): String? {
+    val subtitles = resolved?.subtitles.orEmpty()
+    if (requestedCode != "auto") {
+        return subtitles.firstOrNull {
+            it.languageTag.substringBefore('-').equals(requestedCode, ignoreCase = true)
+        }?.languageTag ?: requestedCode
+    }
+    if (subtitles.isEmpty()) return null
+
+    // Prefer a human-created supported track, then an auto-generated supported track. English
+    // is not forced, so the video's original-language captions can remain the source whenever
+    // the extractor exposes them first.
+    return subtitles.firstOrNull { !it.autoGenerated && LiveDubLanguages.byCode(it.languageTag) != null }?.languageTag
+        ?: subtitles.firstOrNull { LiveDubLanguages.byCode(it.languageTag) != null }?.languageTag
+}
+
+private fun isPipMode(activity: Activity?): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        activity?.isInPictureInPictureMode == true
+    } else {
+        false
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun buildResolvedSource(
+    factory: DefaultDataSource.Factory,
+    resolved: YoutubeStreamResolver.ResolvedMedia,
+    requestedHeight: Int
+): MediaSource {
+    val option = resolved.options.filter { it.height <= requestedHeight }.maxByOrNull { it.height }
+        ?: resolved.options.maxByOrNull { it.height }
+        ?: throw IllegalStateException("No playable video stream was extracted")
+    val subtitles = resolved.subtitles.map { subtitle ->
+        SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
+            .setMimeType(subtitle.mimeType)
+            .setLanguage(subtitle.languageTag)
+            .setLabel(subtitle.displayName)
+            .build()
+    }
+    val videoItem = MediaItem.Builder()
+        .setUri(Uri.parse(option.videoUrl))
+        .setSubtitleConfigurations(subtitles)
+        .build()
+    // DefaultMediaSourceFactory is responsible for merging side-loaded subtitle sources.
+    val videoSource = DefaultMediaSourceFactory(factory).createMediaSource(videoItem)
+    val audioUrl = option.audioUrl
+    if (audioUrl.isNullOrBlank()) return videoSource
+    val audioItem = MediaItem.fromUri(Uri.parse(audioUrl))
+    val audioSource = ProgressiveMediaSource.Factory(factory).createMediaSource(audioItem)
+    return MergingMediaSource(videoSource, audioSource)
+}
+
+private fun chooseAutoHeight(context: Context, heights: List<Int>, measuredBitrate: Long): Int {
+    if (heights.isEmpty()) return 720
+    val available = heights.distinct().sorted()
+    val connectionEstimate = runCatching {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork ?: return@runCatching 0L
+        val capabilities = manager.getNetworkCapabilities(network) ?: return@runCatching 0L
+        val linkEstimate = capabilities.linkDownstreamBandwidthKbps.toLong().coerceAtLeast(0L) * 1000L
+        when {
+            linkEstimate > 0L -> linkEstimate
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 5_000_000L
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 12_000_000L
+            else -> 7_000_000L
+        }
+    }.getOrDefault(0L)
+
+    val measured = measuredBitrate.takeIf { it in 250_000L..500_000_000L } ?: 0L
+    val estimate = when {
+        measured > 0L && connectionEstimate > 0L -> minOf(measured, connectionEstimate)
+        measured > 0L -> measured
+        connectionEstimate > 0L -> connectionEstimate
+        else -> 6_000_000L
+    }
+    val budget = (estimate * 0.68).toLong()
+    val targetHeight = when {
+        budget >= 35_000_000L -> 4320
+        budget >= 16_000_000L -> 2160
+        budget >= 8_000_000L -> 1440
+        budget >= 4_500_000L -> 1080
+        budget >= 2_500_000L -> 720
+        budget >= 1_200_000L -> 480
+        budget >= 650_000L -> 360
+        budget >= 350_000L -> 240
+        else -> 144
+    }
+    return available.filter { it <= targetHeight }.maxOrNull() ?: available.first()
+}
+
+private fun nextResizeMode(current: Int): Int = when (current) {
+    AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+}
+
+private fun resizeModeLabel(mode: Int): String = when (mode) {
+    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom"
+    AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Stretch"
+    else -> "Fit"
+}
+
+private fun cycleSpeed(player: ExoPlayer): Float {
+    val speeds = floatArrayOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+    val next = speeds.firstOrNull { it > player.playbackParameters.speed + 0.001f } ?: speeds.first()
+    player.setPlaybackSpeed(next)
+    return next
+}
+
+private fun setFullscreen(activity: Activity, fullscreen: Boolean) {
+    val window = activity.window
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    val controller = WindowCompat.getInsetsController(window, window.decorView)
+    controller.systemBarsBehavior =
+        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+    if (fullscreen) {
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+    } else {
+        controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+}
+
+private fun formatDuration(millis: Long): String {
+    val totalSeconds = (millis / 1000).coerceAtLeast(0)
+    return String.format(Locale.US, "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+}

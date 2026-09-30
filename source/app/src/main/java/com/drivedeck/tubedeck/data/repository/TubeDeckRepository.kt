@@ -1,0 +1,499 @@
+package com.drivedeck.tubedeck.data.repository
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import com.drivedeck.tubedeck.data.model.*
+import com.drivedeck.tubedeck.player.YoutubeStreamResolver
+import com.drivedeck.tubedeck.player.YoutubeUrls
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.UUID
+
+/** Application-scoped queue. Interrupted work restarts on the next app launch. */
+class TubeDeckRepository private constructor(private val context: Context) {
+    companion object {
+        @Volatile private var instance: TubeDeckRepository? = null
+        fun get(context: Context): TubeDeckRepository =
+            instance ?: synchronized(this) {
+                instance ?: TubeDeckRepository(context.applicationContext).also { instance = it }
+            }
+    }
+
+    private val prefs: SharedPreferences = context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val lock = Any()
+    private val activeJobs = mutableMapOf<String, Job>()
+    private var sponsorJob: Job? = null
+    private var activeSponsorId: String? = null
+
+    private val _settings = MutableStateFlow(loadSettings())
+    val settings: StateFlow<TubeDeckSettings> = _settings.asStateFlow()
+    private val _blockedAdsCount = MutableStateFlow(prefs.getInt("blocked_ads_count", 0))
+    val blockedAdsCount: StateFlow<Int> = _blockedAdsCount.asStateFlow()
+    private val _downloadQueue = MutableStateFlow(loadQueue())
+    val downloadQueue: StateFlow<List<DownloadTask>> = _downloadQueue.asStateFlow()
+    private val _offlineMediaList = MutableStateFlow(loadOfflineMedia())
+    val offlineMediaList: StateFlow<List<OfflineMedia>> = _offlineMediaList.asStateFlow()
+    private val _downloadHistory = MutableStateFlow(loadHistory())
+    val downloadHistory: StateFlow<List<DownloadTask>> = _downloadHistory.asStateFlow()
+    private val _watchHistory = MutableStateFlow(loadWatchHistory())
+    val watchHistory: StateFlow<List<HomeVideo>> = _watchHistory.asStateFlow()
+    private val _homeSuggestions = MutableStateFlow(loadHomeSuggestions())
+    val homeSuggestions: StateFlow<List<HomeVideo>> = _homeSuggestions.asStateFlow()
+    private val _currentSponsorSegments = MutableStateFlow<List<SponsorSegment>>(emptyList())
+    val currentSponsorSegments: StateFlow<List<SponsorSegment>> = _currentSponsorSegments.asStateFlow()
+
+    init {
+        processQueue()
+        _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
+    }
+
+    fun updateSettings(value: TubeDeckSettings) {
+        val next = value.copy(maxConcurrent = value.maxConcurrent.coerceIn(1, 32))
+        _settings.value = next
+        prefs.edit().apply {
+            putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
+            putInt("maxConcurrent", next.maxConcurrent)
+            putString("instantMode", next.instantMode.name); putString("instantQuality", next.instantQuality)
+            putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
+            putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
+            putString("playerMode", next.playerMode.name)
+            putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
+            putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
+            putBoolean("adBlockEnabled", next.adBlockEnabled); putBoolean("blockVideoAds", next.blockVideoAds)
+            putBoolean("blockBannerAds", next.blockBannerAds)
+            putBoolean("blockTrackers", next.blockTrackers); putBoolean("sponsorBlockEnabled", next.sponsorBlockEnabled)
+            putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
+            apply()
+        }
+        processQueue()
+    }
+
+    private fun loadSettings() = TubeDeckSettings(
+        downloadDir = prefs.getString("downloadDir", "MyTube")?.takeIf { it.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) } ?: "MyTube",
+        downloadTreeUri = prefs.getString("downloadTreeUri", null),
+        maxConcurrent = prefs.getInt("maxConcurrent", 2).coerceIn(1, 32),
+        instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
+        instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
+        customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),
+        customQuality = prefs.getString("customQuality", "Best") ?: "Best",
+        playlistMode = enumValue(prefs.getString("playlistMode", null), DownloadMode.VIDEO),
+        playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
+        playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
+        fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
+        fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),
+        adBlockEnabled = prefs.getBoolean("adBlockEnabled", true),
+        blockVideoAds = prefs.getBoolean("blockVideoAds", true),
+        blockBannerAds = prefs.getBoolean("blockBannerAds", true),
+        blockTrackers = prefs.getBoolean("blockTrackers", false),
+        sponsorBlockEnabled = prefs.getBoolean("sponsorBlockEnabled", true),
+        blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
+        pipEnabled = prefs.getBoolean("pipEnabled", true)
+    )
+
+    private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T): T =
+        runCatching { enumValueOf<T>(value ?: fallback.name) }.getOrDefault(fallback)
+
+    fun extractVideoId(url: String): String? = YoutubeUrls.videoId(url)
+    fun getVideoThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+    fun recordWatch(media: OfflineMedia) {
+        val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        if (videoId.isBlank() || YoutubeUrls.videoId(media.mediaUri) == null) return
+        val item = HomeVideo(
+            videoId = videoId,
+            title = media.title.ifBlank { "YouTube video" },
+            url = media.mediaUri,
+            thumbnailUrl = media.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
+            watchedAt = System.currentTimeMillis()
+        )
+        val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(40)
+        _watchHistory.value = next
+        saveHomeVideos("watch_history_json", next)
+        refreshHomeSuggestions(media.mediaUri)
+    }
+
+    fun clearWatchHistory() {
+        _watchHistory.value = emptyList()
+        prefs.edit().remove("watch_history_json").apply()
+    }
+
+    fun refreshHomeSuggestions(seedUrl: String? = _watchHistory.value.firstOrNull()?.url) {
+        val url = seedUrl?.takeIf { YoutubeUrls.videoId(it) != null } ?: return
+        scope.launch {
+            try {
+                val resolved = YoutubeStreamResolver.resolve(context, url)
+                val suggestions = resolved.relatedVideos.map { item ->
+                    HomeVideo(
+                        videoId = item.videoId,
+                        title = item.title,
+                        url = item.url,
+                        thumbnailUrl = item.thumbnailUrl,
+                        channelTitle = item.channelTitle,
+                        durationText = formatDurationLabel(item.durationSeconds),
+                        watchedAt = 0L
+                    )
+                }.distinctBy { it.videoId }.take(30)
+                if (suggestions.isNotEmpty()) {
+                    _homeSuggestions.value = suggestions
+                    saveHomeVideos("home_suggestions_json", suggestions)
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Throwable) {
+                // Keep the last cached recommendation shelf when YouTube extraction is unavailable.
+            }
+        }
+    }
+
+    suspend fun fetchDownloadChoices(url: String): DownloadChoices {
+        val media = YoutubeStreamResolver.resolve(context, url)
+        return DownloadChoices(
+            media.downloadOptions.map { it.label }.distinct(),
+            media.audioOptions.isNotEmpty()
+        )
+    }
+
+    suspend fun fetchPlaylistItems(url: String): List<PlaylistItem> =
+        YoutubeStreamResolver.playlistItems(url).mapNotNull { item ->
+            val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
+            PlaylistItem(
+                videoId = id, title = item.name, channel = item.uploaderName ?: "YouTube",
+                duration = if (item.duration > 0) "${item.duration / 60}:${(item.duration % 60).toString().padStart(2, '0')}" else "",
+                thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: getVideoThumbnail(id)
+            )
+        }.distinctBy { it.videoId }
+
+    fun incrementBlockedAds(count: Int = 1) {
+        _blockedAdsCount.value += count
+        prefs.edit().putInt("blocked_ads_count", _blockedAdsCount.value).apply()
+    }
+    fun resetBlockedAdsCount() {
+        _blockedAdsCount.value = 0
+        prefs.edit().putInt("blocked_ads_count", 0).apply()
+    }
+
+    fun fetchSponsorSegments(videoId: String) {
+        sponsorJob?.cancel()
+        activeSponsorId = videoId.takeIf { it.isNotBlank() && _settings.value.sponsorBlockEnabled }
+        _currentSponsorSegments.value = emptyList()
+        if (activeSponsorId == null) return
+        sponsorJob = scope.launch {
+            val categories = "[\"sponsor\",\"selfpromo\",\"interaction\",\"intro\",\"outro\",\"preview\"]"
+            val url = URL("https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=${URLEncoder.encode(categories, "UTF-8")}")
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5000; readTimeout = 5000
+                }
+                val segments = if (connection.responseCode == 200) {
+                    val array = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+                    List(array.length()) { index ->
+                        val item = array.getJSONObject(index)
+                        val span = item.getJSONArray("segment")
+                        SponsorSegment(item.getString("category"), span.getDouble(0).toFloat(), span.getDouble(1).toFloat())
+                    }
+                } else emptyList()
+                if (activeSponsorId == videoId && isActive) _currentSponsorSegments.value = segments
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                if (activeSponsorId == videoId) _currentSponsorSegments.value = emptyList()
+            } finally { connection?.disconnect() }
+        }
+    }
+
+    fun enqueueDownload(
+        url: String, title: String? = null,
+        mode: DownloadMode = _settings.value.instantMode,
+        quality: String = _settings.value.instantQuality
+    ): String {
+        val videoId = YoutubeUrls.videoId(url) ?: throw IllegalArgumentException("Open a valid YouTube video first")
+        val task = DownloadTask(
+            id = UUID.randomUUID().toString(), url = url, videoId = videoId,
+            title = title ?: "Video $videoId", thumbnailUrl = getVideoThumbnail(videoId),
+            mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
+            outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM"
+        )
+        synchronized(lock) { setQueue(_downloadQueue.value + task) }
+        processQueue()
+        return task.id
+    }
+
+    fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String) {
+        val tasks = items.filter { it.isSelected }.mapNotNull { item ->
+            val url = "https://www.youtube.com/watch?v=${item.videoId}"
+            val videoId = YoutubeUrls.videoId(url) ?: return@mapNotNull null
+            DownloadTask(
+                id = UUID.randomUUID().toString(), url = url, videoId = videoId,
+                title = item.title, thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
+                mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
+                outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM"
+            )
+        }
+        if (tasks.isEmpty()) return
+        synchronized(lock) { setQueue(_downloadQueue.value + tasks) }
+        processQueue()
+    }
+
+    private fun processQueue() {
+        val toStart = mutableListOf<Job>()
+        synchronized(lock) {
+            while (activeJobs.size < _settings.value.maxConcurrent) {
+                val next = _downloadQueue.value.firstOrNull { it.status == TaskStatus.QUEUED && it.id !in activeJobs } ?: break
+                updateTask(next.id) { it.copy(status = TaskStatus.DOWNLOADING, speed = "Resolving…") }
+                val job = scope.launch(start = CoroutineStart.LAZY) { runTask(next.id) }
+                activeJobs[next.id] = job
+                job.invokeOnCompletion {
+                    synchronized(lock) { if (activeJobs[next.id] === job) activeJobs.remove(next.id) }
+                    processQueue()
+                }
+                toStart.add(job)
+            }
+        }
+        toStart.forEach { it.start() }
+    }
+
+    private suspend fun runTask(id: String) {
+        val task = synchronized(lock) { _downloadQueue.value.firstOrNull { it.id == id } } ?: return
+        try {
+            val media = MediaDownloader.download(context, task, _settings.value) { progress ->
+                synchronized(lock) {
+                    updateTask(id, persist = false) {
+                        it.copy(title = progress.title, quality = progress.quality, outputFormat = progress.format,
+                            downloadedBytes = progress.bytes, totalBytes = progress.total,
+                            progress = if (progress.total > 0) (progress.bytes.toFloat() / progress.total).coerceIn(0f, 1f) else 0f,
+                            speed = progress.speed)
+                    }
+                }
+            }
+            val accepted = synchronized(lock) {
+                val current = _downloadQueue.value.firstOrNull { it.id == id && it.status == TaskStatus.DOWNLOADING }
+                if (current != null) {
+                    val complete = current.copy(
+                        status = TaskStatus.COMPLETED, progress = 1f, speed = "Done",
+                        totalBytes = media.fileSizeBytes, downloadedBytes = media.fileSizeBytes
+                    )
+                    updateTask(id) { complete }
+                    _offlineMediaList.value = listOf(media) + _offlineMediaList.value.filterNot { it.id == media.id }
+                    saveOfflineMedia(_offlineMediaList.value)
+                    _downloadHistory.value = (listOf(complete) + _downloadHistory.value).take(100)
+                    saveHistory(_downloadHistory.value)
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!accepted) MediaDownloader.deleteOutput(context, media)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            synchronized(lock) {
+                updateTask(id) {
+                    if (it.status == TaskStatus.DOWNLOADING) it.copy(
+                        status = TaskStatus.FAILED, speed = "Failed",
+                        errorMessage = error.message ?: "Download failed"
+                    ) else it
+                }
+            }
+        }
+    }
+
+    fun pauseTask(id: String) {
+        synchronized(lock) {
+            updateTask(id) { if (it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED) it.copy(status = TaskStatus.PAUSED, speed = "Paused") else it }
+            activeJobs[id]?.cancel()
+        }
+        processQueue()
+    }
+    fun resumeTask(id: String) {
+        synchronized(lock) {
+            updateTask(id) { if (it.status == TaskStatus.PAUSED || it.status == TaskStatus.FAILED) it.copy(status = TaskStatus.QUEUED, errorMessage = null) else it }
+        }
+        processQueue()
+    }
+    fun cancelTask(id: String) {
+        val job = synchronized(lock) {
+            val running = activeJobs[id]
+            running?.cancel()
+            setQueue(_downloadQueue.value.filterNot { it.id == id })
+            running
+        }
+        scope.launch {
+            job?.join()
+            MediaDownloader.deletePartials(context, id)
+        }
+        processQueue()
+    }
+    fun retryTask(id: String) = resumeTask(id)
+    fun clearFinished() = synchronized(lock) {
+        setQueue(_downloadQueue.value.filterNot { it.status == TaskStatus.COMPLETED })
+    }
+
+    private fun updateTask(id: String, persist: Boolean = true, change: (DownloadTask) -> DownloadTask) {
+        val updated = _downloadQueue.value.map { if (it.id == id) change(it) else it }
+        if (persist) setQueue(updated) else _downloadQueue.value = updated
+    }
+    private fun setQueue(items: List<DownloadTask>) {
+        _downloadQueue.value = items
+        val json = JSONArray()
+        items.forEach { task ->
+            json.put(JSONObject().apply {
+                put("id", task.id); put("url", task.url); put("videoId", task.videoId)
+                put("title", task.title); put("thumbnailUrl", task.thumbnailUrl)
+                put("mode", task.mode.name); put("quality", task.quality); put("outputFormat", task.outputFormat)
+                put("progress", task.progress.toDouble()); put("downloadedBytes", task.downloadedBytes)
+                put("totalBytes", task.totalBytes); put("status", task.status.name)
+                put("createdAt", task.createdAt); put("errorMessage", task.errorMessage)
+            })
+        }
+        prefs.edit().putString("queue_json", json.toString()).apply()
+    }
+    private fun loadQueue(): List<DownloadTask> = runCatching {
+        val data = JSONArray(prefs.getString("queue_json", "[]"))
+        List(data.length()) { index ->
+            val item = data.getJSONObject(index)
+            val status = enumValue(item.optString("status"), TaskStatus.QUEUED)
+            DownloadTask(
+                id = item.getString("id"), url = item.getString("url"), videoId = item.getString("videoId"),
+                title = item.getString("title"), thumbnailUrl = item.optString("thumbnailUrl"),
+                mode = enumValue(item.optString("mode"), DownloadMode.VIDEO),
+                quality = item.optString("quality", "Best"), outputFormat = item.optString("outputFormat"),
+                progress = item.optDouble("progress", 0.0).toFloat(),
+                downloadedBytes = item.optLong("downloadedBytes"), totalBytes = item.optLong("totalBytes"),
+                status = if (status == TaskStatus.DOWNLOADING) TaskStatus.QUEUED else status,
+                errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },
+                createdAt = item.optLong("createdAt", System.currentTimeMillis())
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    fun deleteOfflineMedia(id: String) {
+        synchronized(lock) {
+            val media = _offlineMediaList.value.firstOrNull { it.id == id } ?: return
+            if (!MediaDownloader.deleteOutput(context, media)) return
+            _offlineMediaList.value = _offlineMediaList.value.filterNot { it.id == id }
+            saveOfflineMedia(_offlineMediaList.value)
+        }
+    }
+    private fun saveOfflineMedia(items: List<OfflineMedia>) {
+        val array = JSONArray()
+        items.forEach { media ->
+            array.put(JSONObject().apply {
+                put("id", media.id); put("title", media.title); put("videoId", media.videoId)
+                put("thumbnailUrl", media.thumbnailUrl); put("mediaUri", media.mediaUri)
+                put("isAudioOnly", media.isAudioOnly); put("qualityLabel", media.qualityLabel)
+                put("format", media.format); put("fileSizeBytes", media.fileSizeBytes)
+                put("durationSeconds", media.durationSeconds); put("downloadDate", media.downloadDate)
+            })
+        }
+        prefs.edit().putString("offline_media_json", array.toString()).apply()
+    }
+    private fun loadOfflineMedia(): List<OfflineMedia> = runCatching {
+        val array = JSONArray(prefs.getString("offline_media_json", "[]"))
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            OfflineMedia(
+                item.getString("id"), item.getString("title"), item.getString("videoId"),
+                item.optString("thumbnailUrl"), item.getString("mediaUri"),
+                item.optBoolean("isAudioOnly"), item.optString("qualityLabel"),
+                item.optString("format"), item.optLong("fileSizeBytes"),
+                item.optLong("durationSeconds"), item.optLong("downloadDate")
+            )
+        }.filter { media ->
+            val uri = Uri.parse(media.mediaUri)
+            when (uri.scheme) {
+                "file" -> uri.path?.let { File(it).isFile } == true
+                "content" -> runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true }.getOrDefault(false)
+                else -> false
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    fun clearHistory() {
+        _downloadHistory.value = emptyList()
+        prefs.edit().remove("history_json").apply()
+    }
+    private fun saveHistory(items: List<DownloadTask>) {
+        val array = JSONArray()
+        items.forEach { task ->
+            array.put(JSONObject().apply {
+                put("id", task.id); put("url", task.url); put("videoId", task.videoId)
+                put("title", task.title); put("thumbnailUrl", task.thumbnailUrl)
+                put("mode", task.mode.name); put("quality", task.quality)
+                put("outputFormat", task.outputFormat); put("totalBytes", task.totalBytes)
+                put("status", task.status.name); put("createdAt", task.createdAt)
+            })
+        }
+        prefs.edit().putString("history_json", array.toString()).apply()
+    }
+    private fun loadHistory(): List<DownloadTask> = runCatching {
+        val array = JSONArray(prefs.getString("history_json", "[]"))
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            DownloadTask(
+                id = item.getString("id"), url = item.getString("url"),
+                videoId = item.getString("videoId"), title = item.getString("title"),
+                thumbnailUrl = item.optString("thumbnailUrl"),
+                mode = enumValue(item.optString("mode"), DownloadMode.VIDEO),
+                quality = item.optString("quality"), outputFormat = item.optString("outputFormat"),
+                totalBytes = item.optLong("totalBytes"), status = TaskStatus.COMPLETED,
+                createdAt = item.optLong("createdAt")
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveHomeVideos(key: String, items: List<HomeVideo>) {
+        val array = JSONArray()
+        items.forEach { video ->
+            array.put(JSONObject().apply {
+                put("videoId", video.videoId)
+                put("title", video.title)
+                put("url", video.url)
+                put("thumbnailUrl", video.thumbnailUrl)
+                put("channelTitle", video.channelTitle)
+                put("durationText", video.durationText)
+                put("watchedAt", video.watchedAt)
+            })
+        }
+        prefs.edit().putString(key, array.toString()).apply()
+    }
+
+    private fun loadWatchHistory(): List<HomeVideo> = loadHomeVideos("watch_history_json")
+
+    private fun loadHomeSuggestions(): List<HomeVideo> = loadHomeVideos("home_suggestions_json")
+
+    private fun loadHomeVideos(key: String): List<HomeVideo> = runCatching {
+        val array = JSONArray(prefs.getString(key, "[]"))
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            HomeVideo(
+                videoId = item.optString("videoId"),
+                title = item.optString("title", "YouTube video"),
+                url = item.optString("url"),
+                thumbnailUrl = item.optString("thumbnailUrl"),
+                channelTitle = item.optString("channelTitle", "YouTube"),
+                durationText = item.optString("durationText"),
+                watchedAt = item.optLong("watchedAt")
+            )
+        }.filter { it.videoId.isNotBlank() && YoutubeUrls.videoId(it.url) != null }
+    }.getOrDefault(emptyList())
+
+    private fun formatDurationLabel(seconds: Long): String {
+        if (seconds <= 0) return ""
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
+        val secs = seconds % 60
+        return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}"
+        else "$minutes:${secs.toString().padStart(2, '0')}"
+    }
+}

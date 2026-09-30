@@ -1,0 +1,20 @@
+diff --git a/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt b/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+index 60af75a..e66ebb7 100644
+--- a/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
++++ b/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+@@ -142,7 +142,6 @@ fun PlayerScreen(
+             onClose = onClose,
+             onDownloadVideo = onDownloadVideo,
+             onDownloadPlaylist = onDownloadPlaylist,
+-            onPlayRelated = onPlayRelated,
+             modifier = modifier.fillMaxSize()
+         )
+ 
+@@ -155,6 +154,7 @@ fun PlayerScreen(
+             onWebFallback = { useWebFallback = true },
+             onDownloadVideo = onDownloadVideo,
+             onDownloadPlaylist = onDownloadPlaylist,
++            onPlayRelated = onPlayRelated,
+             modifier = modifier.fillMaxSize()
+         )
+     }

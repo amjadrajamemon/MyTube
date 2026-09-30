@@ -11,8 +11,6 @@ on:
 permissions:
   contents: write
 
-env:
-  GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
 
 jobs:
   build:
@@ -23,15 +21,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.2.4 source
+      - name: Verify v1.2.5 source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.2.4"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.2.5"' source/app/build.gradle.kts
           grep -q 'MODEL_NAME = "ggml-tiny-q5_1.bin"' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
           grep -q 'GoogleAccountSession' source/app/src/main/java/com/drivedeck/tubedeck/auth/GoogleAccountSession.kt
-          echo "Building materialized MyTube v1.2.4 source tree."
+          echo "Building materialized MyTube v1.2.5 source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -82,53 +80,50 @@ jobs:
           APK="$GITHUB_WORKSPACE/source/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/dist/MyTube-v1.2.5-Refined-Whisper-YtDlp-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.2.5-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" .               -x '.gradle/*'               -x '*/build/*'               -x 'local.properties'
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk > dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.2.5-Refined-Whisper-YtDlp-debug.apk > dist/MyTube-v1.2.5-Refined-Whisper-YtDlp-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.2.5-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.2.5-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.2.4 APK and source as GitHub Release
+      - name: Publish v1.2.5 APK and source as GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.2.4-ui-google-whisper-debug"
-          NOTES="MyTube r6.5 LiveDub v1.2.4.
+          TAG="v1.2.5-refined-whisper-ytdlp-debug"
+          NOTES="MyTube r6.5 LiveDub v1.2.5.
 
-          - Direct source-tree build; no transient CI patching.
-          - Redmi/Android 15 Whisper hardening with Tiny Q5_1, single-flight inference, bounded PCM capture and capture pause during native inference.
-          - Fresh YouTube stream re-resolution on retryable Media3 failures.
-          - Taller portrait ExoPlayer viewport and reduced companion-panel share.
-          - Smaller/lower transport controls and compact thin seek bar based on supplied marked screenshots.
-          - Fullscreen moved from the top-right strip into the lower Zoom/aspect control group.
-          - Caption language dropdown and dubbing method selector retained.
-          - Left/right press-and-hold rewind/fast-forward retained.
-          - YouTube-style Home recommendations, history and Up next retained.
-          - Google Credential Manager account session shared by Home, Browser and ExoPlayer.
-          - Google Web OAuth client ID can be entered in Settings or supplied as GOOGLE_WEB_CLIENT_ID GitHub secret.
+          - Android Back now routes active video playback to Picture-in-Picture when PiP is enabled.
+          - ExoPlayer quality control now opens a dedicated Auto/all-qualities chooser instead of full player settings.
+          - Native comments now paginate NewPipe results and fall back to yt-dlp public comments when needed.
+          - Google account selection uses the Android device Google-account chooser; no client-ID textbox is required.
+          - yt-dlp Android runtime 0.18.1 is included for comments fallback and updater support.
+          - Stable yt-dlp is scheduled for an automatic update every 7 days when connected.
+          - Settings includes a manual Check/update yt-dlp now action with version/status/last-check display.
+          - Redmi/Android 15 Whisper hardening, taller player, compact controls, caption language selector, dubbing mode selector and hold-seek gestures remain.
           - Unit tests and assembleDebug must pass before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk
-            dist/MyTube-v1.2.4-UI-Google-Whisper-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.2.4-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.2.5-Refined-Whisper-YtDlp-debug.apk
+            dist/MyTube-v1.2.5-Refined-Whisper-YtDlp-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.2.5-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.2.5-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" "${ASSETS[@]}"               --target "$GITHUB_SHA"               --title "MyTube v1.2.4 UI + Google + Whisper Debug"               --notes "$NOTES"
+            gh release create "$TAG" "${ASSETS[@]}"               --target "$GITHUB_SHA"               --title "MyTube v1.2.5 Refined + Whisper + yt-dlp Debug"               --notes "$NOTES"
           fi
           gh release view "$TAG"

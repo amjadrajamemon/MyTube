@@ -7,6 +7,7 @@ on:
       - '.bootstrap/**'
       - '.ci-patches/**'
       - 'dist/**'
+      - 'source/**'
   workflow_dispatch:
 
 permissions:

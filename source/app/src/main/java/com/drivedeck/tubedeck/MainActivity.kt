@@ -11,8 +11,6 @@ import android.os.SystemClock
 import android.util.Rational
 import android.webkit.WebView
 import android.widget.Toast
-import android.window.OnBackInvokedDispatcher
-import android.window.OnBackInvokedCallback
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.BackHandler
@@ -20,7 +18,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
@@ -74,7 +71,6 @@ class MainActivity : ComponentActivity() {
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
     private var activePlaybackPositionMs: Long = 0L
-    private var systemPlaybackBackCallback: Any? = null
     private val playbackBackDetector = ConsecutiveBackPressDetector()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -189,12 +185,9 @@ class MainActivity : ComponentActivity() {
                         (currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null)
                     autoPipEnabled = settings.pipEnabled
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        setSystemPlaybackBackEnabled(playerActive)
-                        legacyPlaybackBackCallback.isEnabled = false
-                    } else {
-                        legacyPlaybackBackCallback.isEnabled = playerActive
-                    }
+                    // ComponentActivity bridges this dispatcher to the modern Android back
+                    // dispatcher on API 33+, so one path handles gesture and 3-button navigation.
+                    legacyPlaybackBackCallback.isEnabled = playerActive
 
                     when {
                         currentScreen == ActiveScreen.PLAYER && playingMedia != null -> {
@@ -627,23 +620,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun setSystemPlaybackBackEnabled(enabled: Boolean) {
-        if (enabled && systemPlaybackBackCallback == null) {
-            val callback = OnBackInvokedCallback { handlePlaybackBack() }
-            systemPlaybackBackCallback = callback
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_OVERLAY,
-                callback
-            )
-        } else if (!enabled) {
-            (systemPlaybackBackCallback as? OnBackInvokedCallback)?.let { callback ->
-                runCatching { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback) }
-            }
-            systemPlaybackBackCallback = null
-        }
-    }
-
     private fun closeActivePlaybackCompletely() {
         webViewInstance?.runCatching {
             evaluateJavascript(
@@ -742,9 +718,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            setSystemPlaybackBackEnabled(false)
-        }
         super.onDestroy()
     }
 }

@@ -278,7 +278,7 @@ object YoutubeStreamResolver {
 
             ResolvedMedia(
                 title = info.name,
-                description = runCatching { info.description.content() }.getOrDefault(""),
+                description = runCatching { info.description.content }.getOrDefault(""),
                 uploaderName = info.uploaderName.orEmpty().ifBlank { "YouTube" },
                 viewCount = info.viewCount,
                 uploadDateText = info.textualUploadDate.orEmpty(),

@@ -278,10 +278,20 @@ class TubeDeckRepository private constructor(private val context: Context) {
         if (_downloadQueue.value.any { it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING }) {
             DownloadForegroundService.ensureRunning(context)
         }
+
+        // Start very large user-selected concurrency levels in short scheduling batches. This is
+        // not a concurrency cap: further batches are queued immediately, but we avoid holding the
+        // repository lock for thousands of job creations in one pass.
         val toStart = mutableListOf<Job>()
+        var scheduleAnotherBatch = false
         synchronized(lock) {
-            while (activeJobs.size < _settings.value.maxConcurrent) {
-                val next = _downloadQueue.value.firstOrNull { it.status == TaskStatus.QUEUED && it.id !in activeJobs } ?: break
+            while (
+                activeJobs.size < _settings.value.maxConcurrent &&
+                toStart.size < 64
+            ) {
+                val next = _downloadQueue.value.firstOrNull {
+                    it.status == TaskStatus.QUEUED && it.id !in activeJobs
+                } ?: break
                 updateTask(next.id) { it.copy(status = TaskStatus.DOWNLOADING, speed = "Resolving…") }
                 val job = scope.launch(start = CoroutineStart.LAZY) { runTask(next.id) }
                 activeJobs[next.id] = job
@@ -291,8 +301,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 }
                 toStart.add(job)
             }
+            scheduleAnotherBatch =
+                activeJobs.size < _settings.value.maxConcurrent &&
+                    _downloadQueue.value.any { it.status == TaskStatus.QUEUED && it.id !in activeJobs }
         }
         toStart.forEach { it.start() }
+        if (scheduleAnotherBatch) {
+            scope.launch {
+                yield()
+                processQueue()
+            }
+        }
     }
 
     private suspend fun runTask(id: String) {

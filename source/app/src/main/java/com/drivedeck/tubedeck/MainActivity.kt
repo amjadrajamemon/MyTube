@@ -590,7 +590,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchNativePlayer(media: OfflineMedia) {
-        repository.recordWatch(media)
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         val now = SystemClock.elapsedRealtime()
         if (videoId.isNotBlank() && videoId == lastNativeLaunchVideoId && now - lastNativeLaunchAt < 1_800L) return

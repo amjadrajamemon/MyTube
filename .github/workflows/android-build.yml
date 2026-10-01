@@ -44,6 +44,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: mytube-debug-signing-v1
+
       - name: Install Android SDK 36
         shell: bash
         run: |
@@ -78,6 +84,9 @@ jobs:
 
       - name: Run unit tests for both editions
         run: gradle -p source testArm64DebugUnitTest testUniversalDebugUnitTest --stacktrace
+
+      - name: Run Android lint for both editions
+        run: gradle -p source lintArm64Debug lintUniversalDebug --stacktrace
 
       - name: Build ARM64 and Universal debug APKs
         run: gradle -p source assembleArm64Debug assembleUniversalDebug --stacktrace

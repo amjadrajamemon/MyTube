@@ -131,10 +131,8 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
 
-    // System Back behaves like YouTube: keep playback alive in PiP.
-    BackHandler(enabled = !isPipMode(activity)) {
-        if (pipEnabled) onEnterPip() else onClose()
-    }
+    // Normal playback Back is intentionally owned by the parent Activity so its
+    // single/double-Back state machine cannot be bypassed by a nested Compose handler.
 
     // Preserve the caller's orientation instead of forcing landscape. This lets the player
     // start and remain in portrait when the device is portrait, while still allowing users
@@ -673,16 +671,15 @@ fun NativeExoPlayer(
         }
     }
 
-    BackHandler(enabled = !isPipMode(activity)) {
+    BackHandler(
+        enabled = !isPipMode(activity) &&
+            (showSettings || (showComments && compactPortrait) || isFullscreen)
+    ) {
         when {
             showSettings -> showSettings = false
             showComments && compactPortrait -> showComments = false
             isFullscreen -> isFullscreen = false
-            else -> {
-                liveDubEngine.stop()
-                exoPlayer.pause()
-                onClose()
-            }
+            else -> Unit
         }
     }
 
@@ -1141,6 +1138,10 @@ fun NativeExoPlayer(
                 downloadActionsVisible = controlsVisible,
                 onDownloadVideo = onDownloadVideo,
                 onDownloadPlaylist = onDownloadPlaylist,
+                description = resolved?.description.orEmpty(),
+                uploaderName = resolved?.uploaderName.orEmpty(),
+                viewCount = resolved?.viewCount ?: -1L,
+                uploadDateText = resolved?.uploadDateText.orEmpty(),
                 relatedVideos = resolved?.relatedVideos.orEmpty(),
                 onPlayRelated = onPlayRelated,
                 modifier = Modifier.fillMaxWidth().weight(1f)
@@ -1243,6 +1244,10 @@ private fun PortraitCompanionPanel(
     downloadActionsVisible: Boolean,
     onDownloadVideo: (() -> Unit)?,
     onDownloadPlaylist: (() -> Unit)?,
+    description: String,
+    uploaderName: String,
+    viewCount: Long,
+    uploadDateText: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
@@ -1252,12 +1257,17 @@ private fun PortraitCompanionPanel(
     var commentsLoading by remember(media.id) { mutableStateOf(false) }
     var commentsLoaded by remember(media.id) { mutableStateOf(false) }
     var commentsError by remember(media.id) { mutableStateOf<String?>(null) }
+    var showDescription by rememberSaveable(media.id) { mutableStateOf(false) }
     var episodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var episodesLoading by remember(media.id) { mutableStateOf(false) }
 
     fun refreshComments() {
         commentsLoaded = false
         commentsError = null
+    }
+
+    BackHandler(enabled = showDescription) {
+        showDescription = false
     }
 
     LaunchedEffect(showComments, media.mediaUri, commentsLoaded) {
@@ -1303,31 +1313,84 @@ private fun PortraitCompanionPanel(
 
     Column(modifier = modifier.background(TubeDeckSurface)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 9.dp, bottom = 3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("Portrait player", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                Text(
+                    media.title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 15.sp
+                )
+                Text("Portrait player", color = TubeDeckTextSecondary, fontSize = 10.5.sp)
             }
-            if (commentsAvailable) {
+            IconButton(onClick = onEnterPip, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.PictureInPictureAlt,
+                    "Picture in picture",
+                    tint = Color.White,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+        }
+
+        if (commentsAvailable) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 FilledTonalButton(
-                    onClick = onToggleComments,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+                    onClick = {
+                        if (showDescription) showDescription = false
+                        onToggleComments()
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                    modifier = Modifier.heightIn(min = 34.dp)
                 ) {
-                    Icon(if (showComments) Icons.Default.Close else Icons.Default.Comment, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text(if (showComments) "Hide comments" else "Comments", fontSize = 12.sp)
+                    Icon(
+                        if (showComments) Icons.Default.Close else Icons.Default.Comment,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (showComments) "Hide comments" else "Comments", fontSize = 10.5.sp)
                 }
+
+                FilledTonalButton(
+                    onClick = {
+                        val opening = !showDescription
+                        showDescription = opening
+                        if (opening && showComments) onToggleComments()
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                    modifier = Modifier.heightIn(min = 34.dp)
+                ) {
+                    Icon(
+                        if (showDescription) Icons.Default.Close else Icons.Default.Description,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (showDescription) "Hide description" else "Description", fontSize = 10.5.sp)
+                }
+
                 if (showComments) {
-                    IconButton(onClick = ::refreshComments, modifier = Modifier.size(38.dp)) {
-                        Icon(Icons.Default.Refresh, "Refresh comments", tint = TubeDeckTextSecondary, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = ::refreshComments, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            "Refresh comments",
+                            tint = TubeDeckTextSecondary,
+                            modifier = Modifier.size(17.dp)
+                        )
                     }
                 }
-            }
-            Spacer(Modifier.width(6.dp))
-            IconButton(onClick = onEnterPip) {
-                Icon(Icons.Default.PictureInPictureAlt, "Picture in picture", tint = Color.White)
             }
         }
 
@@ -1351,6 +1414,56 @@ private fun PortraitCompanionPanel(
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
+                showDescription -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item {
+                            Text(
+                                media.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                        if (uploaderName.isNotBlank()) {
+                            item {
+                                Text(
+                                    uploaderName,
+                                    color = TubeDeckAccentMint,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                        }
+                        item {
+                            val metadata = buildString {
+                                if (viewCount >= 0L) {
+                                    append(String.format(Locale.US, "%,d views", viewCount))
+                                }
+                                if (uploadDateText.isNotBlank()) {
+                                    if (isNotEmpty()) append(" • ")
+                                    append(uploadDateText)
+                                }
+                            }
+                            if (metadata.isNotBlank()) {
+                                Text(metadata, color = TubeDeckTextSecondary, fontSize = 10.5.sp)
+                            }
+                        }
+                        item { HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f)) }
+                        item {
+                            Text(
+                                description.ifBlank { "No video description was provided." },
+                                color = Color.White.copy(alpha = .92f),
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
+
                 showComments && commentsLoading -> {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),

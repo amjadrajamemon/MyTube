@@ -43,7 +43,7 @@ fun PlaybackBackChoiceOverlay(
         modifier = modifier
             .navigationBarsPadding()
             .imePadding()
-            .padding(horizontal = 12.dp, bottom = 12.dp),
+            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         shape = RoundedCornerShape(18.dp),
         color = Color.Black.copy(alpha = 0.88f),
         tonalElevation = 6.dp

@@ -81,7 +81,15 @@ class DownloadForegroundService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        timingOut = false
+        running.set(true)
+        val tasks = repository.downloadQueue.value
+        if (tasks.any { it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING }) {
+            startAsForeground(tasks)
+        }
+        return START_STICKY
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Active downloads intentionally continue; the foreground service owns their process life.
@@ -92,6 +100,7 @@ class DownloadForegroundService : Service() {
         // Android 15+ can time-limit dataSync foreground services. Stop active I/O promptly,
         // preserve partials, and mark it for automatic resume when the app is next user-visible.
         timingOut = true
+        running.set(false)
         repository.suspendDownloadsForSystemTimeout()
         stopForeground(STOP_FOREGROUND_DETACH)
         stopSelf(startId)

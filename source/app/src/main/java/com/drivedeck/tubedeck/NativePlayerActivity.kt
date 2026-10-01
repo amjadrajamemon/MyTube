@@ -146,7 +146,12 @@ class NativePlayerActivity : ComponentActivity() {
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
-                    onPlaybackPositionChanged = { currentPlaybackPositionMs = it }
+                    onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
+                    onResolvedTitleChanged = { title ->
+                        if (title.isNotBlank() && currentMedia.title != title) {
+                            currentMedia = currentMedia.copy(title = title)
+                        }
+                    }
                 )
                 if (showGoogleAccountDialog) {
                     googleAccount?.let { account ->

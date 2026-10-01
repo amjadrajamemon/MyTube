@@ -130,11 +130,6 @@ fun DriveDeckScreen(
                             Spacer(Modifier.width(14.dp))
                             Column {
                                 Text("Your feed will appear here", color = Color.White, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Search or watch a video and MyTube will use its related-video feed for recommendations.",
-                                    color = TubeDeckTextSecondary,
-                                    fontSize = 12.sp
-                                )
                             }
                         }
                     }

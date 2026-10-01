@@ -275,6 +275,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private fun processQueue() {
+        if (_downloadQueue.value.any { it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING }) {
+            DownloadForegroundService.ensureRunning(context)
+        }
         val toStart = mutableListOf<Job>()
         synchronized(lock) {
             while (activeJobs.size < _settings.value.maxConcurrent) {
@@ -353,7 +356,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
-                val recoverable = isRecoverableDownloadError(error)
+                val recoverable = DownloadFailureClassifier.isRecoverable(error)
 
                 if (!recoverable) {
                     synchronized(lock) {
@@ -428,42 +431,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
         attempt == 4 -> 20L
         attempt == 5 -> 30L
         else -> 60L
-    }
-
-    private fun isRecoverableDownloadError(error: Throwable): Boolean {
-        if (error is UnknownHostException || error is SocketTimeoutException || error is IOException) {
-            return true
-        }
-
-        val message = generateSequence(error) { it.cause }
-            .mapNotNull { it.message }
-            .joinToString(" ")
-            .lowercase()
-
-        val permanentMarkers = listOf(
-            "live or unbounded streams are not supported",
-            "no compatible video download stream",
-            "no downloadable audio",
-            "this video has no downloadable audio",
-            "private video",
-            "video is private",
-            "video unavailable",
-            "has been removed",
-            "deleted video",
-            "members-only",
-            "members only",
-            "sign in to confirm your age",
-            "chosen download folder is unavailable",
-            "chosen download folder is no longer writable",
-            "enter a valid youtube",
-            "open a valid youtube"
-        )
-        if (permanentMarkers.any { it in message }) return false
-
-        // YouTube stream URLs expire, CDNs can return transient 403/429/5xx responses, and
-        // extractors occasionally fail while the network is changing. Re-resolving on the next
-        // attempt is usually the correct recovery path.
-        return true
     }
 
     fun pauseTask(id: String) {

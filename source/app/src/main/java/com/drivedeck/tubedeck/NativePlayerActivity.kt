@@ -16,7 +16,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -116,6 +121,7 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
+                Box(modifier = Modifier.fillMaxSize()) {
                 PlayerScreen(
                     media = media,
                     playerMode = com.drivedeck.tubedeck.data.model.PlayerMode.NATIVE,
@@ -150,18 +156,19 @@ class NativePlayerActivity : ComponentActivity() {
                 }
 
                 if (showPlaybackExitChoices) {
-                    Dialog(onDismissRequest = { showPlaybackExitChoices = false }) {
-                        PlaybackBackChoiceOverlay(
-                            onCloseVideo = {
-                                showPlaybackExitChoices = false
-                                closePlaybackCompletely()
-                            },
-                            onAudioOnly = {
-                                showPlaybackExitChoices = false
-                                handoffToBackgroundAudio()
-                            }
-                        )
-                    }
+                    PlaybackBackChoiceOverlay(
+                        onCloseVideo = {
+                            showPlaybackExitChoices = false
+                            closePlaybackCompletely()
+                        },
+                        onAudioOnly = {
+                            showPlaybackExitChoices = false
+                            handoffToBackgroundAudio()
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 24.dp)
+                    )
                 }
 
                 if (showDownload) {
@@ -190,6 +197,7 @@ class NativePlayerActivity : ComponentActivity() {
                             settings = settings
                         )
                     }
+                }
                 }
             }
         }

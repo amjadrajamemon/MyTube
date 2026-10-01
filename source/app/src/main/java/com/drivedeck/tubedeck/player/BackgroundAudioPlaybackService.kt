@@ -87,7 +87,10 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 player.playWhenReady = true
             }
         }
-        return START_STICKY
+        // The playable URL is intentionally supplied by the handoff action. If Android kills
+        // this process there is no safe media state to reconstruct from a null restart intent, so
+        // avoid creating an idle/zombie playback service.
+        return START_NOT_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

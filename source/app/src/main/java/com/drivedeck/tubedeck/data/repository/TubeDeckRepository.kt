@@ -34,6 +34,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private val activeJobs = mutableMapOf<String, Job>()
     private var sponsorJob: Job? = null
     private var activeSponsorId: String? = null
+    private var homeSuggestionsJob: Job? = null
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<TubeDeckSettings> = _settings.asStateFlow()
@@ -130,7 +131,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
     fun refreshHomeSuggestions(seedUrl: String? = _watchHistory.value.firstOrNull()?.url) {
         val url = seedUrl?.takeIf { YoutubeUrls.videoId(it) != null } ?: return
-        scope.launch {
+        homeSuggestionsJob?.cancel()
+        homeSuggestionsJob = scope.launch {
             try {
                 val resolved = YoutubeStreamResolver.resolve(context, url)
                 val suggestions = resolved.relatedVideos.map { item ->

@@ -79,7 +79,7 @@ fun SettingsScreen(
     
     var playlistMode by remember { mutableStateOf(currentSettings.playlistMode) }
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
-    var parallelText by remember { mutableStateOf(currentSettings.maxConcurrent.coerceIn(1, 32).toString()) }
+    var parallelText by remember { mutableStateOf(currentSettings.maxConcurrent.coerceAtLeast(1).toString()) }
     val parallelCount = parallelText.toIntOrNull()
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
@@ -237,13 +237,13 @@ fun SettingsScreen(
                     Text("Parallel downloads", Modifier.weight(1f), color = Color.White)
                     OutlinedTextField(
                         value = parallelText,
-                        onValueChange = { if (it.length <= 2 && it.all { ch -> ch.isDigit() }) parallelText = it },
+                        onValueChange = { if (it.length <= 9 && it.all { ch -> ch.isDigit() }) parallelText = it },
                         modifier = Modifier.width(76.dp), singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
-                Text("Choose 1–32. More simultaneous transfers use more bandwidth and memory.", color = Color.LightGray, fontSize = 11.sp)
-                if (parallelCount == null || parallelCount !in 1..32) Text("Enter a number from 1 to 32.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                Text("No app-imposed concurrency ceiling. Enter any positive whole number; very high values can exhaust device memory, sockets or bandwidth.", color = Color.LightGray, fontSize = 11.sp)
+                if (parallelCount == null || parallelCount < 1) Text("Enter a positive whole number.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
 
             // Instant Download Settings

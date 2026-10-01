@@ -76,7 +76,6 @@ data class TubeDeckSettings(
     
     // Player settings
     val playerMode: PlayerMode = PlayerMode.NATIVE,
-    val googleWebClientId: String = "",
     
     // Movable browser buttons, stored in screen pixels.
     val fabInstantX: Float = 40f,

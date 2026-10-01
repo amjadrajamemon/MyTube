@@ -935,8 +935,14 @@ fun NativeExoPlayer(
                             .then(if (compactPortrait) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars))
                             .padding(horizontal = 10.dp, vertical = 1.dp)
                     ) {
-                        // Keep auxiliary actions above the timeline in compact portrait mode so
-                        // the seek bar itself stays anchored to the physical bottom edge of video.
+                        // Keep the timestamps above the auxiliary actions. This deliberately pushes
+                        // quality/speed/Zoom/fullscreen/CC/Dub down next to the seek bar so they cannot
+                        // collide with the central rewind/play/forward cluster.
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDuration(currentPosition), color = Color.White, fontSize = 9.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
+                        }
                         Row(
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1086,11 +1092,6 @@ fun NativeExoPlayer(
                                     fontSize = 10.sp
                                 )
                             }
-                        }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(formatDuration(currentPosition), color = Color.White, fontSize = 9.sp)
-                            Spacer(Modifier.weight(1f))
-                            Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
                         CompactSeekBar(
                             progress = if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,

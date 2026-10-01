@@ -171,7 +171,6 @@ class MainActivity : ComponentActivity() {
                         currentScreen = ActiveScreen.BROWSER
                         val videoId = repository.extractVideoId(it)
                         if (videoId != null && settings.playerMode == PlayerMode.NATIVE) {
-                            repository.fetchSponsorSegments(videoId)
                             launchNativePlayer(OfflineMedia(
                                 id = UUID.randomUUID().toString(), title = "Now Playing", videoId = videoId,
                                 thumbnailUrl = repository.getVideoThumbnail(videoId), mediaUri = it
@@ -382,7 +381,6 @@ class MainActivity : ComponentActivity() {
                                             thumbnailUrl = item.thumbnailUrl,
                                             mediaUri = item.url
                                         )
-                                        repository.fetchSponsorSegments(item.videoId)
                                         launchNativePlayer(media)
                                     },
                                     onClearHistory = { repository.clearWatchHistory() }
@@ -399,7 +397,6 @@ class MainActivity : ComponentActivity() {
                                     onNativeVideo = { url ->
                                         val id = repository.extractVideoId(url)
                                         if (id != null && currentScreen == ActiveScreen.BROWSER) {
-                                            repository.fetchSponsorSegments(id)
                                             val stableReturnUrl = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
                                             currentUrl = stableReturnUrl
                                             webViewInstance?.stopLoading()

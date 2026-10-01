@@ -173,7 +173,18 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 channel = candidate.uploader,
                 itemCount = candidate.itemCount,
                 thumbnailUrl = candidate.thumbnailUrl,
-                kind = candidate.kind
+                kind = candidate.kind,
+                items = candidate.episodes.map { episode ->
+                    PlaylistItem(
+                        videoId = episode.videoId,
+                        title = episode.title,
+                        channel = episode.uploader,
+                        duration = if (episode.durationSeconds > 0) {
+                            "${episode.durationSeconds / 60}:${(episode.durationSeconds % 60).toString().padStart(2, '0')}"
+                        } else "",
+                        thumbnailUrl = episode.thumbnailUrl
+                    )
+                }
             )
         }
 

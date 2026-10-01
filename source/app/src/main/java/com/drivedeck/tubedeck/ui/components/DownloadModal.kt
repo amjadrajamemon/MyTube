@@ -92,9 +92,14 @@ fun DownloadModal(
                         return@LaunchedEffect
                     }
                 }
-                playlistItems = onFetchPlaylistItems(targetPlaylistUrl)
+                val selectedCandidate = playlistCandidates.firstOrNull { it.url == targetPlaylistUrl }
+                playlistItems = if (selectedCandidate?.items?.isNotEmpty() == true) {
+                    selectedCandidate.items
+                } else {
+                    onFetchPlaylistItems(targetPlaylistUrl)
+                }
                 if (playlistItems.isEmpty()) {
-                    fetchError = "No downloadable videos were found in the selected collection."
+                    fetchError = "No verified related episodes were found in the selected collection."
                 }
             } else {
                 require(hasVideo) { "Paste a valid YouTube video link." }
@@ -214,7 +219,7 @@ fun DownloadModal(
                         if (!hasPlaylist && playlistCandidates.isNotEmpty()) {
                             Text("Suggested collections", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(
-                                "MyTube searched for likely playlists/episode collections and also offers a related Mix.",
+                                "Only collections that match this serial/program are shown. Same-channel episodes are preferred.",
                                 color = TubeDeckTextSecondary,
                                 fontSize = 11.sp
                             )

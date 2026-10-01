@@ -246,13 +246,13 @@ class MainActivity : ComponentActivity() {
                     activeDownloads.map { it.progress }.average().toFloat()
                 } else 0f
 
-                BackHandler {
+                // Playback Back is owned exclusively by legacyPlaybackBackCallback while
+                // media is active. Keeping this general navigation handler disabled in that state
+                // prevents two Compose/Activity callbacks from competing for the same system Back.
+                BackHandler(enabled = !playerActive) {
                     when {
                         showAdBlockSheet -> { showAdBlockSheet = false }
                         showDownloadModal -> { showDownloadModal = false }
-                        playerActive -> {
-                            handlePlaybackBack()
-                        }
                         webViewInstance?.canGoBack() == true && currentScreen == ActiveScreen.BROWSER -> {
                             webViewInstance?.goBack()
                         }

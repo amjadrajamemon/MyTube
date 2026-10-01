@@ -415,12 +415,54 @@ object YoutubeStreamResolver {
             val seriesName = seriesSearchQuery(sourceTitle)
             val seriesTokens = relevanceTokens(seriesName)
 
+            val watchNext = runCatching {
+                YoutubeWatchNextClient.resolve(url, currentVideoId)
+            }.getOrNull()
+
+            val candidates = mutableListOf<DiscoveredPlaylist>()
+
+            // Priority 1: YouTube's own Watch Next playlist context. This is the same class of
+            // server-side context used by YouTube/SmartTube and is stronger than search ranking.
+            watchNext?.playlists
+                ?.distinctBy { it.playlistId }
+                ?.forEach { playlist ->
+                    val embedded = playlist.items.map { item ->
+                        DiscoveredEpisode(
+                            videoId = item.videoId,
+                            title = item.title,
+                            uploader = item.uploader.ifBlank { playlist.owner.ifBlank { sourceUploader.ifBlank { "YouTube" } } },
+                            durationSeconds = item.durationSeconds,
+                            thumbnailUrl = item.thumbnailUrl.ifBlank {
+                                "https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg"
+                            },
+                            episodeNumber = episodeNumber(item.title)
+                        )
+                    }
+
+                    candidates += DiscoveredPlaylist(
+                        title = playlist.title.ifBlank { "Current YouTube playlist" },
+                        url = "https://www.youtube.com/playlist?list=${playlist.playlistId}",
+                        uploader = playlist.owner.ifBlank { sourceUploader.ifBlank { "YouTube" } },
+                        itemCount = (playlist.totalVideos ?: embedded.size).toLong(),
+                        thumbnailUrl = embedded.firstOrNull { it.videoId == currentVideoId }?.thumbnailUrl
+                            ?: embedded.firstOrNull()?.thumbnailUrl
+                            ?: currentInfo.thumbnails.firstOrNull()?.url
+                            ?: "https://i.ytimg.com/vi/$currentVideoId/hqdefault.jpg",
+                        kind = "YouTube Watch Next playlist",
+                        episodes = embedded
+                    )
+                }
+
             if (seriesTokens.isEmpty()) {
-                return@withContext emptyList()
+                return@withContext candidates.distinctBy { it.url }.take(6)
             }
 
             data class ScoredVideo(
-                val item: StreamInfoItem,
+                val videoId: String,
+                val title: String,
+                val uploader: String,
+                val durationSeconds: Long,
+                val thumbnailUrl: String,
                 val score: Double,
                 val episode: Int?
             )
@@ -432,46 +474,92 @@ object YoutubeStreamResolver {
                 return left == right || left.contains(right) || right.contains(left)
             }
 
-            fun scoreVideo(item: StreamInfoItem): ScoredVideo? {
-                val id = YoutubeUrls.videoId(item.url) ?: return null
-                if (id == currentVideoId) return null
-                val coverage = tokenCoverage(seriesTokens, relevanceTokens(item.name))
-                val channelMatch = channelMatches(item.uploaderName.orEmpty())
-                val episode = episodeNumber(item.name)
+            fun scoreFields(
+                videoId: String,
+                title: String,
+                uploader: String,
+                durationSeconds: Long,
+                thumbnailUrl: String,
+                serverContextBonus: Double
+            ): ScoredVideo? {
+                if (videoId == currentVideoId || title.isBlank()) return null
+                val coverage = tokenCoverage(seriesTokens, relevanceTokens(title))
+                val channelMatch = channelMatches(uploader)
+                val episode = episodeNumber(title)
 
-                // Strongly prefer same-channel episodes. Cross-channel results must match almost
-                // the entire series name, otherwise they are commonly clips, reviews or unrelated
-                // trending material.
+                // Same-channel Watch Next entries are highly trusted. Cross-channel entries still
+                // need near-exact series-title overlap and an episode marker.
                 val accepted = when {
-                    channelMatch && coverage >= 0.55 -> true
-                    coverage >= 0.88 && episode != null -> true
+                    channelMatch && coverage >= 0.45 -> true
+                    coverage >= 0.90 && episode != null -> true
                     else -> false
                 }
                 if (!accepted) return null
 
                 val score =
                     coverage * 100.0 +
-                    (if (channelMatch) 55.0 else 0.0) +
-                    (if (episode != null) 18.0 else 0.0) +
-                    (if (containsEpisodeWord(item.name)) 8.0 else 0.0)
+                    (if (channelMatch) 60.0 else 0.0) +
+                    (if (episode != null) 20.0 else 0.0) +
+                    (if (containsEpisodeWord(title)) 8.0 else 0.0) +
+                    serverContextBonus
 
-                return ScoredVideo(item, score, episode)
+                return ScoredVideo(
+                    videoId = videoId,
+                    title = title,
+                    uploader = uploader,
+                    durationSeconds = durationSeconds,
+                    thumbnailUrl = thumbnailUrl.ifBlank {
+                        "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    },
+                    score = score,
+                    episode = episode
+                )
             }
 
             val scored = mutableMapOf<String, ScoredVideo>()
 
-            // 1) YouTube's own related shelf often contains adjacent episodes and is the most
-            // contextual source, but every item still has to pass our series/channel checks.
+            fun absorb(candidate: ScoredVideo?) {
+                candidate ?: return
+                val old = scored[candidate.videoId]
+                if (old == null || candidate.score > old.score) {
+                    scored[candidate.videoId] = candidate
+                }
+            }
+
+            // Priority 2: YouTube's own Watch Next recommendations. These are contextual to the
+            // exact current video and therefore receive a score bonus over generic search results.
+            watchNext?.relatedVideos.orEmpty().forEach { item ->
+                absorb(
+                    scoreFields(
+                        videoId = item.videoId,
+                        title = item.title,
+                        uploader = item.uploader,
+                        durationSeconds = item.durationSeconds,
+                        thumbnailUrl = item.thumbnailUrl,
+                        serverContextBonus = 28.0
+                    )
+                )
+            }
+
+            // Priority 3: NewPipe's parsed related shelf from the same watch page.
             currentInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
-                .mapNotNull(::scoreVideo)
-                .forEach { candidate ->
-                    val id = YoutubeUrls.videoId(candidate.item.url) ?: return@forEach
-                    val old = scored[id]
-                    if (old == null || candidate.score > old.score) scored[id] = candidate
+                .forEach { item ->
+                    val id = YoutubeUrls.videoId(item.url) ?: return@forEach
+                    absorb(
+                        scoreFields(
+                            videoId = id,
+                            title = item.name,
+                            uploader = item.uploaderName.orEmpty(),
+                            durationSeconds = item.duration.coerceAtLeast(0L),
+                            thumbnailUrl = item.thumbnails.firstOrNull()?.url.orEmpty(),
+                            serverContextBonus = 14.0
+                        )
+                    )
                 }
 
-            // 2) Search specifically for episodes of this series, preferably on the same channel.
+            // Priority 4: same-series search only as a fallback/expansion source. Search never gets
+            // enough score to override a strong Watch Next/same-channel result.
             runCatching {
                 val service = NewPipe.getService("YouTube")
                 val query = buildString {
@@ -482,32 +570,37 @@ object YoutubeStreamResolver {
                 val handler = service.searchQHFactory.fromQuery(query, listOf("videos"), "")
                 val info = SearchInfo.getInfo(service, handler)
 
-                fun absorb(items: List<org.schabi.newpipe.extractor.InfoItem>) {
-                    items.filterIsInstance<StreamInfoItem>()
-                        .mapNotNull(::scoreVideo)
-                        .forEach { candidate ->
-                            val id = YoutubeUrls.videoId(candidate.item.url) ?: return@forEach
-                            val old = scored[id]
-                            if (old == null || candidate.score > old.score) scored[id] = candidate
-                        }
+                fun absorbSearch(items: List<org.schabi.newpipe.extractor.InfoItem>) {
+                    items.filterIsInstance<StreamInfoItem>().forEach { item ->
+                        val id = YoutubeUrls.videoId(item.url) ?: return@forEach
+                        absorb(
+                            scoreFields(
+                                videoId = id,
+                                title = item.name,
+                                uploader = item.uploaderName.orEmpty(),
+                                durationSeconds = item.duration.coerceAtLeast(0L),
+                                thumbnailUrl = item.thumbnails.firstOrNull()?.url.orEmpty(),
+                                serverContextBonus = 0.0
+                            )
+                        )
+                    }
                 }
 
-                absorb(info.relatedItems)
+                absorbSearch(info.relatedItems)
                 var next = info.nextPage
                 var pages = 0
-                while (next != null && pages < 2 && scored.size < 40) {
+                while (next != null && pages < 2 && scored.size < 50) {
                     currentCoroutineContext().ensureActive()
                     val page = SearchInfo.getMoreItems(service, handler, next)
-                    absorb(page.items)
+                    absorbSearch(page.items)
                     next = page.nextPage
                     pages += 1
                 }
             }
 
             val episodeItems = scored.values
-                .groupBy { scoredVideo ->
-                    scoredVideo.episode?.let { "episode:$it" }
-                        ?: "video:${YoutubeUrls.videoId(scoredVideo.item.url).orEmpty()}"
+                .groupBy { candidate ->
+                    candidate.episode?.let { "episode:$it" } ?: "video:${candidate.videoId}"
                 }
                 .values
                 .mapNotNull { duplicates -> duplicates.maxByOrNull { it.score } }
@@ -516,22 +609,17 @@ object YoutubeStreamResolver {
                         .thenBy { it.episode ?: Int.MAX_VALUE }
                         .thenByDescending { it.score }
                 )
-                .take(40)
-                .mapNotNull { scoredVideo ->
-                    val item = scoredVideo.item
-                    val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
+                .take(50)
+                .map { item ->
                     DiscoveredEpisode(
-                        videoId = id,
-                        title = item.name,
-                        uploader = item.uploaderName.orEmpty().ifBlank { sourceUploader.ifBlank { "YouTube" } },
-                        durationSeconds = item.duration.coerceAtLeast(0L),
-                        thumbnailUrl = item.thumbnails.firstOrNull()?.url
-                            ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
-                        episodeNumber = scoredVideo.episode
+                        videoId = item.videoId,
+                        title = item.title,
+                        uploader = item.uploader.ifBlank { sourceUploader.ifBlank { "YouTube" } },
+                        durationSeconds = item.durationSeconds,
+                        thumbnailUrl = item.thumbnailUrl,
+                        episodeNumber = item.episode
                     )
                 }
-
-            val candidates = mutableListOf<DiscoveredPlaylist>()
 
             if (episodeItems.isNotEmpty()) {
                 val currentEpisode = DiscoveredEpisode(
@@ -545,6 +633,13 @@ object YoutubeStreamResolver {
                 )
                 val completeEpisodes = (listOf(currentEpisode) + episodeItems)
                     .distinctBy { it.videoId }
+                    .groupBy { episode ->
+                        episode.episodeNumber?.let { "episode:$it" } ?: "video:${episode.videoId}"
+                    }
+                    .values
+                    .mapNotNull { duplicates ->
+                        duplicates.firstOrNull { channelMatches(it.uploader) } ?: duplicates.firstOrNull()
+                    }
                     .sortedWith(
                         compareBy<DiscoveredEpisode> { it.episodeNumber == null }
                             .thenBy { it.episodeNumber ?: Int.MAX_VALUE }
@@ -558,13 +653,17 @@ object YoutubeStreamResolver {
                     itemCount = completeEpisodes.size.toLong(),
                     thumbnailUrl = currentInfo.thumbnails.firstOrNull()?.url
                         ?: "https://i.ytimg.com/vi/$currentVideoId/hqdefault.jpg",
-                    kind = "Related episodes",
+                    kind = if (watchNext?.relatedVideos?.isNotEmpty() == true) {
+                        "YouTube Watch Next episodes"
+                    } else {
+                        "Related episodes"
+                    },
                     episodes = completeEpisodes
                 )
             }
 
-            // 3) Search for official/public playlists, but do NOT trust search ranking. Reject any
-            // playlist whose title is not strongly about the same series.
+            // Final fallback: public playlist search remains available but is heavily filtered.
+            // It is intentionally lower priority than Watch Next and server-related episodes.
             runCatching {
                 val service = NewPipe.getService("YouTube")
                 val query = buildString {
@@ -579,10 +678,10 @@ object YoutubeStreamResolver {
                     .mapNotNull { item ->
                         val coverage = tokenCoverage(seriesTokens, relevanceTokens(item.name))
                         val channelMatch = channelMatches(item.uploaderName.orEmpty())
-                        val accepted = (channelMatch && coverage >= 0.60) || coverage >= 0.90
+                        val accepted = (channelMatch && coverage >= 0.70) || coverage >= 0.95
                         if (!accepted) return@mapNotNull null
 
-                        val score = coverage * 100.0 + if (channelMatch) 45.0 else 0.0
+                        val score = coverage * 100.0 + if (channelMatch) 50.0 else 0.0
                         score to DiscoveredPlaylist(
                             title = item.name,
                             url = item.url,
@@ -593,13 +692,15 @@ object YoutubeStreamResolver {
                         )
                     }
                     .sortedByDescending { it.first }
-                    .take(4)
+                    .take(3)
                     .forEach { candidates += it.second }
             }
 
             candidates
-                .distinctBy { it.url }
-                .take(6)
+                .distinctBy { candidate ->
+                    YoutubeUrls.playlistId(candidate.url) ?: candidate.url
+                }
+                .take(8)
         }
 
     private fun normalizeForMatch(value: String): String =

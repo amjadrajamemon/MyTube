@@ -190,7 +190,7 @@ fun BrowserScreen(
                     if (skipBtn) skipBtn.click();
                 """ else ""}
             }
-            window.__tdInterval = setInterval(runAdBlockEngine, 500);
+            window.__tdInterval = setInterval(runAdBlockEngine, 750);
         })();
         """.trimIndent()
     }
@@ -211,8 +211,7 @@ fun BrowserScreen(
             this.settings.databaseEnabled = true
             this.settings.useWideViewPort = true
             this.settings.loadWithOverviewMode = true
-            this.settings.javaScriptCanOpenWindowsAutomatically = true
-            this.settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+            this.settings.javaScriptCanOpenWindowsAutomatically = false
 
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -302,7 +301,7 @@ fun BrowserScreen(
 
     LaunchedEffect(persistentWebView) {
         while (true) {
-            delay(1000)
+            delay(1500)
             persistentWebView.evaluateJavascript("location.href") { result ->
                 val url = runCatching { JSONArray("[$result]").optString(0) }.getOrNull()
                 if (url?.startsWith("https://") == true && url != latestUrl) observeUrl(persistentWebView, url)

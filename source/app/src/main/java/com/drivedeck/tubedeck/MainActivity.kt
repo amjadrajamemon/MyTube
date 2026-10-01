@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
     private var activePlaybackPositionMs: Long = 0L
+    private var closeActivePlaybackUi: (() -> Unit)? = null
     private val playbackBackDetector = ConsecutiveBackPressDetector()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -199,6 +200,24 @@ class MainActivity : ComponentActivity() {
                     // ComponentActivity bridges this dispatcher to the modern Android back
                     // dispatcher on API 33+, so one path handles gesture and 3-button navigation.
                     legacyPlaybackBackCallback.isEnabled = playerActive
+
+                    closeActivePlaybackUi = {
+                        when {
+                            currentScreen == ActiveScreen.PLAYER -> {
+                                currentScreen = playerReturnScreen
+                                playingMedia = null
+                            }
+                            currentScreen == ActiveScreen.BROWSER -> {
+                                val destination = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
+                                currentUrl = destination
+                                webViewInstance?.stopLoading()
+                                if (webViewInstance?.url != destination) {
+                                    webViewInstance?.loadUrl(destination)
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
 
                     when {
                         currentScreen == ActiveScreen.PLAYER && playingMedia != null -> {
@@ -637,17 +656,14 @@ class MainActivity : ComponentActivity() {
     private fun closeActivePlaybackCompletely() {
         webViewInstance?.runCatching {
             evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(v){v.pause();v.src='';}return true;})()",
+                "(function(){var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}return true;})()",
                 null
             )
-            loadUrl("about:blank")
         }
         playerActive = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask()
-        } else {
-            finish()
-        }
+        // Close the playback surface, not the entire MyTube task. This keeps Close (X)
+        // consistent with the dedicated native player and returns to the preserved source page.
+        closeActivePlaybackUi?.invoke()
     }
 
     private fun handoffActivePlaybackToAudio() {
@@ -732,6 +748,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        closeActivePlaybackUi = null
         super.onDestroy()
     }
 }

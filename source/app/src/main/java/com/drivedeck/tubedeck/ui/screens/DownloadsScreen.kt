@@ -3,6 +3,8 @@ package com.drivedeck.tubedeck.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -39,6 +41,12 @@ fun DownloadsScreen(
     onResumeTask: (String) -> Unit,
     onCancelTask: (String) -> Unit,
     onRetryTask: (String) -> Unit,
+    onPauseTasks: (Set<String>) -> Unit,
+    onResumeOrRetryTasks: (Set<String>) -> Unit,
+    onDeleteTasks: (Set<String>) -> Unit,
+    onPauseAllTasks: () -> Unit,
+    onResumeOrRetryAllTasks: () -> Unit,
+    onDeleteAllTasks: () -> Unit,
     onClearFinished: () -> Unit,
     onClearHistory: () -> Unit,
     onDeleteOfflineMedia: (String) -> Unit,
@@ -51,6 +59,14 @@ fun DownloadsScreen(
     var customUrl by remember { mutableStateOf("") }
     var filterType by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTaskIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmDeleteSelected by remember { mutableStateOf(false) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+
+    LaunchedEffect(downloadQueue) {
+        val validIds = downloadQueue.mapTo(mutableSetOf()) { it.id }
+        selectedTaskIds = selectedTaskIds.intersect(validIds)
+    }
 
     val tabs = listOf("Downloads (${offlineMediaList.size})", "Queue (${downloadQueue.size})", "History (${downloadHistory.size})")
 
@@ -209,20 +225,150 @@ fun DownloadsScreen(
                 }
                 1 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Active Tasks", fontSize = 13.sp, color = TubeDeckTextSecondary, fontWeight = FontWeight.SemiBold)
-                            TextButton(onClick = onClearFinished) {
-                                Text("Clear finished", fontSize = 12.sp, color = TubeDeckAccentCyan)
+                        val allSelected = downloadQueue.isNotEmpty() &&
+                            selectedTaskIds.size == downloadQueue.size
+                        val selectedCount = selectedTaskIds.size
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    "Download Queue",
+                                    fontSize = 13.sp,
+                                    color = TubeDeckTextSecondary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    if (selectedCount > 0) "$selectedCount selected"
+                                    else "${downloadQueue.size} tasks",
+                                    fontSize = 10.sp,
+                                    color = if (selectedCount > 0) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = {
+                                        selectedTaskIds = if (allSelected) {
+                                            emptySet()
+                                        } else {
+                                            downloadQueue.mapTo(mutableSetOf()) { it.id }
+                                        }
+                                    },
+                                    enabled = downloadQueue.isNotEmpty()
+                                ) {
+                                    Text(
+                                        if (allSelected) "None" else "Select all",
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                TextButton(onClick = onClearFinished) {
+                                    Text(
+                                        "Clear finished",
+                                        fontSize = 11.sp,
+                                        color = TubeDeckAccentCyan
+                                    )
+                                }
                             }
                         }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        QueueBatchControls(
+                            actions = listOf(
+                                QueueBatchAction(
+                                    label = "Pause all",
+                                    icon = Icons.Default.Pause,
+                                    enabled = downloadQueue.any {
+                                        it.status == TaskStatus.DOWNLOADING ||
+                                            it.status == TaskStatus.QUEUED
+                                    },
+                                    onClick = onPauseAllTasks
+                                ),
+                                QueueBatchAction(
+                                    label = "Resume / retry all",
+                                    icon = Icons.Default.Refresh,
+                                    enabled = downloadQueue.any {
+                                        it.status == TaskStatus.PAUSED ||
+                                            it.status == TaskStatus.FAILED
+                                    },
+                                    onClick = onResumeOrRetryAllTasks
+                                ),
+                                QueueBatchAction(
+                                    label = "Delete all",
+                                    icon = Icons.Default.Delete,
+                                    enabled = downloadQueue.isNotEmpty(),
+                                    destructive = true,
+                                    onClick = { confirmDeleteAll = true }
+                                )
+                            )
+                        )
+
+                        Spacer(Modifier.height(5.dp))
+
+                        QueueBatchControls(
+                            actions = listOf(
+                                QueueBatchAction(
+                                    label = "Pause selected",
+                                    icon = Icons.Default.Pause,
+                                    enabled = selectedTaskIds.isNotEmpty() &&
+                                        downloadQueue.any {
+                                            it.id in selectedTaskIds &&
+                                                (it.status == TaskStatus.DOWNLOADING ||
+                                                    it.status == TaskStatus.QUEUED)
+                                        },
+                                    onClick = { onPauseTasks(selectedTaskIds) }
+                                ),
+                                QueueBatchAction(
+                                    label = "Resume / retry selected",
+                                    icon = Icons.Default.Refresh,
+                                    enabled = selectedTaskIds.isNotEmpty() &&
+                                        downloadQueue.any {
+                                            it.id in selectedTaskIds &&
+                                                (it.status == TaskStatus.PAUSED ||
+                                                    it.status == TaskStatus.FAILED)
+                                        },
+                                    onClick = { onResumeOrRetryTasks(selectedTaskIds) }
+                                ),
+                                QueueBatchAction(
+                                    label = "Delete selected",
+                                    icon = Icons.Default.DeleteOutline,
+                                    enabled = selectedTaskIds.isNotEmpty(),
+                                    destructive = true,
+                                    onClick = { confirmDeleteSelected = true }
+                                )
+                            )
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
                         if (downloadQueue.isEmpty()) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text("Queue is empty", color = TubeDeckTextSecondary)
                             }
                         } else {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(downloadQueue) { task ->
-                                    QueueTaskCard(task = task, onPause = { onPauseTask(task.id) }, onResume = { onResumeTask(task.id) }, onCancel = { onCancelTask(task.id) }, onRetry = { onRetryTask(task.id) })
+                                items(downloadQueue, key = { it.id }) { task ->
+                                    QueueTaskCard(
+                                        task = task,
+                                        selected = task.id in selectedTaskIds,
+                                        onSelectedChange = { selected ->
+                                            selectedTaskIds = if (selected) {
+                                                selectedTaskIds + task.id
+                                            } else {
+                                                selectedTaskIds - task.id
+                                            }
+                                        },
+                                        onPause = { onPauseTask(task.id) },
+                                        onResume = { onResumeTask(task.id) },
+                                        onCancel = { onCancelTask(task.id) },
+                                        onRetry = { onRetryTask(task.id) }
+                                    )
                                 }
                             }
                         }
@@ -250,8 +396,55 @@ fun DownloadsScreen(
             }
         }
     }
-}
 
+    if (confirmDeleteSelected) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSelected = false },
+            title = { Text("Delete selected queue items?") },
+            text = {
+                Text(
+                    "Selected tasks will be removed from the queue and unfinished partial files will be deleted. Completed offline media is kept."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteTasks(selectedTaskIds)
+                        selectedTaskIds = emptySet()
+                        confirmDeleteSelected = false
+                    }
+                ) { Text("Delete", color = TubeDeckError) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteSelected = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (confirmDeleteAll) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAll = false },
+            title = { Text("Delete the entire queue?") },
+            text = {
+                Text(
+                    "Every queued, paused, failed and currently downloading task will be removed. Unfinished partial files will also be deleted."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteAllTasks()
+                        selectedTaskIds = emptySet()
+                        confirmDeleteAll = false
+                    }
+                ) { Text("Delete all", color = TubeDeckError) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteAll = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
 @Composable
 fun OfflineMediaCard(media: OfflineMedia, onPlay: () -> Unit, onDelete: () -> Unit) {
     Surface(
@@ -276,10 +469,35 @@ fun OfflineMediaCard(media: OfflineMedia, onPlay: () -> Unit, onDelete: () -> Un
 }
 
 @Composable
-fun QueueTaskCard(task: DownloadTask, onPause: () -> Unit, onResume: () -> Unit, onCancel: () -> Unit, onRetry: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)), color = TubeDeckSurfaceVariant) {
+fun QueueTaskCard(
+    task: DownloadTask,
+    selected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                1.dp,
+                if (selected) TubeDeckAccentCyan else TubeDeckBorder,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable { onSelectedChange(!selected) },
+        color = if (selected) TubeDeckAccentCyan.copy(alpha = 0.08f) else TubeDeckSurfaceVariant
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = onSelectedChange,
+                    modifier = Modifier.size(28.dp),
+                    colors = CheckboxDefaults.colors(checkedColor = TubeDeckAccentCyan)
+                )
                 AsyncImage(model = task.thumbnailUrl, contentDescription = null, modifier = Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -317,6 +535,42 @@ fun QueueTaskCard(task: DownloadTask, onPause: () -> Unit, onResume: () -> Unit,
         }
     }
 }
+
+
+private data class QueueBatchAction(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val enabled: Boolean,
+    val destructive: Boolean = false,
+    val onClick: () -> Unit
+)
+
+@Composable
+private fun QueueBatchControls(actions: List<QueueBatchAction>) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        actions.forEach { action ->
+            OutlinedButton(
+                onClick = action.onClick,
+                enabled = action.enabled,
+                modifier = Modifier.height(34.dp),
+                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = if (action.destructive) TubeDeckError else TubeDeckAccentCyan
+                )
+            ) {
+                Icon(action.icon, null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(action.label, fontSize = 10.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
 
 @Composable
 fun HistoryItemCard(item: DownloadTask) {

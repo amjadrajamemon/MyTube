@@ -1,5 +1,7 @@
 package com.drivedeck.tubedeck
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
@@ -11,6 +13,8 @@ import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -69,6 +73,22 @@ class MainActivity : ComponentActivity() {
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 val downloadQueue by repository.downloadQueue.collectAsStateWithLifecycle()
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    if (granted) repository.refreshDownloadNotification()
+                }
+                LaunchedEffect(downloadQueue.isNotEmpty()) {
+                    if (
+                        downloadQueue.isNotEmpty() &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else if (downloadQueue.isNotEmpty()) {
+                        repository.refreshDownloadNotification()
+                    }
+                }
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
@@ -358,6 +378,12 @@ class MainActivity : ComponentActivity() {
                                     onResumeTask = { repository.resumeTask(it) },
                                     onCancelTask = { repository.cancelTask(it) },
                                     onRetryTask = { repository.retryTask(it) },
+                                    onPauseTasks = { repository.pauseTasks(it) },
+                                    onResumeOrRetryTasks = { repository.resumeOrRetryTasks(it) },
+                                    onDeleteTasks = { repository.deleteTasks(it) },
+                                    onPauseAllTasks = { repository.pauseAllTasks() },
+                                    onResumeOrRetryAllTasks = { repository.resumeOrRetryAllTasks() },
+                                    onDeleteAllTasks = { repository.deleteAllQueueTasks() },
                                     onClearFinished = { repository.clearFinished() },
                                     onClearHistory = { repository.clearHistory() },
                                     onDeleteOfflineMedia = { repository.deleteOfflineMedia(it) },

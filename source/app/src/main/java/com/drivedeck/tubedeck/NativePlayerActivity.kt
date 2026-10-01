@@ -278,11 +278,9 @@ class NativePlayerActivity : ComponentActivity() {
     private fun closePlaybackCompletely() {
         closingPlayer = true
         playerActive = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask()
-        } else {
-            finish()
-        }
+        // Close only the native player Activity. The preserved search/browser Activity remains
+        // underneath, matching the meaning of "Close video" rather than "Exit MyTube".
+        finish()
     }
 
     private fun handoffToBackgroundAudio() {

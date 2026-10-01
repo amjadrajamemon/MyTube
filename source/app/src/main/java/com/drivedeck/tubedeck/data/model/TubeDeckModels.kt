@@ -35,6 +35,7 @@ data class DownloadTask(
     val totalBytes: Long = 0L,
     val status: TaskStatus = TaskStatus.QUEUED,
     val errorMessage: String? = null,
+    val retryCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )
 

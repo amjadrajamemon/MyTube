@@ -420,6 +420,7 @@ class MainActivity : ComponentActivity() {
                         if (showDownloadModal) {
                             DownloadModal(
                                 initialUrl = downloadModalTargetUrl,
+                                initialTitle = playingMedia?.title.orEmpty(),
                                 initialPlaylistMode = downloadPlaylistMode,
                                 onDismiss = { showDownloadModal = false },
                                 onStartDownload = { url, title, mode, quality ->
@@ -434,6 +435,9 @@ class MainActivity : ComponentActivity() {
                                             Toast.makeText(applicationContext, "Playlist items queued", Toast.LENGTH_SHORT).show()
                                         }
                                     }
+                                },
+                                onDiscoverPlaylistCandidates = { url, title ->
+                                    repository.discoverPlaylistCandidates(url, title)
                                 },
                                 onFetchPlaylistItems = { url ->
                                     repository.fetchPlaylistItems(url)

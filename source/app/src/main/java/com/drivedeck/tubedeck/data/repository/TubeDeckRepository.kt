@@ -370,7 +370,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     }
                 }
 
-                if (!accepted) MediaDownloader.deleteOutput(context, media)
+                if (accepted) {
+                    // Remove any stale .part fragments left in an older app-storage folder if the
+                    // user changed download destination while this task was retrying.
+                    MediaDownloader.deletePartials(context, id)
+                } else {
+                    MediaDownloader.deleteOutput(context, media)
+                }
                 return
             } catch (cancel: CancellationException) {
                 throw cancel

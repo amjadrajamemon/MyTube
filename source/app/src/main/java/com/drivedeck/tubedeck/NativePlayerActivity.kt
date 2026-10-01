@@ -182,9 +182,7 @@ class NativePlayerActivity : ComponentActivity() {
                             handoffToBackgroundAudio()
                         },
                         onDismiss = { showPlaybackExitChoices = false },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 24.dp)
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
 
@@ -248,10 +246,11 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         if (showPlaybackExitChoices) {
-            showPlaybackExitChoices = false
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             playbackBackDetector.clear()
+            showPlaybackExitChoices = false
+            closePlaybackCompletely()
             return
         }
 
@@ -291,11 +290,17 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     private fun closePlaybackCompletely() {
+        if (closingPlayer) return
         closingPlayer = true
         playerActive = false
-        // Close only the native player Activity. The preserved search/browser Activity remains
-        // underneath, matching the meaning of "Close video" rather than "Exit MyTube".
-        finish()
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = null
+        playbackBackDetector.clear()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finishAffinity()
+        }
     }
 
     private fun handoffToBackgroundAudio() {
@@ -314,7 +319,7 @@ class NativePlayerActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     finishAndRemoveTask()
                 } else {
-                    finish()
+                    finishAffinity()
                 }
             }.onFailure {
                 Toast.makeText(

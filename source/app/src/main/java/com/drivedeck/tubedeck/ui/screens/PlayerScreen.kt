@@ -134,6 +134,7 @@ fun PlayerScreen(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
+    onResolvedTitleChanged: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -180,6 +181,7 @@ fun PlayerScreen(
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             onPlaybackPositionChanged = onPlaybackPositionChanged,
+            onResolvedTitleChanged = onResolvedTitleChanged,
             modifier = modifier.fillMaxSize()
         )
     }
@@ -321,6 +323,7 @@ fun NativeExoPlayer(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
+    onResolvedTitleChanged: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -561,6 +564,7 @@ fun NativeExoPlayer(
             try {
                 val result = YoutubeStreamResolver.resolve(context, media.mediaUri)
                 resolved = result
+                result.title.takeIf { it.isNotBlank() }?.let(onResolvedTitleChanged)
                 hasCaptions = result.subtitles.isNotEmpty()
                 val target = chooseAutoHeight(context, result.options.map { it.height }, bandwidthMeter.bitrateEstimate)
                 loadResolvedStream(result, target, autoSelected = true, preservePosition = false)
@@ -1136,6 +1140,7 @@ fun NativeExoPlayer(
         if (compactPortrait) {
             PortraitCompanionPanel(
                 media = media,
+                displayTitle = resolved?.title?.takeIf { it.isNotBlank() } ?: media.title,
                 showComments = showComments,
                 commentsAvailable = youtubeVideo,
                 onToggleComments = { showComments = !showComments },
@@ -1250,6 +1255,7 @@ private fun DownloadActionStrip(
 @Composable
 private fun PortraitCompanionPanel(
     media: OfflineMedia,
+    displayTitle: String,
     showComments: Boolean,
     commentsAvailable: Boolean,
     onToggleComments: () -> Unit,
@@ -1309,7 +1315,7 @@ private fun PortraitCompanionPanel(
         try {
             episodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(
                 url = media.mediaUri,
-                titleHint = media.title
+                titleHint = displayTitle
             )
         } catch (cancel: CancellationException) {
             throw cancel
@@ -1333,7 +1339,7 @@ private fun PortraitCompanionPanel(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    media.title,
+                    displayTitle,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -1436,7 +1442,7 @@ private fun PortraitCompanionPanel(
                     ) {
                         item {
                             Text(
-                                media.title,
+                                displayTitle,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
@@ -2354,6 +2360,11 @@ private fun buildResolvedSource(
     }
     val videoItem = MediaItem.Builder()
         .setUri(Uri.parse(option.videoUrl))
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(resolved.title)
+                .build()
+        )
         .setSubtitleConfigurations(subtitles)
         .build()
     // DefaultMediaSourceFactory is responsible for merging side-loaded subtitle sources.

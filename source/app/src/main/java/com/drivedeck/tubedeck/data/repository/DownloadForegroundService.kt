@@ -28,10 +28,15 @@ class DownloadForegroundService : Service() {
 
         fun ensureRunning(context: Context) {
             if (running.get()) return
-            ContextCompat.startForegroundService(
-                context.applicationContext,
-                Intent(context.applicationContext, DownloadForegroundService::class.java)
-            )
+            // Android 12+ can reject a brand-new FGS start while the app is fully backgrounded.
+            // Never let that platform restriction crash the queue; persisted work will resume on
+            // the next user-visible/app-allowed start.
+            runCatching {
+                ContextCompat.startForegroundService(
+                    context.applicationContext,
+                    Intent(context.applicationContext, DownloadForegroundService::class.java)
+                )
+            }
         }
     }
 

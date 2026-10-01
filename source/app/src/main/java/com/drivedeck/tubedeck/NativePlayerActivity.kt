@@ -226,8 +226,6 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun launchRelatedPlayer(media: OfflineMedia) {
         if (closingPlayer) return
-        repository.recordWatch(media)
-        if (media.videoId.isNotBlank()) repository.fetchSponsorSegments(media.videoId)
         val next = android.content.Intent(this, NativePlayerActivity::class.java).apply {
             putExtra(EXTRA_MEDIA_ID, media.id)
             putExtra(EXTRA_TITLE, media.title)

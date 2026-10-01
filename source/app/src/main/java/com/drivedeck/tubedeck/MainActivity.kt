@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private var playerActive = false
     private var autoPipEnabled = true
     private var inboundUrl by mutableStateOf<String?>(null)
+    private var openDownloadsQueueRequest by mutableStateOf(false)
     private var lastNativeLaunchVideoId: String? = null
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, legacyPlaybackBackCallback)
         YtDlpUpdateManager.scheduleWeekly(applicationContext)
         inboundUrl = intent?.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
+        openDownloadsQueueRequest = intent?.getBooleanExtra("open_downloads_queue", false) == true
 
         setContent {
             TubeDeckTheme {
@@ -151,6 +153,15 @@ class MainActivity : ComponentActivity() {
                                     ).show()
                                 }
                         }
+                    }
+                }
+
+                LaunchedEffect(openDownloadsQueueRequest) {
+                    if (openDownloadsQueueRequest) {
+                        previousScreen = currentScreen
+                        downloadsInitialTab = 1
+                        currentScreen = ActiveScreen.DOWNLOADS
+                        openDownloadsQueueRequest = false
                     }
                 }
 
@@ -582,6 +593,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra("open_downloads_queue", false)) {
+            openDownloadsQueueRequest = true
+        }
         inboundUrl = intent.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
     }
 

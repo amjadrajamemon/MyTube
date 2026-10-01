@@ -147,21 +147,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "Google account") {
-                Text(
-                    "Tap the account icon on Home, Browser or ExoPlayer to sign in through Google's secure account chooser. MyTube only shows a signed-in account after Google Identity returns a valid credential.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-            }
-
             SettingsCard(title = "yt-dlp engine") {
-                Text(
-                    "Stable yt-dlp updates are checked automatically every 7 days when a network connection is available.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-                Spacer(Modifier.height(6.dp))
                 Text(
                     "Version: " + (ytDlpState.version ?: "Bundled / not initialized"),
                     color = Color.White,
@@ -207,7 +193,6 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Download folder") {
-                Text("Save files in a folder you choose, or use the app storage folder below.", color = Color.LightGray, fontSize = 12.sp)
                 Text("Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "App storage / $downloadDir"}", color = Color.White, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose folder") }
@@ -242,7 +227,6 @@ fun SettingsScreen(
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
-                Text("No app-imposed concurrency ceiling. Enter any positive whole number; very high values can exhaust device memory, sockets or bandwidth.", color = Color.LightGray, fontSize = 11.sp)
                 if (parallelCount == null || parallelCount < 1) Text("Enter a positive whole number.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
 
@@ -303,7 +287,7 @@ fun SettingsScreen(
                     )
                     onClose()
                 },
-                enabled = downloadDir.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) && parallelCount != null && parallelCount in 1..32 && folderError == null,
+                enabled = downloadDir.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) && parallelCount != null && parallelCount >= 1 && folderError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(54.dp)

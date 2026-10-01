@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,7 +40,10 @@ fun PlaybackBackChoiceOverlay(
     }
 
     Surface(
-        modifier = modifier,
+        modifier = modifier
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 12.dp, bottom = 12.dp),
         shape = RoundedCornerShape(18.dp),
         color = Color.Black.copy(alpha = 0.88f),
         tonalElevation = 6.dp

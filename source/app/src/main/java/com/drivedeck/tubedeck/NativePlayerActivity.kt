@@ -32,6 +32,7 @@ import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.BackgroundAudioController
+import com.drivedeck.tubedeck.player.ConsecutiveBackPressDetector
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -56,12 +57,11 @@ class NativePlayerActivity : ComponentActivity() {
     private var isPipMode = false
     private var playerActive = true
     private var closingPlayer = false
-    private var lastPlaybackBackAt = 0L
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
     private lateinit var currentMedia: OfflineMedia
-    private val PLAYBACK_DOUBLE_BACK_WINDOW_MS = 300L
+    private val playbackBackDetector = ConsecutiveBackPressDetector()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,29 +243,26 @@ class NativePlayerActivity : ComponentActivity() {
         if (isPipMode) {
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
-            lastPlaybackBackAt = 0L
+            playbackBackDetector.clear()
             showPlaybackExitChoices = true
             return
         }
 
-        val now = SystemClock.elapsedRealtime()
-        val isSecondPress =
-            lastPlaybackBackAt > 0L && now - lastPlaybackBackAt <= PLAYBACK_DOUBLE_BACK_WINDOW_MS
+        val isSecondPress = playbackBackDetector.registerPress(SystemClock.elapsedRealtime())
 
         if (isSecondPress) {
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
-            lastPlaybackBackAt = 0L
+            playbackBackDetector.clear()
             showPlaybackExitChoices = true
             return
         }
 
-        lastPlaybackBackAt = now
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = lifecycleScope.launch {
-            delay(PLAYBACK_DOUBLE_BACK_WINDOW_MS)
+            delay(ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS)
             if (!playerActive || closingPlayer) return@launch
-            lastPlaybackBackAt = 0L
+            playbackBackDetector.clear()
             playbackBackDecisionJob = null
             if (
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&

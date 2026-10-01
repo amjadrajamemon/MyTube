@@ -212,6 +212,10 @@ fun BrowserScreen(
             this.settings.useWideViewPort = true
             this.settings.loadWithOverviewMode = true
             this.settings.javaScriptCanOpenWindowsAutomatically = false
+            this.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                this.settings.safeBrowsingEnabled = true
+            }
 
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {

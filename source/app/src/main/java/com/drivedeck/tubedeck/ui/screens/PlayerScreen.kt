@@ -1151,7 +1151,6 @@ fun NativeExoPlayer(
                     if (pipEnabled) onEnterPip()
                     else Toast.makeText(context, "PiP is disabled in Settings", Toast.LENGTH_SHORT).show()
                 },
-                downloadActionsVisible = controlsVisible,
                 onDownloadVideo = onDownloadVideo,
                 onDownloadPlaylist = onDownloadPlaylist,
                 description = resolved?.description.orEmpty(),
@@ -1263,7 +1262,6 @@ private fun PortraitCompanionPanel(
     commentsAvailable: Boolean,
     onToggleComments: () -> Unit,
     onEnterPip: () -> Unit,
-    downloadActionsVisible: Boolean,
     onDownloadVideo: (() -> Unit)?,
     onDownloadPlaylist: (() -> Unit)?,
     description: String,
@@ -1366,48 +1364,54 @@ private fun PortraitCompanionPanel(
             }
         }
 
-        if (commentsAvailable) {
+        if (commentsAvailable || onDownloadVideo != null || onDownloadPlaylist != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilledTonalButton(
-                    onClick = {
-                        if (showDescription) showDescription = false
-                        onToggleComments()
-                    },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                    modifier = Modifier.heightIn(min = 34.dp)
-                ) {
-                    Icon(
-                        if (showComments) Icons.Default.Close else Icons.Default.Comment,
-                        null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (showComments) "Hide comments" else "Comments", fontSize = 10.5.sp)
+                if (commentsAvailable) {
+                    FilledTonalButton(
+                        onClick = {
+                            if (showDescription) showDescription = false
+                            onToggleComments()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                        modifier = Modifier.heightIn(min = 34.dp)
+                    ) {
+                        Icon(
+                            if (showComments) Icons.Default.Close else Icons.Default.Comment,
+                            null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (showComments) "Hide comments" else "Comments", fontSize = 10.5.sp)
+                    }
+
+                    FilledTonalButton(
+                        onClick = {
+                            val opening = !showDescription
+                            showDescription = opening
+                            if (opening && showComments) onToggleComments()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                        modifier = Modifier.heightIn(min = 34.dp)
+                    ) {
+                        Icon(
+                            if (showDescription) Icons.Default.Close else Icons.Default.Description,
+                            null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (showDescription) "Hide description" else "Description", fontSize = 10.5.sp)
+                    }
                 }
 
-                FilledTonalButton(
-                    onClick = {
-                        val opening = !showDescription
-                        showDescription = opening
-                        if (opening && showComments) onToggleComments()
-                    },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                    modifier = Modifier.heightIn(min = 34.dp)
-                ) {
-                    Icon(
-                        if (showDescription) Icons.Default.Close else Icons.Default.Description,
-                        null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (showDescription) "Hide description" else "Description", fontSize = 10.5.sp)
+                if (onDownloadVideo != null || onDownloadPlaylist != null) {
+                    DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
                 }
 
                 if (showComments) {
@@ -1419,22 +1423,6 @@ private fun PortraitCompanionPanel(
                             modifier = Modifier.size(17.dp)
                         )
                     }
-                }
-            }
-        }
-
-        if (onDownloadVideo != null || onDownloadPlaylist != null) {
-            AnimatedVisibility(
-                visible = downloadActionsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
                 }
             }
         }

@@ -71,7 +71,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
             putString("playerMode", next.playerMode.name)
-            putString("googleWebClientId", next.googleWebClientId.trim())
             putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
             putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
             putBoolean("adBlockEnabled", next.adBlockEnabled); putBoolean("blockVideoAds", next.blockVideoAds)
@@ -94,7 +93,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistMode = enumValue(prefs.getString("playlistMode", null), DownloadMode.VIDEO),
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
-        googleWebClientId = prefs.getString("googleWebClientId", "") ?: "",
         fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
         fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),
         adBlockEnabled = prefs.getBoolean("adBlockEnabled", true),

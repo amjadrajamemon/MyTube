@@ -605,6 +605,13 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::repository.isInitialized) {
+            repository.resumeDownloadsAfterSystemTimeout()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

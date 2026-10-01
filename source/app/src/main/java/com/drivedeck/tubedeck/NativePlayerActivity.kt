@@ -98,7 +98,9 @@ class NativePlayerActivity : ComponentActivity() {
         )
 
         currentMedia = media
-        repository.recordWatch(media)
+        if (!media.title.equals("Now Playing", ignoreCase = true)) {
+            repository.recordWatch(media)
+        }
 
         setContent {
             TubeDeckTheme {
@@ -150,6 +152,7 @@ class NativePlayerActivity : ComponentActivity() {
                     onResolvedTitleChanged = { title ->
                         if (title.isNotBlank() && currentMedia.title != title) {
                             currentMedia = currentMedia.copy(title = title)
+                            repository.recordWatch(currentMedia)
                         }
                     }
                 )

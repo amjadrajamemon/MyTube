@@ -26,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.3.0 dual-APK source
+      - name: Verify v1.3.1 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +36,7 @@ jobs:
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.3.0 ARM64 + Universal source tree."
+          echo "Building MyTube v1.3.1 ARM64 + Universal source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -110,10 +110,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.0-ARM64-Whisper-YtDlp-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.0-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.1-ARM64-Whisper-YtDlp-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.1-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.0-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.1-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -123,21 +123,21 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.3.0-ARM64-Whisper-YtDlp-debug.apk > dist/MyTube-v1.3.0-ARM64-Whisper-YtDlp-debug.apk.sha256
-          sha256sum dist/MyTube-v1.3.0-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.0-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.0-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.0-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.3.1-ARM64-Whisper-YtDlp-debug.apk > dist/MyTube-v1.3.1-ARM64-Whisper-YtDlp-debug.apk.sha256
+          sha256sum dist/MyTube-v1.3.1-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.1-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.1-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.1-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.3.0 dual APK release
+      - name: Publish v1.3.1 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.3.0-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.3.0.
+          TAG="v1.3.1-dual-arm64-universal-debug"
+          NOTES="MyTube r6.5 LiveDub v1.3.1.
 
           Two APK editions are published for every release:
           - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and yt-dlp.
@@ -165,15 +165,19 @@ jobs:
           - Interrupted/failed legacy queue entries are re-queued automatically after app/process restart.
           - A live Android notification reports queued/active/finished/paused/failed/retrying counts, retry totals, aggregate progress, elapsed time and ETA when calculable.
           - The old 32-parallel-download ceiling has been removed; the user may choose any positive concurrency value.
+          - Android system Back is intercepted at Activity level before WebView/history navigation while video is active.
+          - One Back enters PiP after a short 350 ms double-press decision window.
+          - Double Back within that window opens compact Close and Audio-only choices instead of entering PiP.
+          - Audio-only hands the current video/position to a MediaSession foreground service so playback can continue after the app task is removed.
           - Unit tests, both APK builds and ABI verification must pass before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.3.0-ARM64-Whisper-YtDlp-debug.apk
-            dist/MyTube-v1.3.0-ARM64-Whisper-YtDlp-debug.apk.sha256
-            dist/MyTube-v1.3.0-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.3.0-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.3.0-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.3.0-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.1-ARM64-Whisper-YtDlp-debug.apk
+            dist/MyTube-v1.3.1-ARM64-Whisper-YtDlp-debug.apk.sha256
+            dist/MyTube-v1.3.1-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.3.1-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.3.1-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.3.1-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -181,7 +185,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.3.0 ARM64 + Universal Debug" \
+              --title "MyTube v1.3.1 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

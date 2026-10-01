@@ -232,7 +232,7 @@ fun WebPlayer(
                     settings.cacheMode = WebSettings.LOAD_DEFAULT
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
-                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    settings.javaScriptCanOpenWindowsAutomatically = false
                     setOnTouchListener { _, event ->
                         if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
                             downloadActionsVisible = true

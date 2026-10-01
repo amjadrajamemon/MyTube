@@ -313,7 +313,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private suspend fun runTask(id: String) {
-        var retryAttempt = 0
+        var retryAttempt = synchronized(lock) {
+            _downloadQueue.value.firstOrNull { it.id == id }?.retryCount ?: 0
+        }
 
         while (currentCoroutineContext().isActive) {
             val task = synchronized(lock) {
@@ -595,7 +597,15 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 progress = item.optDouble("progress", 0.0).toFloat(),
                 downloadedBytes = item.optLong("downloadedBytes"), totalBytes = item.optLong("totalBytes"),
                 status = when (status) {
-                    TaskStatus.DOWNLOADING, TaskStatus.FAILED -> TaskStatus.QUEUED
+                    TaskStatus.DOWNLOADING -> TaskStatus.QUEUED
+                    TaskStatus.FAILED -> {
+                        val persistedError = item.optString("errorMessage")
+                            .takeIf { it.isNotBlank() && it != "null" }
+                        if (
+                            persistedError == null ||
+                            DownloadFailureClassifier.isRecoverable(IllegalStateException(persistedError))
+                        ) TaskStatus.QUEUED else TaskStatus.FAILED
+                    }
                     else -> status
                 },
                 errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },

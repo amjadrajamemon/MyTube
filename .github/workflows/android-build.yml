@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.3.2"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.3.3"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts

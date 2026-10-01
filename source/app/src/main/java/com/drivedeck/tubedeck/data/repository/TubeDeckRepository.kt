@@ -360,6 +360,77 @@ class TubeDeckRepository private constructor(private val context: Context) {
         processQueue()
     }
     fun retryTask(id: String) = resumeTask(id)
+
+    fun pauseTasks(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        synchronized(lock) {
+            val targets = ids.toSet()
+            val updated = _downloadQueue.value.map { task ->
+                if (task.id in targets && (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.QUEUED)) {
+                    activeJobs[task.id]?.cancel()
+                    task.copy(status = TaskStatus.PAUSED, speed = "Paused")
+                } else {
+                    task
+                }
+            }
+            setQueue(updated)
+        }
+        processQueue()
+    }
+
+    fun resumeOrRetryTasks(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        synchronized(lock) {
+            val targets = ids.toSet()
+            val updated = _downloadQueue.value.map { task ->
+                if (task.id in targets && (task.status == TaskStatus.PAUSED || task.status == TaskStatus.FAILED)) {
+                    task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                } else {
+                    task
+                }
+            }
+            setQueue(updated)
+        }
+        processQueue()
+    }
+
+    fun pauseAllTasks() {
+        pauseTasks(
+            _downloadQueue.value
+                .filter { it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED }
+                .mapTo(mutableSetOf()) { it.id }
+        )
+    }
+
+    fun resumeOrRetryAllTasks() {
+        resumeOrRetryTasks(
+            _downloadQueue.value
+                .filter { it.status == TaskStatus.PAUSED || it.status == TaskStatus.FAILED }
+                .mapTo(mutableSetOf()) { it.id }
+        )
+    }
+
+    fun deleteTasks(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        val targets = ids.toSet()
+        val jobs = synchronized(lock) {
+            val running = targets.mapNotNull { id ->
+                activeJobs[id]?.also { it.cancel() }?.let { id to it }
+            }
+            setQueue(_downloadQueue.value.filterNot { it.id in targets })
+            running
+        }
+        scope.launch {
+            jobs.forEach { (_, job) -> runCatching { job.join() } }
+            targets.forEach { id -> runCatching { MediaDownloader.deletePartials(context, id) } }
+        }
+        processQueue()
+    }
+
+    fun deleteAllQueueTasks() {
+        deleteTasks(_downloadQueue.value.mapTo(mutableSetOf()) { it.id })
+    }
+
     fun clearFinished() = synchronized(lock) {
         setQueue(_downloadQueue.value.filterNot { it.status == TaskStatus.COMPLETED })
     }

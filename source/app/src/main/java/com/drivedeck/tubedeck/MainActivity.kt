@@ -576,9 +576,7 @@ class MainActivity : ComponentActivity() {
                                     handoffActivePlaybackToAudio()
                                 },
                                 onDismiss = { showPlaybackExitChoices = false },
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 24.dp)
+                                modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }
                     }
@@ -626,10 +624,11 @@ class MainActivity : ComponentActivity() {
         if (!playerActive) return
 
         if (showPlaybackExitChoices) {
-            showPlaybackExitChoices = false
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             playbackBackDetector.clear()
+            showPlaybackExitChoices = false
+            closeActivePlaybackCompletely()
             return
         }
 
@@ -666,6 +665,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun closeActivePlaybackCompletely() {
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = null
+        playbackBackDetector.clear()
         webViewInstance?.runCatching {
             evaluateJavascript(
                 "(function(){var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}return true;})()",
@@ -673,9 +675,12 @@ class MainActivity : ComponentActivity() {
             )
         }
         playerActive = false
-        // Close the playback surface, not the entire MyTube task. This keeps Close (X)
-        // consistent with the dedicated native player and returns to the preserved source page.
         closeActivePlaybackUi?.invoke()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finishAffinity()
+        }
     }
 
     private fun handoffActivePlaybackToAudio() {
@@ -705,7 +710,7 @@ class MainActivity : ComponentActivity() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         finishAndRemoveTask()
                     } else {
-                        finish()
+                        finishAffinity()
                     }
                 }.onFailure {
                     Toast.makeText(

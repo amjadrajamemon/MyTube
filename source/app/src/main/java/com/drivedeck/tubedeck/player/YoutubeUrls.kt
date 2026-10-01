@@ -24,12 +24,14 @@ object YoutubeUrls {
         return candidate?.takeIf { idPattern.matches(it) }
     }
 
-    fun playlist(value: String): Boolean {
-        val uri = runCatching { URI(value.trim()) }.getOrNull() ?: return false
-        if (uri.scheme?.lowercase() != "https") return false
-        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return false
-        return host in setOf("youtube.com", "m.youtube.com", "music.youtube.com") &&
-            !queryParameter(uri, "list").isNullOrBlank()
+    fun playlist(value: String): Boolean = playlistId(value) != null
+
+    fun playlistId(value: String): String? {
+        val uri = runCatching { URI(value.trim()) }.getOrNull() ?: return null
+        if (uri.scheme?.lowercase() != "https") return null
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return null
+        if (host !in setOf("youtube.com", "m.youtube.com", "music.youtube.com")) return null
+        return queryParameter(uri, "list")?.takeIf { it.isNotBlank() }
     }
 
     fun isYoutubePage(value: String): Boolean {

@@ -162,6 +162,7 @@ object YoutubeStreamResolver {
     data class ResolvedMedia(
         val title: String,
         val description: String,
+        val descriptionIsHtml: Boolean,
         val uploaderName: String,
         val viewCount: Long,
         val uploadDateText: String,
@@ -279,6 +280,7 @@ object YoutubeStreamResolver {
             ResolvedMedia(
                 title = info.name,
                 description = runCatching { info.description.content }.getOrDefault(""),
+                descriptionIsHtml = runCatching { info.description.type.name == "HTML" }.getOrDefault(false),
                 uploaderName = info.uploaderName.orEmpty().ifBlank { "YouTube" },
                 viewCount = info.viewCount,
                 uploadDateText = info.textualUploadDate.orEmpty(),

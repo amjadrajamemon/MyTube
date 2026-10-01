@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Rational
 import android.widget.Toast
-import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -62,25 +61,30 @@ class NativePlayerActivity : ComponentActivity() {
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
     private lateinit var currentMedia: OfflineMedia
-    private val PLAYBACK_DOUBLE_BACK_WINDOW_MS = 350L
+    private val PLAYBACK_DOUBLE_BACK_WINDOW_MS = 300L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_OVERLAY
-            ) {
+        // One Back pipeline for gesture navigation, 3-button navigation and legacy devices.
+        // ComponentActivity bridges this dispatcher to Android's modern back dispatcher on API 33+,
+        // so the system cannot pop this Activity before our PiP/double-Back state machine runs.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
                 handlePlaybackBack()
             }
-        } else {
-            onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    handlePlaybackBack()
-                }
-            })
+        })
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val pipBuilder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                pipBuilder.setAutoEnterEnabled(false)
+                pipBuilder.setSeamlessResizeEnabled(true)
+            }
+            setPictureInPictureParams(pipBuilder.build())
         }
 
         val media = OfflineMedia(
@@ -321,15 +325,22 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
+            val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
-                .build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(false)
+                builder.setSeamlessResizeEnabled(true)
+            }
+            val params = builder.build()
+            setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
-                Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
+                // Do not fall through to Activity finish: preserving playback is preferable.
+                showPlaybackExitChoices = true
+                Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
             }
         } else {
-            finish()
+            showPlaybackExitChoices = true
         }
     }
 

@@ -124,6 +124,7 @@ fun PlayerScreen(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
+    onPlaybackPositionChanged: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -171,6 +172,7 @@ fun PlayerScreen(
             onPlayRelated = onPlayRelated,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
+            onPlaybackPositionChanged = onPlaybackPositionChanged,
             modifier = modifier.fillMaxSize()
         )
     }
@@ -311,6 +313,7 @@ fun NativeExoPlayer(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
+    onPlaybackPositionChanged: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -646,6 +649,7 @@ fun NativeExoPlayer(
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition
+            onPlaybackPositionChanged(currentPosition)
             val seconds = currentPosition / 1000f
             sponsorSegments.firstOrNull { seconds >= it.startTime && seconds < it.endTime - .1f }?.let {
                 exoPlayer.seekTo((it.endTime * 1000).toLong())

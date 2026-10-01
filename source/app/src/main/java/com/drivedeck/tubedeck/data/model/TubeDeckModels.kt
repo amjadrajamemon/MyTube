@@ -103,6 +103,15 @@ data class HomeVideo(
     val watchedAt: Long = System.currentTimeMillis()
 )
 
+data class PlaylistCandidate(
+    val title: String,
+    val url: String,
+    val channel: String = "YouTube",
+    val itemCount: Long = 0L,
+    val thumbnailUrl: String = "",
+    val kind: String = "Playlist"
+)
+
 data class PlaylistItem(
     val videoId: String,
     val title: String,

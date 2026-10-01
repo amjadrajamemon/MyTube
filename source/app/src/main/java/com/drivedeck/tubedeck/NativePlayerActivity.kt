@@ -36,6 +36,8 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -56,9 +58,11 @@ class NativePlayerActivity : ComponentActivity() {
     private var playerActive = true
     private var closingPlayer = false
     private var lastPlaybackBackAt = 0L
+    private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
     private lateinit var currentMedia: OfflineMedia
+    private val PLAYBACK_DOUBLE_BACK_WINDOW_MS = 350L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -232,22 +236,41 @@ class NativePlayerActivity : ComponentActivity() {
             return
         }
 
-        val now = SystemClock.elapsedRealtime()
-        val isSecondPress = lastPlaybackBackAt > 0L && now - lastPlaybackBackAt <= 1_400L
-        lastPlaybackBackAt = now
-
-        if (isSecondPress || isPipMode) {
+        if (isPipMode) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            lastPlaybackBackAt = 0L
             showPlaybackExitChoices = true
             return
         }
 
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            repository.settings.value.pipEnabled
-        ) {
-            enterPlayerPip()
-        } else {
+        val now = SystemClock.elapsedRealtime()
+        val isSecondPress =
+            lastPlaybackBackAt > 0L && now - lastPlaybackBackAt <= PLAYBACK_DOUBLE_BACK_WINDOW_MS
+
+        if (isSecondPress) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            lastPlaybackBackAt = 0L
             showPlaybackExitChoices = true
+            return
+        }
+
+        lastPlaybackBackAt = now
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = lifecycleScope.launch {
+            delay(PLAYBACK_DOUBLE_BACK_WINDOW_MS)
+            if (!playerActive || closingPlayer) return@launch
+            lastPlaybackBackAt = 0L
+            playbackBackDecisionJob = null
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                repository.settings.value.pipEnabled
+            ) {
+                enterPlayerPip()
+            } else {
+                showPlaybackExitChoices = true
+            }
         }
     }
 
@@ -319,6 +342,8 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = null
         playerActive = false
         super.onDestroy()
     }

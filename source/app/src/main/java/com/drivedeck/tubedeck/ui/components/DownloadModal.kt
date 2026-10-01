@@ -33,6 +33,7 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.DownloadMode
 import com.drivedeck.tubedeck.data.model.DownloadChoices
+import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.data.model.PlaylistItem
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.ui.theme.*
@@ -44,10 +45,12 @@ import kotlinx.coroutines.delay
 @Composable
 fun DownloadModal(
     initialUrl: String,
+    initialTitle: String = "",
     initialPlaylistMode: Boolean = false,
     onDismiss: () -> Unit,
     onStartDownload: (url: String, title: String, mode: DownloadMode, quality: String) -> Unit,
     onDownloadPlaylist: (items: List<PlaylistItem>, mode: DownloadMode, quality: String) -> Unit,
+    onDiscoverPlaylistCandidates: suspend (String, String) -> List<PlaylistCandidate>,
     onFetchPlaylistItems: suspend (String) -> List<PlaylistItem>,
     onFetchDownloadChoices: suspend (String) -> DownloadChoices,
     settings: TubeDeckSettings
@@ -61,23 +64,38 @@ fun DownloadModal(
     var selectedMode by remember { mutableStateOf(if (isPlaylist) settings.playlistMode else settings.customMode) }
     var selectedQuality by remember { mutableStateOf(if (isPlaylist) settings.playlistQuality else settings.customQuality) }
     var playlistItems by remember { mutableStateOf(emptyList<PlaylistItem>()) }
+    var playlistCandidates by remember(urlText) { mutableStateOf(emptyList<PlaylistCandidate>()) }
+    var activePlaylistUrl by remember(urlText) { mutableStateOf("") }
     var videoQualities by remember { mutableStateOf(emptyList<String>()) }
     var audioAvailable by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var isFetching by remember { mutableStateOf(false) }
     
-    LaunchedEffect(urlText, isPlaylist) {
+    LaunchedEffect(urlText, isPlaylist, activePlaylistUrl) {
         isFetching = true
         fetchError = null
         playlistItems = emptyList()
         videoQualities = emptyList()
         audioAvailable = false
         try {
-            delay(350)
+            delay(250)
             if (isPlaylist) {
-                require(hasPlaylist) { "Paste a YouTube playlist link to choose its videos." }
-                playlistItems = onFetchPlaylistItems(urlText)
-                if (playlistItems.isEmpty()) fetchError = "No available videos were found in this playlist."
+                val targetPlaylistUrl = when {
+                    hasPlaylist -> urlText
+                    activePlaylistUrl.isNotBlank() -> activePlaylistUrl
+                    else -> {
+                        require(hasVideo) { "Start from a YouTube video or playlist." }
+                        playlistCandidates = onDiscoverPlaylistCandidates(urlText, initialTitle)
+                        val first = playlistCandidates.firstOrNull()
+                            ?: error("No related playlist or mix could be found for this video.")
+                        activePlaylistUrl = first.url
+                        return@LaunchedEffect
+                    }
+                }
+                playlistItems = onFetchPlaylistItems(targetPlaylistUrl)
+                if (playlistItems.isEmpty()) {
+                    fetchError = "No downloadable videos were found in the selected collection."
+                }
             } else {
                 require(hasVideo) { "Paste a valid YouTube video link." }
                 val choices = onFetchDownloadChoices(urlText)
@@ -125,7 +143,14 @@ fun DownloadModal(
                 if (hasVideo || hasPlaylist) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !isPlaylist, enabled = hasVideo, onClick = { playlistRequested = false }, label = { Text("This video") })
-                        FilterChip(selected = isPlaylist, onClick = { playlistRequested = true }, label = { Text("Whole playlist") })
+                        FilterChip(
+                            selected = isPlaylist,
+                            onClick = {
+                                playlistRequested = true
+                                if (!hasPlaylist) activePlaylistUrl = ""
+                            },
+                            label = { Text("Whole playlist") }
+                        )
                     }
                 }
 
@@ -186,6 +211,78 @@ fun DownloadModal(
                     if (isFetching) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally), color = TubeDeckAccentCyan)
                     } else {
+                        if (!hasPlaylist && playlistCandidates.isNotEmpty()) {
+                            Text("Suggested collections", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                "MyTube searched for likely playlists/episode collections and also offers a related Mix.",
+                                color = TubeDeckTextSecondary,
+                                fontSize = 11.sp
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                playlistCandidates.take(6).forEach { candidate ->
+                                    val selected = candidate.url == activePlaylistUrl
+                                    Surface(
+                                        color = if (selected) TubeDeckAccentCyan.copy(alpha = .14f) else TubeDeckSurfaceVariant,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                            .border(
+                                                1.dp,
+                                                if (selected) TubeDeckAccentCyan else TubeDeckBorder,
+                                                RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable {
+                                                if (candidate.url != activePlaylistUrl) {
+                                                    activePlaylistUrl = candidate.url
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(7.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                modifier = Modifier.size(72.dp, 44.dp).clip(RoundedCornerShape(6.dp)),
+                                                color = Color.Black
+                                            ) {
+                                                AsyncImage(
+                                                    model = candidate.thumbnailUrl,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                                Text(
+                                                    candidate.title,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    buildString {
+                                                        append(candidate.kind)
+                                                        if (candidate.channel.isNotBlank()) append(" • ").append(candidate.channel)
+                                                        if (candidate.itemCount > 0) append(" • ").append(candidate.itemCount).append(" videos")
+                                                    },
+                                                    color = TubeDeckTextSecondary,
+                                                    fontSize = 10.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            if (selected) {
+                                                Icon(Icons.Default.Check, null, tint = TubeDeckAccentCyan)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                        }
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Select Tracks (${playlistItems.size})", fontWeight = FontWeight.Bold)
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

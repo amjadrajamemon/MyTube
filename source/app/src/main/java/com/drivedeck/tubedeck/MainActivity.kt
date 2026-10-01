@@ -26,9 +26,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -539,18 +539,19 @@ class MainActivity : ComponentActivity() {
                         }
 
                         if (showPlaybackExitChoices) {
-                            Dialog(onDismissRequest = { showPlaybackExitChoices = false }) {
-                                PlaybackBackChoiceOverlay(
-                                    onCloseVideo = {
-                                        showPlaybackExitChoices = false
-                                        closeActivePlaybackCompletely()
-                                    },
-                                    onAudioOnly = {
-                                        showPlaybackExitChoices = false
-                                        handoffActivePlaybackToAudio()
-                                    }
-                                )
-                            }
+                            PlaybackBackChoiceOverlay(
+                                onCloseVideo = {
+                                    showPlaybackExitChoices = false
+                                    closeActivePlaybackCompletely()
+                                },
+                                onAudioOnly = {
+                                    showPlaybackExitChoices = false
+                                    handoffActivePlaybackToAudio()
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 24.dp)
+                            )
                         }
                     }
                 }

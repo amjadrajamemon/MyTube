@@ -13,6 +13,8 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.comments.CommentsInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
+import org.schabi.newpipe.extractor.search.SearchInfo
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -124,6 +126,15 @@ object YoutubeStreamResolver {
         val thumbnailUrl: String,
         val channelTitle: String,
         val durationSeconds: Long
+    )
+
+    data class DiscoveredPlaylist(
+        val title: String,
+        val url: String,
+        val uploader: String,
+        val itemCount: Long,
+        val thumbnailUrl: String,
+        val kind: String
     )
 
     data class NativeComment(
@@ -376,6 +387,89 @@ object YoutubeStreamResolver {
                 if (size >= 60) break
             }
         }
+    }
+
+    suspend fun discoverPlaylists(
+        url: String,
+        titleHint: String
+    ): List<DiscoveredPlaylist> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ensureInitialized()
+            val videoId = YoutubeUrls.videoId(url)
+                ?: throw IllegalArgumentException("Enter a valid YouTube video URL")
+
+            val query = seriesSearchQuery(titleHint)
+            val candidates = mutableListOf<DiscoveredPlaylist>()
+
+            if (query.isNotBlank()) {
+                runCatching {
+                    val service = NewPipe.getService("YouTube")
+                    val handler = service.searchQHFactory.fromQuery(
+                        query + " full episodes",
+                        listOf("playlists"),
+                        ""
+                    )
+                    val info = SearchInfo.getInfo(service, handler)
+                    info.relatedItems
+                        .filterIsInstance<PlaylistInfoItem>()
+                        .take(8)
+                        .forEach { item ->
+                            val thumb = item.thumbnails.firstOrNull()?.url.orEmpty()
+                            candidates += DiscoveredPlaylist(
+                                title = item.name,
+                                url = item.url,
+                                uploader = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+                                itemCount = item.streamCount.coerceAtLeast(0L),
+                                thumbnailUrl = thumb,
+                                kind = "Playlist"
+                            )
+                        }
+                }
+            }
+
+            // Always offer the dynamic YouTube mix as a fallback collection. It is especially
+            // useful when a channel has no explicit public playlist for a serial/episode.
+            candidates += DiscoveredPlaylist(
+                title = if (query.isBlank()) "Related YouTube Mix" else "$query • Related Mix",
+                url = "https://www.youtube.com/watch?v=$videoId&list=RD$videoId",
+                uploader = "YouTube Mix",
+                itemCount = 0L,
+                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                kind = "Mix"
+            )
+
+            candidates
+                .distinctBy { it.url.substringAfter("list=", it.url) }
+                .take(8)
+        }
+
+    private fun seriesSearchQuery(title: String): String {
+        var value = title
+            .substringBefore('|')
+            .substringBefore('•')
+            .replace(Regex("\\[[^]]*]"), " ")
+            .replace(Regex("\\([^)]*\\)"), " ")
+            .trim()
+
+        value = value
+            .replace(
+                Regex(
+                    "(?i)\\s*[-–—:]?\\s*(episode|ep\\.?|part)\\s*[-:#]?\\s*\\d+[A-Za-z]?\\b.*$"
+                ),
+                ""
+            )
+            .replace(
+                Regex("(?i)\\s*[-–—:]?\\s*(season|series)\\s*\\d+\\b.*$"),
+                ""
+            )
+            .replace(
+                Regex("(?i)\\b(full episode|eng sub|urdu dubbed|official video|promo|teaser)\\b"),
+                " "
+            )
+            .replace(Regex("\\s{2,}"), " ")
+            .trim(' ', '-', '–', '—', ':')
+
+        return value.take(90)
     }
 
     suspend fun playlistItems(url: String): List<org.schabi.newpipe.extractor.stream.StreamInfoItem> =

@@ -181,6 +181,7 @@ class NativePlayerActivity : ComponentActivity() {
                             showPlaybackExitChoices = false
                             handoffToBackgroundAudio()
                         },
+                        onDismiss = { showPlaybackExitChoices = false },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 24.dp)
@@ -243,6 +244,14 @@ class NativePlayerActivity : ComponentActivity() {
     private fun handlePlaybackBack() {
         if (!playerActive || closingPlayer) {
             finishPlayer()
+            return
+        }
+
+        if (showPlaybackExitChoices) {
+            showPlaybackExitChoices = false
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            playbackBackDetector.clear()
             return
         }
 

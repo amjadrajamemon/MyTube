@@ -13,7 +13,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.UUID
@@ -289,48 +292,176 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private suspend fun runTask(id: String) {
-        val task = synchronized(lock) { _downloadQueue.value.firstOrNull { it.id == id } } ?: return
-        try {
-            val media = MediaDownloader.download(context, task, _settings.value) { progress ->
-                synchronized(lock) {
-                    updateTask(id, persist = false) {
-                        it.copy(title = progress.title, quality = progress.quality, outputFormat = progress.format,
-                            downloadedBytes = progress.bytes, totalBytes = progress.total,
-                            progress = if (progress.total > 0) (progress.bytes.toFloat() / progress.total).coerceIn(0f, 1f) else 0f,
-                            speed = progress.speed)
+        var retryAttempt = 0
+
+        while (currentCoroutineContext().isActive) {
+            val task = synchronized(lock) {
+                _downloadQueue.value.firstOrNull { it.id == id && it.status == TaskStatus.DOWNLOADING }
+            } ?: return
+
+            try {
+                val media = MediaDownloader.download(context, task, _settings.value) { progress ->
+                    synchronized(lock) {
+                        updateTask(id, persist = false) {
+                            it.copy(
+                                title = progress.title,
+                                quality = progress.quality,
+                                outputFormat = progress.format,
+                                downloadedBytes = progress.bytes,
+                                totalBytes = progress.total,
+                                progress = if (progress.total > 0) {
+                                    (progress.bytes.toFloat() / progress.total).coerceIn(0f, 1f)
+                                } else {
+                                    it.progress
+                                },
+                                speed = progress.speed,
+                                errorMessage = null
+                            )
+                        }
                     }
                 }
-            }
-            val accepted = synchronized(lock) {
-                val current = _downloadQueue.value.firstOrNull { it.id == id && it.status == TaskStatus.DOWNLOADING }
-                if (current != null) {
-                    val complete = current.copy(
-                        status = TaskStatus.COMPLETED, progress = 1f, speed = "Done",
-                        totalBytes = media.fileSizeBytes, downloadedBytes = media.fileSizeBytes
-                    )
-                    updateTask(id) { complete }
-                    _offlineMediaList.value = listOf(media) + _offlineMediaList.value.filterNot { it.id == media.id }
-                    saveOfflineMedia(_offlineMediaList.value)
-                    _downloadHistory.value = (listOf(complete) + _downloadHistory.value).take(100)
-                    saveHistory(_downloadHistory.value)
-                    true
-                } else {
-                    false
+
+                val accepted = synchronized(lock) {
+                    val current = _downloadQueue.value.firstOrNull {
+                        it.id == id && it.status == TaskStatus.DOWNLOADING
+                    }
+                    if (current != null) {
+                        val complete = current.copy(
+                            status = TaskStatus.COMPLETED,
+                            progress = 1f,
+                            speed = "Done",
+                            totalBytes = media.fileSizeBytes,
+                            downloadedBytes = media.fileSizeBytes,
+                            errorMessage = null
+                        )
+                        updateTask(id) { complete }
+                        _offlineMediaList.value =
+                            listOf(media) + _offlineMediaList.value.filterNot { it.id == media.id }
+                        saveOfflineMedia(_offlineMediaList.value)
+                        _downloadHistory.value =
+                            (listOf(complete) + _downloadHistory.value).take(100)
+                        saveHistory(_downloadHistory.value)
+                        true
+                    } else {
+                        false
+                    }
                 }
-            }
-            if (!accepted) MediaDownloader.deleteOutput(context, media)
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: Exception) {
-            synchronized(lock) {
-                updateTask(id) {
-                    if (it.status == TaskStatus.DOWNLOADING) it.copy(
-                        status = TaskStatus.FAILED, speed = "Failed",
-                        errorMessage = error.message ?: "Download failed"
-                    ) else it
+
+                if (!accepted) MediaDownloader.deleteOutput(context, media)
+                return
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                val recoverable = isRecoverableDownloadError(error)
+
+                if (!recoverable) {
+                    synchronized(lock) {
+                        updateTask(id) {
+                            if (it.status == TaskStatus.DOWNLOADING) {
+                                it.copy(
+                                    status = TaskStatus.FAILED,
+                                    speed = "Needs attention",
+                                    errorMessage = error.message ?: "Download cannot continue automatically"
+                                )
+                            } else {
+                                it
+                            }
+                        }
+                    }
+                    return
                 }
+
+                retryAttempt += 1
+                val waitSeconds = retryDelaySeconds(retryAttempt)
+                synchronized(lock) {
+                    updateTask(id) {
+                        if (it.status == TaskStatus.DOWNLOADING) {
+                            it.copy(
+                                speed = "Auto retry in ${waitSeconds}s",
+                                errorMessage = buildString {
+                                    append("Temporary interruption")
+                                    error.message?.takeIf { msg -> msg.isNotBlank() }?.let {
+                                        append(": ").append(it)
+                                    }
+                                    append(" • attempt ").append(retryAttempt)
+                                }
+                            )
+                        } else {
+                            it
+                        }
+                    }
+                }
+
+                delay(waitSeconds * 1_000L)
+
+                val stillActive = synchronized(lock) {
+                    _downloadQueue.value.any {
+                        it.id == id && it.status == TaskStatus.DOWNLOADING
+                    }
+                }
+                if (!stillActive) return
+
+                synchronized(lock) {
+                    updateTask(id) {
+                        if (it.status == TaskStatus.DOWNLOADING) {
+                            it.copy(
+                                speed = "Reconnecting…",
+                                errorMessage = null
+                            )
+                        } else {
+                            it
+                        }
+                    }
+                }
+                // Loop: resolve fresh YouTube stream URLs, then MediaDownloader.transfer() resumes
+                // the retained .part file using HTTP Range when supported.
             }
         }
+    }
+
+    private fun retryDelaySeconds(attempt: Int): Long = when {
+        attempt <= 1 -> 3L
+        attempt == 2 -> 5L
+        attempt == 3 -> 10L
+        attempt == 4 -> 20L
+        attempt == 5 -> 30L
+        else -> 60L
+    }
+
+    private fun isRecoverableDownloadError(error: Throwable): Boolean {
+        if (error is UnknownHostException || error is SocketTimeoutException || error is IOException) {
+            return true
+        }
+
+        val message = generateSequence(error) { it.cause }
+            .mapNotNull { it.message }
+            .joinToString(" ")
+            .lowercase()
+
+        val permanentMarkers = listOf(
+            "live or unbounded streams are not supported",
+            "no compatible video download stream",
+            "no downloadable audio",
+            "this video has no downloadable audio",
+            "private video",
+            "video is private",
+            "video unavailable",
+            "has been removed",
+            "deleted video",
+            "members-only",
+            "members only",
+            "sign in to confirm your age",
+            "chosen download folder is unavailable",
+            "chosen download folder is no longer writable",
+            "enter a valid youtube",
+            "open a valid youtube"
+        )
+        if (permanentMarkers.any { it in message }) return false
+
+        // YouTube stream URLs expire, CDNs can return transient 403/429/5xx responses, and
+        // extractors occasionally fail while the network is changing. Re-resolving on the next
+        // attempt is usually the correct recovery path.
+        return true
     }
 
     fun pauseTask(id: String) {
@@ -466,7 +597,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 quality = item.optString("quality", "Best"), outputFormat = item.optString("outputFormat"),
                 progress = item.optDouble("progress", 0.0).toFloat(),
                 downloadedBytes = item.optLong("downloadedBytes"), totalBytes = item.optLong("totalBytes"),
-                status = if (status == TaskStatus.DOWNLOADING) TaskStatus.QUEUED else status,
+                status = when (status) {
+                    TaskStatus.DOWNLOADING, TaskStatus.FAILED -> TaskStatus.QUEUED
+                    else -> status
+                },
                 errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },
                 createdAt = item.optLong("createdAt", System.currentTimeMillis())
             )

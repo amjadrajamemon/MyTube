@@ -4,8 +4,10 @@ import android.app.PictureInPictureParams
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Rational
 import android.widget.Toast
+import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -14,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -22,7 +25,9 @@ import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.screens.PlayerScreen
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
+import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -45,27 +50,29 @@ class NativePlayerActivity : ComponentActivity() {
     private var isPipMode = false
     private var playerActive = true
     private var closingPlayer = false
+    private var lastPlaybackBackAt = 0L
+    private var showPlaybackExitChoices by mutableStateOf(false)
+    private var currentPlaybackPositionMs = 0L
+    private lateinit var currentMedia: OfflineMedia
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
 
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                    playerActive &&
-                    !closingPlayer &&
-                    !isPipMode &&
-                    repository.settings.value.pipEnabled
-                ) {
-                    enterPlayerPip()
-                } else {
-                    finishPlayer()
-                }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY
+            ) {
+                handlePlaybackBack()
             }
-        })
+        } else {
+            onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    handlePlaybackBack()
+                }
+            })
+        }
 
         val media = OfflineMedia(
             id = intent.getStringExtra(EXTRA_MEDIA_ID) ?: UUID.randomUUID().toString(),
@@ -77,6 +84,7 @@ class NativePlayerActivity : ComponentActivity() {
             qualityLabel = intent.getStringExtra(EXTRA_QUALITY_LABEL) ?: "Auto"
         )
 
+        currentMedia = media
         repository.recordWatch(media)
 
         setContent {
@@ -123,7 +131,8 @@ class NativePlayerActivity : ComponentActivity() {
                     } else null,
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
                     googleAccount = googleAccount,
-                    onGoogleAccountClick = onGoogleAccountClick
+                    onGoogleAccountClick = onGoogleAccountClick,
+                    onPlaybackPositionChanged = { currentPlaybackPositionMs = it }
                 )
                 if (showGoogleAccountDialog) {
                     googleAccount?.let { account ->
@@ -136,6 +145,21 @@ class NativePlayerActivity : ComponentActivity() {
                                 }
                             },
                             onDismiss = { showGoogleAccountDialog = false }
+                        )
+                    }
+                }
+
+                if (showPlaybackExitChoices) {
+                    Dialog(onDismissRequest = { showPlaybackExitChoices = false }) {
+                        PlaybackBackChoiceOverlay(
+                            onCloseVideo = {
+                                showPlaybackExitChoices = false
+                                closePlaybackCompletely()
+                            },
+                            onAudioOnly = {
+                                showPlaybackExitChoices = false
+                                handoffToBackgroundAudio()
+                            }
                         )
                     }
                 }
@@ -193,6 +217,69 @@ class NativePlayerActivity : ComponentActivity() {
         finishPlayer()
     }
 
+
+    private fun handlePlaybackBack() {
+        if (!playerActive || closingPlayer) {
+            finishPlayer()
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val isSecondPress = lastPlaybackBackAt > 0L && now - lastPlaybackBackAt <= 1_400L
+        lastPlaybackBackAt = now
+
+        if (isSecondPress || isPipMode) {
+            showPlaybackExitChoices = true
+            return
+        }
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            repository.settings.value.pipEnabled
+        ) {
+            enterPlayerPip()
+        } else {
+            showPlaybackExitChoices = true
+        }
+    }
+
+    private fun closePlaybackCompletely() {
+        closingPlayer = true
+        playerActive = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finish()
+        }
+    }
+
+    private fun handoffToBackgroundAudio() {
+        val media = currentMedia
+        Toast.makeText(this, "Switching to background audio…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            BackgroundAudioController.handoff(
+                context = this@NativePlayerActivity,
+                sourceUrl = media.mediaUri,
+                title = media.title,
+                artworkUrl = media.thumbnailUrl,
+                positionMs = currentPlaybackPositionMs
+            ).onSuccess {
+                closingPlayer = true
+                playerActive = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAndRemoveTask()
+                } else {
+                    finish()
+                }
+            }.onFailure {
+                Toast.makeText(
+                    this@NativePlayerActivity,
+                    it.message ?: "Background audio could not start",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     private fun finishPlayer() {
         if (closingPlayer) return

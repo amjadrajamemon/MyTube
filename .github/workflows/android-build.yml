@@ -86,7 +86,14 @@ jobs:
         run: gradle -p source testArm64DebugUnitTest testUniversalDebugUnitTest --stacktrace
 
       - name: Run Android lint for both editions
-        run: gradle -p source lintArm64Debug lintUniversalDebug --stacktrace
+        shell: bash
+        run: |
+          set +e
+          gradle -p source lintArm64Debug lintUniversalDebug --continue --stacktrace
+          STATUS=$?
+          echo "===== FULL ANDROID LINT REPORTS ====="
+          find source/app/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
+          exit "$STATUS"
 
       - name: Build ARM64 and Universal debug APKs
         run: gradle -p source assembleArm64Debug assembleUniversalDebug --stacktrace

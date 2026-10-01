@@ -1521,7 +1521,7 @@ private fun PortraitCompanionPanel(
                 showComments -> {
                     if (comments.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopStart) {
-                            Text("No public comments were returned. Tap Refresh to try again.", color = TubeDeckTextSecondary, fontSize = 13.sp)
+                            Text("No comments available", color = TubeDeckTextSecondary, fontSize = 13.sp)
                         }
                     } else {
                         LazyColumn(
@@ -1544,8 +1544,7 @@ private fun PortraitCompanionPanel(
                         ) {
                             Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(
-                                if (commentsAvailable) "Related videos will appear here when available. Tap Comments for the discussion."
-                                else "Related videos are unavailable for this item.",
+                                "No related videos",
                                 color = TubeDeckTextSecondary,
                                 fontSize = 11.sp
                             )
@@ -2162,12 +2161,6 @@ private fun PlayerSettingsDialog(
                     onValueChange = onDubOriginalVolume,
                     valueRange = 0f..0.45f
                 )
-                Text(
-                    "Supported both ways: English, Urdu, Hindi, Arabic, Spanish, French, German, Portuguese, Russian and Chinese.",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
                 HorizontalDivider()
                 Text("Quality", fontWeight = FontWeight.Bold)
                 Row(

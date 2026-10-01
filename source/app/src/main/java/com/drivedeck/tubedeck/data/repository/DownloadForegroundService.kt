@@ -42,6 +42,7 @@ class DownloadForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repository: TubeDeckRepository
+    @Volatile private var timingOut = false
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +54,7 @@ class DownloadForegroundService : Service() {
 
         serviceScope.launch {
             repository.downloadQueue.collectLatest { tasks ->
+                if (timingOut) return@collectLatest
                 val hasWork = tasks.any {
                     it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING
                 }
@@ -87,8 +89,10 @@ class DownloadForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        // Android 15+ can time-limit dataSync foreground services. Queue/partials remain persisted
-        // and will resume on the next allowed service/app start rather than being deleted.
+        // Android 15+ can time-limit dataSync foreground services. Stop active I/O promptly,
+        // preserve partials, and mark it for automatic resume when the app is next user-visible.
+        timingOut = true
+        repository.suspendDownloadsForSystemTimeout()
         stopForeground(STOP_FOREGROUND_DETACH)
         stopSelf(startId)
     }

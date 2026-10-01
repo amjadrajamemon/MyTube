@@ -56,6 +56,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val currentSponsorSegments: StateFlow<List<SponsorSegment>> = _currentSponsorSegments.asStateFlow()
 
     init {
+        DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
         _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
     }
@@ -569,7 +570,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
     private fun updateTask(id: String, persist: Boolean = true, change: (DownloadTask) -> DownloadTask) {
         val updated = _downloadQueue.value.map { if (it.id == id) change(it) else it }
-        if (persist) setQueue(updated) else _downloadQueue.value = updated
+        if (persist) {
+            setQueue(updated)
+        } else {
+            _downloadQueue.value = updated
+            DownloadQueueNotifier.update(context, updated)
+        }
     }
     private fun setQueue(items: List<DownloadTask>) {
         _downloadQueue.value = items
@@ -586,6 +592,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             })
         }
         prefs.edit().putString("queue_json", json.toString()).apply()
+        DownloadQueueNotifier.update(context, items, force = true)
     }
     private fun loadQueue(): List<DownloadTask> = runCatching {
         val data = JSONArray(prefs.getString("queue_json", "[]"))

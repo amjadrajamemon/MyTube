@@ -21,6 +21,7 @@ import java.util.UUID
 /** Application-scoped queue. Interrupted work restarts on the next app launch. */
 class TubeDeckRepository private constructor(private val context: Context) {
     companion object {
+        private const val SYSTEM_TIMEOUT_MESSAGE = "Waiting for MyTube after Android background transfer limit"
         @Volatile private var instance: TubeDeckRepository? = null
         fun get(context: Context): TubeDeckRepository =
             instance ?: synchronized(this) {
@@ -35,6 +36,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var sponsorJob: Job? = null
     private var activeSponsorId: String? = null
     private var homeSuggestionsJob: Job? = null
+    @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<TubeDeckSettings> = _settings.asStateFlow()
@@ -272,6 +274,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private fun processQueue() {
+        if (schedulingSuspendedBySystem) return
         if (_downloadQueue.value.any { it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING }) {
             DownloadForegroundService.ensureRunning(context)
         }
@@ -457,6 +460,49 @@ class TubeDeckRepository private constructor(private val context: Context) {
         else -> 60L
     }
 
+    /**
+     * Android can time-limit dataSync foreground services after very long background transfers.
+     * Pause live jobs without losing partial files, then resume automatically when MyTube becomes
+     * user-visible again (or on the next process launch).
+     */
+    fun suspendDownloadsForSystemTimeout() {
+        val jobs = synchronized(lock) {
+            schedulingSuspendedBySystem = true
+            val running = activeJobs.values.toList()
+            val updated = _downloadQueue.value.map { task ->
+                if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.QUEUED) {
+                    task.copy(
+                        status = TaskStatus.PAUSED,
+                        speed = "Waiting to resume",
+                        errorMessage = SYSTEM_TIMEOUT_MESSAGE
+                    )
+                } else task
+            }
+            setQueue(updated)
+            running
+        }
+        jobs.forEach { it.cancel() }
+    }
+
+    fun resumeDownloadsAfterSystemTimeout() {
+        val shouldResume = synchronized(lock) {
+            val hasSystemPaused = _downloadQueue.value.any {
+                it.status == TaskStatus.PAUSED && it.errorMessage == SYSTEM_TIMEOUT_MESSAGE
+            }
+            if (!hasSystemPaused && !schedulingSuspendedBySystem) return@synchronized false
+            schedulingSuspendedBySystem = false
+            setQueue(
+                _downloadQueue.value.map { task ->
+                    if (task.status == TaskStatus.PAUSED && task.errorMessage == SYSTEM_TIMEOUT_MESSAGE) {
+                        task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                    } else task
+                }
+            )
+            true
+        }
+        if (shouldResume) processQueue()
+    }
+
     fun pauseTask(id: String) {
         synchronized(lock) {
             updateTask(id) { if (it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED) it.copy(status = TaskStatus.PAUSED, speed = "Paused") else it }
@@ -594,6 +640,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
         List(data.length()) { index ->
             val item = data.getJSONObject(index)
             val status = enumValue(item.optString("status"), TaskStatus.QUEUED)
+            val persistedError = item.optString("errorMessage")
+                .takeIf { it.isNotBlank() && it != "null" }
+            val systemTimedOut =
+                status == TaskStatus.PAUSED && persistedError == SYSTEM_TIMEOUT_MESSAGE
             DownloadTask(
                 id = item.getString("id"), url = item.getString("url"), videoId = item.getString("videoId"),
                 title = item.getString("title"), thumbnailUrl = item.optString("thumbnailUrl"),
@@ -601,11 +651,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 quality = item.optString("quality", "Best"), outputFormat = item.optString("outputFormat"),
                 progress = item.optDouble("progress", 0.0).toFloat(),
                 downloadedBytes = item.optLong("downloadedBytes"), totalBytes = item.optLong("totalBytes"),
-                status = when (status) {
-                    TaskStatus.DOWNLOADING -> TaskStatus.QUEUED
-                    TaskStatus.FAILED -> {
-                        val persistedError = item.optString("errorMessage")
-                            .takeIf { it.isNotBlank() && it != "null" }
+                status = when {
+                    systemTimedOut -> TaskStatus.QUEUED
+                    status == TaskStatus.DOWNLOADING -> TaskStatus.QUEUED
+                    status == TaskStatus.FAILED -> {
                         if (
                             persistedError == null ||
                             DownloadFailureClassifier.isRecoverable(IllegalStateException(persistedError))
@@ -613,7 +662,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     }
                     else -> status
                 },
-                errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },
+                errorMessage = if (systemTimedOut) null else persistedError,
                 retryCount = item.optInt("retryCount", 0),
                 createdAt = item.optLong("createdAt", System.currentTimeMillis())
             )

@@ -144,6 +144,7 @@ class NativePlayerActivity : ComponentActivity() {
                     androidx.compose.runtime.key(playlistMode) {
                         DownloadModal(
                             initialUrl = media.mediaUri,
+                            initialTitle = media.title,
                             initialPlaylistMode = playlistMode,
                             onDismiss = { showDownload = false },
                             onStartDownload = { url, title, mode, quality ->
@@ -159,6 +160,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     }
                                 }
                             },
+                            onDiscoverPlaylistCandidates = { url, title -> repository.discoverPlaylistCandidates(url, title) },
                             onFetchPlaylistItems = { repository.fetchPlaylistItems(it) },
                             onFetchDownloadChoices = { repository.fetchDownloadChoices(it) },
                             settings = settings

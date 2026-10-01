@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -26,8 +28,14 @@ import com.drivedeck.tubedeck.ui.theme.TubeDeckError
 fun PlaybackBackChoiceOverlay(
     onCloseVideo: () -> Unit,
     onAudioOnly: () -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    LaunchedEffect(Unit) {
+        delay(6_000L)
+        onDismiss()
+    }
+
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),

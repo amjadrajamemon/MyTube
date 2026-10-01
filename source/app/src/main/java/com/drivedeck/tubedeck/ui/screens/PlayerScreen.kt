@@ -9,8 +9,10 @@ import android.media.AudioManager
 import android.text.Html
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.TextPaint
 import android.text.method.LinkMovementMethod
 import android.text.style.URLSpan
+import android.text.style.ClickableSpan
 import android.text.util.Linkify
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -1149,6 +1151,10 @@ fun NativeExoPlayer(
                 uploaderName = resolved?.uploaderName.orEmpty(),
                 viewCount = resolved?.viewCount ?: -1L,
                 uploadDateText = resolved?.uploadDateText.orEmpty(),
+                onSeekDescriptionTimestamp = { seconds ->
+                    exoPlayer.seekTo((seconds * 1_000L).coerceAtLeast(0L))
+                    controlsVisible = true
+                },
                 relatedVideos = resolved?.relatedVideos.orEmpty(),
                 onPlayRelated = onPlayRelated,
                 modifier = Modifier.fillMaxWidth().weight(1f)
@@ -1256,6 +1262,7 @@ private fun PortraitCompanionPanel(
     uploaderName: String,
     viewCount: Long,
     uploadDateText: String,
+    onSeekDescriptionTimestamp: (Long) -> Unit,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
@@ -1463,7 +1470,8 @@ private fun PortraitCompanionPanel(
                         item {
                             RichYoutubeDescription(
                                 description = description.ifBlank { "No video description was provided." },
-                                isHtml = descriptionIsHtml
+                                isHtml = descriptionIsHtml,
+                                onSeekToSeconds = onSeekDescriptionTimestamp
                             )
                         }
                     }
@@ -1694,7 +1702,8 @@ private fun normalizeYoutubeDescriptionMarkup(source: String): String =
 @Composable
 private fun RichYoutubeDescription(
     description: String,
-    isHtml: Boolean
+    isHtml: Boolean,
+    onSeekToSeconds: (Long) -> Unit
 ) {
     AndroidView(
         modifier = Modifier.fillMaxWidth(),
@@ -1733,6 +1742,35 @@ private fun RichYoutubeDescription(
                         val tag = match.groupValues[1]
                         rich.setSpan(
                             URLSpan("https://www.youtube.com/hashtag/$tag"),
+                            start,
+                            end,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
+
+            // Make YouTube-style timestamps actionable in the native player.
+            Regex("(?<!\\d)(?:(\\d{1,3}):)?([0-5]?\\d):([0-5]\\d)(?!\\d)")
+                .findAll(rich.toString())
+                .forEach { match ->
+                    val start = match.range.first
+                    val end = match.range.last + 1
+                    if (rich.getSpans(start, end, URLSpan::class.java).isEmpty()) {
+                        val hours = match.groupValues[1].toLongOrNull() ?: 0L
+                        val minutes = match.groupValues[2].toLongOrNull() ?: 0L
+                        val seconds = match.groupValues[3].toLongOrNull() ?: 0L
+                        val totalSeconds = hours * 3_600L + minutes * 60L + seconds
+                        rich.setSpan(
+                            object : ClickableSpan() {
+                                override fun onClick(widget: View) {
+                                    onSeekToSeconds(totalSeconds)
+                                }
+
+                                override fun updateDrawState(ds: TextPaint) {
+                                    ds.color = android.graphics.Color.rgb(62, 166, 255)
+                                    ds.isUnderlineText = false
+                                }
+                            },
                             start,
                             end,
                             Spannable.SPAN_EXCLUSIVE_EXCLUSIVE

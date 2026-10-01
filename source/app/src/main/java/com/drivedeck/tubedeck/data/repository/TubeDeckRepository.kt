@@ -61,7 +61,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun updateSettings(value: TubeDeckSettings) {
-        val next = value.copy(maxConcurrent = value.maxConcurrent.coerceIn(1, 32))
+        val next = value.copy(maxConcurrent = value.maxConcurrent.coerceAtLeast(1))
         _settings.value = next
         prefs.edit().apply {
             putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
@@ -85,7 +85,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private fun loadSettings() = TubeDeckSettings(
         downloadDir = prefs.getString("downloadDir", "MyTube")?.takeIf { it.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) } ?: "MyTube",
         downloadTreeUri = prefs.getString("downloadTreeUri", null),
-        maxConcurrent = prefs.getInt("maxConcurrent", 2).coerceIn(1, 32),
+        maxConcurrent = prefs.getInt("maxConcurrent", 2).coerceAtLeast(1),
         instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
         instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
         customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),

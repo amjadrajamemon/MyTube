@@ -703,6 +703,67 @@ object YoutubeStreamResolver {
                 .take(8)
         }
 
+    /**
+     * Returns the strongest verified episode/playlist shelf for the active video.
+     *
+     * This deliberately reuses discoverPlaylists(), so the in-player episode shelf and the
+     * playlist downloader make the same decisions. When YouTube exposes a canonical playlist,
+     * expand it with full NewPipe pagination so the player can show the remaining episodes
+     * instead of only the small Watch Next panel.
+     */
+    suspend fun discoverEpisodeShelf(
+        url: String,
+        titleHint: String
+    ): DiscoveredPlaylist? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val currentVideoId = YoutubeUrls.videoId(url)
+                ?: return@withContext null
+            val candidates = discoverPlaylists(url, titleHint)
+            if (candidates.isEmpty()) return@withContext null
+
+            val selected = candidates.firstOrNull { candidate ->
+                candidate.episodes.size > 1 &&
+                    candidate.episodes.any { it.videoId == currentVideoId } &&
+                    YoutubeUrls.playlistId(candidate.url) != null
+            } ?: candidates.firstOrNull { candidate ->
+                candidate.episodes.size > 1 &&
+                    candidate.episodes.any { it.videoId == currentVideoId }
+            } ?: candidates.firstOrNull { candidate ->
+                candidate.episodes.size > 1
+            } ?: candidates.firstOrNull { candidate ->
+                YoutubeUrls.playlistId(candidate.url) != null
+            } ?: return@withContext null
+
+            val playlistId = YoutubeUrls.playlistId(selected.url)
+            if (playlistId != null) {
+                val expanded = runCatching { playlistItems(selected.url) }
+                    .getOrDefault(emptyList())
+                    .mapNotNull { item ->
+                        val videoId = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
+                        DiscoveredEpisode(
+                            videoId = videoId,
+                            title = item.name,
+                            uploader = item.uploaderName.orEmpty()
+                                .ifBlank { selected.uploader.ifBlank { "YouTube" } },
+                            durationSeconds = item.duration.coerceAtLeast(0L),
+                            thumbnailUrl = item.thumbnails.firstOrNull()?.url
+                                ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                            episodeNumber = episodeNumber(item.name)
+                        )
+                    }
+                    .distinctBy { it.videoId }
+
+                if (expanded.size > 1 && expanded.any { it.videoId == currentVideoId }) {
+                    return@withContext selected.copy(
+                        itemCount = expanded.size.toLong(),
+                        episodes = expanded
+                    )
+                }
+            }
+
+            selected.takeIf { it.episodes.size > 1 }
+        }
+
     private fun normalizeForMatch(value: String): String =
         value.lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N}]+"), " ")

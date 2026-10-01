@@ -1,3 +1,5 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.drivedeck.tubedeck.player
 
 import androidx.media3.common.C

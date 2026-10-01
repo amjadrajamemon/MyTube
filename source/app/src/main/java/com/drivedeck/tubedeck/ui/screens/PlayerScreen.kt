@@ -34,6 +34,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -1251,6 +1252,8 @@ private fun PortraitCompanionPanel(
     var commentsLoading by remember(media.id) { mutableStateOf(false) }
     var commentsLoaded by remember(media.id) { mutableStateOf(false) }
     var commentsError by remember(media.id) { mutableStateOf<String?>(null) }
+    var episodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
+    var episodesLoading by remember(media.id) { mutableStateOf(false) }
 
     fun refreshComments() {
         commentsLoaded = false
@@ -1273,6 +1276,30 @@ private fun PortraitCompanionPanel(
             commentsLoading = false
         }
     }
+
+    LaunchedEffect(media.id, media.mediaUri, commentsAvailable) {
+        episodeShelf = null
+        if (!commentsAvailable || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
+        episodesLoading = true
+        try {
+            episodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(
+                url = media.mediaUri,
+                titleHint = media.title
+            )
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Throwable) {
+            // Keep the ordinary Up next feed available when episode discovery is unavailable.
+            episodeShelf = null
+        } finally {
+            episodesLoading = false
+        }
+    }
+
+    val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val episodeItems = episodeShelf?.episodes.orEmpty()
+        .filterNot { it.videoId == currentVideoId }
+        .distinctBy { it.videoId }
 
     Column(modifier = modifier.background(TubeDeckSurface)) {
         Row(
@@ -1371,37 +1398,162 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (relatedVideos.isEmpty()) {
+                    if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !episodesLoading) {
                         Column(
-                            Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
-                            Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(
                                 if (commentsAvailable) "Related videos will appear here when available. Tap Comments for the discussion."
                                 else "Related videos are unavailable for this item.",
                                 color = TubeDeckTextSecondary,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         }
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            item { Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-                            items(relatedVideos, key = { "related-${it.videoId}" }) { related ->
-                                RelatedVideoRow(related) {
-                                    onPlayRelated?.invoke(
-                                        OfflineMedia(
-                                            id = "related-${related.videoId}-${System.nanoTime()}",
-                                            title = related.title,
-                                            videoId = related.videoId,
-                                            thumbnailUrl = related.thumbnailUrl,
-                                            mediaUri = related.url
-                                        )
+                            if (episodesLoading) {
+                                item(key = "episodes-loading") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                "Episodes / playlist",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                "Finding the rest of this serial…",
+                                                color = TubeDeckTextSecondary,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (episodeItems.isNotEmpty()) {
+                                item(key = "episode-shelf") {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    "More episodes",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                                Text(
+                                                    buildString {
+                                                        val shelfTitle = episodeShelf?.title.orEmpty()
+                                                        if (shelfTitle.isNotBlank()) append(shelfTitle)
+                                                        val count = episodeShelf?.itemCount ?: (episodeItems.size + 1).toLong()
+                                                        if (count > 0) {
+                                                            if (isNotEmpty()) append(" • ")
+                                                            append(count).append(" videos")
+                                                        }
+                                                    },
+                                                    color = TubeDeckTextSecondary,
+                                                    fontSize = 9.5.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(
+                                                Icons.Default.PlaylistPlay,
+                                                contentDescription = null,
+                                                tint = TubeDeckAccentMint,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        LazyRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentPadding = PaddingValues(end = 4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            items(
+                                                items = episodeItems,
+                                                key = { "episode-${it.videoId}" }
+                                            ) { episode ->
+                                                EpisodeVideoCard(episode) {
+                                                    onPlayRelated?.invoke(
+                                                        OfflineMedia(
+                                                            id = "episode-${episode.videoId}-${System.nanoTime()}",
+                                                            title = episode.title,
+                                                            videoId = episode.videoId,
+                                                            thumbnailUrl = episode.thumbnailUrl,
+                                                            mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                item(key = "episode-divider") {
+                                    HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
+                                }
+                            }
+
+                            item(key = "up-next-header") {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Up next",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    if (relatedVideos.isNotEmpty()) {
+                                        Text(
+                                            "${relatedVideos.size} related",
+                                            color = TubeDeckTextSecondary,
+                                            fontSize = 9.5.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (relatedVideos.isEmpty()) {
+                                item(key = "up-next-empty") {
+                                    Text(
+                                        "No additional related videos were returned for this item.",
+                                        color = TubeDeckTextSecondary,
+                                        fontSize = 10.5.sp,
+                                        modifier = Modifier.padding(bottom = 6.dp)
+                                    )
+                                }
+                            } else {
+                                items(relatedVideos, key = { "related-${it.videoId}" }) { related ->
+                                    RelatedVideoRow(related) {
+                                        onPlayRelated?.invoke(
+                                            OfflineMedia(
+                                                id = "related-${related.videoId}-${System.nanoTime()}",
+                                                title = related.title,
+                                                videoId = related.videoId,
+                                                thumbnailUrl = related.thumbnailUrl,
+                                                mediaUri = related.url
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1413,38 +1565,131 @@ private fun PortraitCompanionPanel(
 }
 
 @Composable
+private fun EpisodeVideoCard(
+    episode: YoutubeStreamResolver.DiscoveredEpisode,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(132.dp)
+            .clickable(enabled = true, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(
+                model = episode.thumbnailUrl,
+                contentDescription = episode.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+            )
+            if (episode.durationSeconds > 0L) {
+                Surface(
+                    color = Color.Black.copy(alpha = .82f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                ) {
+                    Text(
+                        formatDuration(episode.durationSeconds * 1000L),
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            episode.episodeNumber?.let { number ->
+                Surface(
+                    color = TubeDeckAccentMint.copy(alpha = .92f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.TopStart).padding(3.dp)
+                ) {
+                    Text(
+                        "EP ${number}",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 8.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            episode.title,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 10.5.sp,
+            lineHeight = 13.sp
+        )
+        Text(
+            episode.uploader,
+            color = TubeDeckTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
 private fun RelatedVideoRow(
     video: YoutubeStreamResolver.RelatedVideo,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = true, onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = true, onClick = onClick),
         verticalAlignment = Alignment.Top
     ) {
-        Box(modifier = Modifier.width(150.dp).aspectRatio(16f / 9f)) {
+        Box(modifier = Modifier.width(128.dp).aspectRatio(16f / 9f)) {
             AsyncImage(
                 model = video.thumbnailUrl,
                 contentDescription = video.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
             )
             if (video.durationSeconds > 0L) {
                 Surface(
                     color = Color.Black.copy(alpha = .82f),
                     shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
                 ) {
-                    Text(formatDuration(video.durationSeconds * 1000L), color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                    Text(
+                        formatDuration(video.durationSeconds * 1000L),
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                    )
                 }
             }
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text(video.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
-            Spacer(Modifier.height(4.dp))
-            Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+            Text(
+                video.title,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 12.sp,
+                lineHeight = 15.sp
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                video.channelTitle,
+                color = TubeDeckTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 10.sp
+            )
         }
-        Icon(Icons.Default.MoreVert, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(18.dp))
+        Icon(
+            Icons.Default.MoreVert,
+            null,
+            tint = TubeDeckTextSecondary,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 

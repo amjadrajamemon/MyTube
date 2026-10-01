@@ -229,7 +229,17 @@ internal object MediaDownloader {
                 buffer.clear()
                 val size = extractor.readSampleData(buffer, 0)
                 require(size in 1..buffer.capacity()) { "Media sample exceeds supported buffer size" }
-                sample.set(0, size, extractor.sampleTime, extractor.sampleFlags)
+                val extractorFlags = extractor.sampleFlags
+                require(extractorFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED == 0) {
+                    "Encrypted media samples cannot be muxed offline"
+                }
+                val muxerFlags =
+                    if (extractorFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+                        MediaCodec.BUFFER_FLAG_KEY_FRAME
+                    } else {
+                        0
+                    }
+                sample.set(0, size, extractor.sampleTime, muxerFlags)
                 activeMuxer.writeSampleData(if (useVideo) videoTrack else audioTrack, buffer, sample)
                 extractor.advance()
             }

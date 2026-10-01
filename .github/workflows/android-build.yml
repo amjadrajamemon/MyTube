@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.2.9"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.3.0"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
@@ -159,6 +159,12 @@ jobs:
           - Generic playlist search is last priority and rejects weak/random/trending matches.
           - Duplicate uploads of the same episode number collapse to the strongest contextual match.
           - If YouTube context and strict matching cannot verify a collection, MyTube shows none rather than substituting a random Mix.
+          - Download Queue now supports Select all/none, Pause all, Resume/retry all, Delete all, Pause selected, Resume/retry selected and Delete selected.
+          - Recoverable network/CDN/extractor interruptions auto-retry indefinitely with bounded 3/5/10/20/30/60-second backoff until success or explicit user pause/delete.
+          - Partial files are retained and HTTP Range resume is used when supported; each retry re-resolves fresh YouTube stream URLs.
+          - Interrupted/failed legacy queue entries are re-queued automatically after app/process restart.
+          - A live Android notification reports queued/active/finished/paused/failed/retrying counts, retry totals, aggregate progress, elapsed time and ETA when calculable.
+          - The old 32-parallel-download ceiling has been removed; the user may choose any positive concurrency value.
           - Unit tests, both APK builds and ABI verification must pass before release publication."
 
           ASSETS=(

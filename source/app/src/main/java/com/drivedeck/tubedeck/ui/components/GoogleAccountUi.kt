@@ -65,13 +65,10 @@ fun GoogleAccountDialog(
         },
         title = { Text(account.displayName) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                if (account.email.isNotBlank()) Text(account.email)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "This Google identity is shared by MyTube Home, Browser and ExoPlayer.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+            if (account.email.isNotBlank()) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(account.email)
+                }
             }
         },
         confirmButton = {

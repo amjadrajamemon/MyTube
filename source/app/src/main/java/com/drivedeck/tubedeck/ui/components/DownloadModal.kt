@@ -93,7 +93,10 @@ fun DownloadModal(
                     }
                 }
                 val selectedCandidate = playlistCandidates.firstOrNull { it.url == targetPlaylistUrl }
-                playlistItems = if (selectedCandidate?.items?.isNotEmpty() == true) {
+                playlistItems = if (
+                    selectedCandidate?.items?.isNotEmpty() == true &&
+                    targetPlaylistUrl.startsWith("mytube://")
+                ) {
                     selectedCandidate.items
                 } else {
                     onFetchPlaylistItems(targetPlaylistUrl)
@@ -219,7 +222,7 @@ fun DownloadModal(
                         if (!hasPlaylist && playlistCandidates.isNotEmpty()) {
                             Text("Suggested collections", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(
-                                "Only collections that match this serial/program are shown. Same-channel episodes are preferred.",
+                                "MyTube first uses YouTube's own Watch Next playlist/context. Strict same-channel episode matching is only a fallback.",
                                 color = TubeDeckTextSecondary,
                                 fontSize = 11.sp
                             )

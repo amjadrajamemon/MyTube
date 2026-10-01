@@ -378,6 +378,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         if (it.status == TaskStatus.DOWNLOADING) {
                             it.copy(
                                 speed = "Auto retry in ${waitSeconds}s",
+                                retryCount = retryAttempt,
                                 errorMessage = buildString {
                                     append("Temporary interruption")
                                     error.message?.takeIf { msg -> msg.isNotBlank() }?.let {
@@ -580,6 +581,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("mode", task.mode.name); put("quality", task.quality); put("outputFormat", task.outputFormat)
                 put("progress", task.progress.toDouble()); put("downloadedBytes", task.downloadedBytes)
                 put("totalBytes", task.totalBytes); put("status", task.status.name)
+                put("retryCount", task.retryCount)
                 put("createdAt", task.createdAt); put("errorMessage", task.errorMessage)
             })
         }
@@ -602,6 +604,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     else -> status
                 },
                 errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },
+                retryCount = item.optInt("retryCount", 0),
                 createdAt = item.optLong("createdAt", System.currentTimeMillis())
             )
         }

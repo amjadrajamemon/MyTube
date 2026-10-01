@@ -6,6 +6,12 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.media.AudioManager
+import android.text.Html
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.method.LinkMovementMethod
+import android.text.style.URLSpan
+import android.text.util.Linkify
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -1139,6 +1145,7 @@ fun NativeExoPlayer(
                 onDownloadVideo = onDownloadVideo,
                 onDownloadPlaylist = onDownloadPlaylist,
                 description = resolved?.description.orEmpty(),
+                descriptionIsHtml = resolved?.descriptionIsHtml == true,
                 uploaderName = resolved?.uploaderName.orEmpty(),
                 viewCount = resolved?.viewCount ?: -1L,
                 uploadDateText = resolved?.uploadDateText.orEmpty(),
@@ -1245,6 +1252,7 @@ private fun PortraitCompanionPanel(
     onDownloadVideo: (() -> Unit)?,
     onDownloadPlaylist: (() -> Unit)?,
     description: String,
+    descriptionIsHtml: Boolean,
     uploaderName: String,
     viewCount: Long,
     uploadDateText: String,
@@ -1325,7 +1333,6 @@ private fun PortraitCompanionPanel(
                     overflow = TextOverflow.Ellipsis,
                     fontSize = 15.sp
                 )
-                Text("Portrait player", color = TubeDeckTextSecondary, fontSize = 10.5.sp)
             }
             IconButton(onClick = onEnterPip, modifier = Modifier.size(40.dp)) {
                 Icon(
@@ -1454,11 +1461,9 @@ private fun PortraitCompanionPanel(
                         }
                         item { HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f)) }
                         item {
-                            Text(
-                                description.ifBlank { "No video description was provided." },
-                                color = Color.White.copy(alpha = .92f),
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp
+                            RichYoutubeDescription(
+                                description = description.ifBlank { "No video description was provided." },
+                                isHtml = descriptionIsHtml
                             )
                         }
                     }
@@ -1675,6 +1680,69 @@ private fun PortraitCompanionPanel(
             }
         }
     }
+}
+
+private fun normalizeYoutubeDescriptionMarkup(source: String): String =
+    source
+        .replace(
+            Regex("(?i)\\bhash\\s*tag\\s*:?\\s*#?([\\p{L}\\p{N}_]+)"),
+        ) { match -> "#${match.groupValues[1]}" }
+        .replace(
+            Regex("(?i)\\bhashtag\\s*:?\\s*#?([\\p{L}\\p{N}_]+)"),
+        ) { match -> "#${match.groupValues[1]}" }
+
+@Composable
+private fun RichYoutubeDescription(
+    description: String,
+    isHtml: Boolean
+) {
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = { ctx ->
+            android.widget.TextView(ctx).apply {
+                setTextColor(android.graphics.Color.WHITE)
+                setLinkTextColor(android.graphics.Color.rgb(62, 166, 255))
+                textSize = 12f
+                setLineSpacing(0f, 1.18f)
+                setTextIsSelectable(true)
+                linksClickable = true
+                movementMethod = LinkMovementMethod.getInstance()
+                setPadding(0, 0, 0, 0)
+            }
+        },
+        update = { textView ->
+            val normalized = normalizeYoutubeDescriptionMarkup(description)
+            val parsed = if (isHtml) {
+                Html.fromHtml(normalized, Html.FROM_HTML_MODE_LEGACY)
+            } else {
+                normalized
+            }
+            val rich = SpannableStringBuilder(parsed)
+
+            // Keep explicit URLs/email addresses actionable even when the extractor returned plain text.
+            Linkify.addLinks(rich, Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES)
+
+            // YouTube hashtags should remain real #hashtags and behave as links.
+            Regex("(?<![\\p{L}\\p{N}_])#([\\p{L}\\p{N}_]+)")
+                .findAll(rich.toString())
+                .forEach { match ->
+                    val start = match.range.first
+                    val end = match.range.last + 1
+                    val existing = rich.getSpans(start, end, URLSpan::class.java)
+                    if (existing.isEmpty()) {
+                        val tag = match.groupValues[1]
+                        rich.setSpan(
+                            URLSpan("https://www.youtube.com/hashtag/$tag"),
+                            start,
+                            end,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
+
+            textView.text = rich
+        }
+    )
 }
 
 @Composable

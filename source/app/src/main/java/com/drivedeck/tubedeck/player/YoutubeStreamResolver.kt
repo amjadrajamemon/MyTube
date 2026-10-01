@@ -505,6 +505,12 @@ object YoutubeStreamResolver {
             }
 
             val episodeItems = scored.values
+                .groupBy { scoredVideo ->
+                    scoredVideo.episode?.let { "episode:$it" }
+                        ?: "video:${YoutubeUrls.videoId(scoredVideo.item.url).orEmpty()}"
+                }
+                .values
+                .mapNotNull { duplicates -> duplicates.maxByOrNull { it.score } }
                 .sortedWith(
                     compareBy<ScoredVideo> { it.episode == null }
                         .thenBy { it.episode ?: Int.MAX_VALUE }

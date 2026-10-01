@@ -102,9 +102,12 @@ class MainActivity : ComponentActivity() {
                 ) { granted ->
                     if (granted) repository.refreshDownloadNotification()
                 }
-                LaunchedEffect(downloadQueue.isNotEmpty()) {
+                val hasLiveDownloadWork = downloadQueue.any {
+                    it.status == TaskStatus.QUEUED || it.status == TaskStatus.DOWNLOADING
+                }
+                LaunchedEffect(hasLiveDownloadWork) {
                     if (
-                        downloadQueue.isNotEmpty() &&
+                        hasLiveDownloadWork &&
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                         checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                     ) {

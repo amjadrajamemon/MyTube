@@ -167,8 +167,8 @@ internal object DownloadQueueNotifier {
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setOngoing(hasActive || paused > 0)
-            .setAutoCancel(!hasActive && paused == 0 && queued == 0)
+            .setOngoing(hasActive)
+            .setAutoCancel(!hasActive)
 
         if (totalBytes > 0L) {
             builder.setProgress(100, progressPercent, false)

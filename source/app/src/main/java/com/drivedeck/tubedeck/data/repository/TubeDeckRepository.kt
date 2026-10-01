@@ -165,6 +165,18 @@ class TubeDeckRepository private constructor(private val context: Context) {
         )
     }
 
+    suspend fun discoverPlaylistCandidates(url: String, titleHint: String): List<PlaylistCandidate> =
+        YoutubeStreamResolver.discoverPlaylists(url, titleHint).map { candidate ->
+            PlaylistCandidate(
+                title = candidate.title,
+                url = candidate.url,
+                channel = candidate.uploader,
+                itemCount = candidate.itemCount,
+                thumbnailUrl = candidate.thumbnailUrl,
+                kind = candidate.kind
+            )
+        }
+
     suspend fun fetchPlaylistItems(url: String): List<PlaylistItem> =
         YoutubeStreamResolver.playlistItems(url).mapNotNull { item ->
             val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null

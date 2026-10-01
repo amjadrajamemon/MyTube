@@ -906,7 +906,7 @@ fun NativeExoPlayer(
 
                     Row(
                         Modifier.align(Alignment.Center)
-                            .offset(y = if (compactPortrait) 34.dp else 24.dp),
+                            .offset(y = if (compactPortrait) 12.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
                     ) {

@@ -109,7 +109,8 @@ data class PlaylistCandidate(
     val channel: String = "YouTube",
     val itemCount: Long = 0L,
     val thumbnailUrl: String = "",
-    val kind: String = "Playlist"
+    val kind: String = "Playlist",
+    val items: List<PlaylistItem> = emptyList()
 )
 
 data class PlaylistItem(

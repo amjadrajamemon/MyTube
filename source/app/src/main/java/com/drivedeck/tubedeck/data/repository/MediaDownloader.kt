@@ -163,6 +163,9 @@ internal object MediaDownloader {
             "webm" -> if (isAudioOnly) "audio/webm" else "video/webm"
             else -> "application/octet-stream"
         }
+        tree.findFile(name)?.let { existing ->
+            require(existing.delete()) { "Could not replace previous output in chosen folder" }
+        }
         val document = tree.createFile(mime, name) ?: error("Could not create file in chosen folder")
         try {
             val output = context.contentResolver.openOutputStream(document.uri, "w") ?: error("Could not open chosen folder for writing")
@@ -256,6 +259,18 @@ internal object MediaDownloader {
         try {
             val code = connection.responseCode
             if (connection.url.protocol != "https") error("Unsafe media redirect")
+            if (code == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE && offset > 0L) {
+                val remoteTotal = connection.getHeaderField("Content-Range")
+                    ?.substringAfter("*/")
+                    ?.toLongOrNull()
+                if (remoteTotal != null && remoteTotal == offset) {
+                    onProgress(offset, remoteTotal, "Done")
+                    return
+                }
+                // A stale/corrupt partial should not be retried forever from the same bad offset.
+                partial.delete()
+                throw java.io.IOException("Resume position no longer matches media stream")
+            }
             if (code != 200 && code != 206) error("Media server returned HTTP $code")
             val rangeStart = connection.getHeaderField("Content-Range")?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
             val append = offset > 0 && code == 206 && rangeStart == offset

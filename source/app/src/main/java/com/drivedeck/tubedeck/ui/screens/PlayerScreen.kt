@@ -1309,9 +1309,15 @@ private fun PortraitCompanionPanel(
         }
     }
 
-    LaunchedEffect(media.id, media.mediaUri, commentsAvailable) {
+    LaunchedEffect(media.id, media.mediaUri, commentsAvailable, displayTitle) {
         episodeShelf = null
         if (!commentsAvailable || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
+        // Browser-intercepted native playback initially arrives as "Now Playing"; wait for the
+        // resolver's real YouTube title so episode matching does not search for that placeholder.
+        if (displayTitle.isBlank() || displayTitle.equals("Now Playing", ignoreCase = true)) {
+            episodesLoading = false
+            return@LaunchedEffect
+        }
         episodesLoading = true
         try {
             episodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(

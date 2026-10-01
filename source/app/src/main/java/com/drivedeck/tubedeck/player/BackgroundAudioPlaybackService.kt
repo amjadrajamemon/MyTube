@@ -60,6 +60,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_PLAY) {
             val url = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
             if (url.isNotBlank()) {

@@ -18,12 +18,12 @@ import kotlin.math.roundToInt
 /**
  * One live notification summarizing the complete MyTube download queue.
  *
- * It intentionally uses framework Notification APIs so it works across the project's API 24+
- * range without adding another notification dependency.
+ * The same notification is also used by DownloadForegroundService, so background downloads keep
+ * one stable notification instead of producing a duplicate "service running" notification.
  */
 internal object DownloadQueueNotifier {
     private const val CHANNEL_ID = "mytube_downloads"
-    private const val NOTIFICATION_ID = 42017
+    internal const val NOTIFICATION_ID = 42017
     private var lastUpdateAt = 0L
 
     fun update(context: Context, tasks: List<DownloadTask>, force: Boolean = false) {
@@ -48,6 +48,16 @@ internal object DownloadQueueNotifier {
         }
         if (!force && hasActive && now - lastUpdateAt < 1_000L) return
         lastUpdateAt = now
+        manager.notify(NOTIFICATION_ID, buildNotification(context, tasks, now))
+    }
+
+    fun buildNotification(
+        context: Context,
+        tasks: List<DownloadTask>,
+        now: Long = System.currentTimeMillis()
+    ): Notification {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (manager != null) createChannel(manager)
 
         val active = tasks.count { it.status == TaskStatus.DOWNLOADING }
         val queued = tasks.count { it.status == TaskStatus.QUEUED }
@@ -94,6 +104,7 @@ internal object DownloadQueueNotifier {
             null
         }
 
+        val hasActive = active > 0 || queued > 0
         val title = when {
             active > 0 -> "MyTube downloads • $active active"
             queued > 0 -> "MyTube downloads • $queued queued"
@@ -165,7 +176,7 @@ internal object DownloadQueueNotifier {
             builder.setProgress(0, 0, true)
         }
 
-        manager.notify(NOTIFICATION_ID, builder.build())
+        return builder.build()
     }
 
     private fun createChannel(manager: NotificationManager) {

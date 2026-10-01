@@ -161,6 +161,10 @@ object YoutubeStreamResolver {
 
     data class ResolvedMedia(
         val title: String,
+        val description: String,
+        val uploaderName: String,
+        val viewCount: Long,
+        val uploadDateText: String,
         val durationSeconds: Long,
         val progressiveUrl: String?,
         val progressiveMimeType: String?,
@@ -274,6 +278,10 @@ object YoutubeStreamResolver {
 
             ResolvedMedia(
                 title = info.name,
+                description = runCatching { info.description.content() }.getOrDefault(""),
+                uploaderName = info.uploaderName.orEmpty().ifBlank { "YouTube" },
+                viewCount = info.viewCount,
+                uploadDateText = info.textualUploadDate.orEmpty(),
                 durationSeconds = info.duration,
                 progressiveUrl = progressive.maxByOrNull { it.height }?.videoUrl,
                 progressiveMimeType = progressive.maxByOrNull { it.height }?.videoMimeType,

@@ -575,6 +575,7 @@ class MainActivity : ComponentActivity() {
                                     showPlaybackExitChoices = false
                                     handoffActivePlaybackToAudio()
                                 },
+                                onDismiss = { showPlaybackExitChoices = false },
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .padding(bottom = 24.dp)
@@ -623,6 +624,14 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePlaybackBack() {
         if (!playerActive) return
+
+        if (showPlaybackExitChoices) {
+            showPlaybackExitChoices = false
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            playbackBackDetector.clear()
+            return
+        }
 
         if (isPipMode) {
             playbackBackDecisionJob?.cancel()

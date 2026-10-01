@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -128,13 +129,23 @@ object YoutubeStreamResolver {
         val durationSeconds: Long
     )
 
+    data class DiscoveredEpisode(
+        val videoId: String,
+        val title: String,
+        val uploader: String,
+        val durationSeconds: Long,
+        val thumbnailUrl: String,
+        val episodeNumber: Int?
+    )
+
     data class DiscoveredPlaylist(
         val title: String,
         val url: String,
         val uploader: String,
         val itemCount: Long,
         val thumbnailUrl: String,
-        val kind: String
+        val kind: String,
+        val episodes: List<DiscoveredEpisode> = emptyList()
     )
 
     data class NativeComment(
@@ -395,53 +406,228 @@ object YoutubeStreamResolver {
     ): List<DiscoveredPlaylist> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             ensureInitialized()
-            val videoId = YoutubeUrls.videoId(url)
+            val currentVideoId = YoutubeUrls.videoId(url)
                 ?: throw IllegalArgumentException("Enter a valid YouTube video URL")
 
-            val query = seriesSearchQuery(titleHint)
-            val candidates = mutableListOf<DiscoveredPlaylist>()
+            val currentInfo = StreamInfo.getInfo(url)
+            val sourceTitle = currentInfo.name.takeIf { it.isNotBlank() } ?: titleHint
+            val sourceUploader = currentInfo.uploaderName.orEmpty()
+            val seriesName = seriesSearchQuery(sourceTitle)
+            val seriesTokens = relevanceTokens(seriesName)
 
-            if (query.isNotBlank()) {
-                runCatching {
-                    val service = NewPipe.getService("YouTube")
-                    val handler = service.searchQHFactory.fromQuery(
-                        query + " full episodes",
-                        listOf("playlists"),
-                        ""
-                    )
-                    val info = SearchInfo.getInfo(service, handler)
-                    info.relatedItems
-                        .filterIsInstance<PlaylistInfoItem>()
-                        .take(8)
-                        .forEach { item ->
-                            val thumb = item.thumbnails.firstOrNull()?.url.orEmpty()
-                            candidates += DiscoveredPlaylist(
-                                title = item.name,
-                                url = item.url,
-                                uploader = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                                itemCount = item.streamCount.coerceAtLeast(0L),
-                                thumbnailUrl = thumb,
-                                kind = "Playlist"
-                            )
+            if (seriesTokens.isEmpty()) {
+                return@withContext emptyList()
+            }
+
+            data class ScoredVideo(
+                val item: StreamInfoItem,
+                val score: Double,
+                val episode: Int?
+            )
+
+            fun channelMatches(candidate: String): Boolean {
+                if (sourceUploader.isBlank() || candidate.isBlank()) return false
+                val left = normalizeForMatch(sourceUploader)
+                val right = normalizeForMatch(candidate)
+                return left == right || left.contains(right) || right.contains(left)
+            }
+
+            fun scoreVideo(item: StreamInfoItem): ScoredVideo? {
+                val id = YoutubeUrls.videoId(item.url) ?: return null
+                if (id == currentVideoId) return null
+                val coverage = tokenCoverage(seriesTokens, relevanceTokens(item.name))
+                val channelMatch = channelMatches(item.uploaderName.orEmpty())
+                val episode = episodeNumber(item.name)
+
+                // Strongly prefer same-channel episodes. Cross-channel results must match almost
+                // the entire series name, otherwise they are commonly clips, reviews or unrelated
+                // trending material.
+                val accepted = when {
+                    channelMatch && coverage >= 0.55 -> true
+                    coverage >= 0.88 && episode != null -> true
+                    else -> false
+                }
+                if (!accepted) return null
+
+                val score =
+                    coverage * 100.0 +
+                    (if (channelMatch) 55.0 else 0.0) +
+                    (if (episode != null) 18.0 else 0.0) +
+                    (if (containsEpisodeWord(item.name)) 8.0 else 0.0)
+
+                return ScoredVideo(item, score, episode)
+            }
+
+            val scored = mutableMapOf<String, ScoredVideo>()
+
+            // 1) YouTube's own related shelf often contains adjacent episodes and is the most
+            // contextual source, but every item still has to pass our series/channel checks.
+            currentInfo.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .mapNotNull(::scoreVideo)
+                .forEach { candidate ->
+                    val id = YoutubeUrls.videoId(candidate.item.url) ?: return@forEach
+                    val old = scored[id]
+                    if (old == null || candidate.score > old.score) scored[id] = candidate
+                }
+
+            // 2) Search specifically for episodes of this series, preferably on the same channel.
+            runCatching {
+                val service = NewPipe.getService("YouTube")
+                val query = buildString {
+                    append(seriesName)
+                    if (sourceUploader.isNotBlank()) append(" ").append(sourceUploader)
+                    append(" episode")
+                }
+                val handler = service.searchQHFactory.fromQuery(query, listOf("videos"), "")
+                val info = SearchInfo.getInfo(service, handler)
+
+                fun absorb(items: List<org.schabi.newpipe.extractor.InfoItem>) {
+                    items.filterIsInstance<StreamInfoItem>()
+                        .mapNotNull(::scoreVideo)
+                        .forEach { candidate ->
+                            val id = YoutubeUrls.videoId(candidate.item.url) ?: return@forEach
+                            val old = scored[id]
+                            if (old == null || candidate.score > old.score) scored[id] = candidate
                         }
+                }
+
+                absorb(info.relatedItems)
+                var next = info.nextPage
+                var pages = 0
+                while (next != null && pages < 2 && scored.size < 40) {
+                    currentCoroutineContext().ensureActive()
+                    val page = SearchInfo.getMoreItems(service, handler, next)
+                    absorb(page.items)
+                    next = page.nextPage
+                    pages += 1
                 }
             }
 
-            // Always offer the dynamic YouTube mix as a fallback collection. It is especially
-            // useful when a channel has no explicit public playlist for a serial/episode.
-            candidates += DiscoveredPlaylist(
-                title = if (query.isBlank()) "Related YouTube Mix" else "$query • Related Mix",
-                url = "https://www.youtube.com/watch?v=$videoId&list=RD$videoId",
-                uploader = "YouTube Mix",
-                itemCount = 0L,
-                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                kind = "Mix"
-            )
+            val episodeItems = scored.values
+                .sortedWith(
+                    compareBy<ScoredVideo> { it.episode == null }
+                        .thenBy { it.episode ?: Int.MAX_VALUE }
+                        .thenByDescending { it.score }
+                )
+                .take(40)
+                .mapNotNull { scoredVideo ->
+                    val item = scoredVideo.item
+                    val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
+                    DiscoveredEpisode(
+                        videoId = id,
+                        title = item.name,
+                        uploader = item.uploaderName.orEmpty().ifBlank { sourceUploader.ifBlank { "YouTube" } },
+                        durationSeconds = item.duration.coerceAtLeast(0L),
+                        thumbnailUrl = item.thumbnails.firstOrNull()?.url
+                            ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                        episodeNumber = scoredVideo.episode
+                    )
+                }
+
+            val candidates = mutableListOf<DiscoveredPlaylist>()
+
+            if (episodeItems.isNotEmpty()) {
+                val currentEpisode = DiscoveredEpisode(
+                    videoId = currentVideoId,
+                    title = sourceTitle,
+                    uploader = sourceUploader.ifBlank { "YouTube" },
+                    durationSeconds = currentInfo.duration.coerceAtLeast(0L),
+                    thumbnailUrl = currentInfo.thumbnails.firstOrNull()?.url
+                        ?: "https://i.ytimg.com/vi/$currentVideoId/hqdefault.jpg",
+                    episodeNumber = episodeNumber(sourceTitle)
+                )
+                val completeEpisodes = (listOf(currentEpisode) + episodeItems)
+                    .distinctBy { it.videoId }
+                    .sortedWith(
+                        compareBy<DiscoveredEpisode> { it.episodeNumber == null }
+                            .thenBy { it.episodeNumber ?: Int.MAX_VALUE }
+                            .thenBy { it.title }
+                    )
+
+                candidates += DiscoveredPlaylist(
+                    title = "$seriesName • Related episodes",
+                    url = "mytube://related-episodes/$currentVideoId",
+                    uploader = sourceUploader.ifBlank { "YouTube" },
+                    itemCount = completeEpisodes.size.toLong(),
+                    thumbnailUrl = currentInfo.thumbnails.firstOrNull()?.url
+                        ?: "https://i.ytimg.com/vi/$currentVideoId/hqdefault.jpg",
+                    kind = "Related episodes",
+                    episodes = completeEpisodes
+                )
+            }
+
+            // 3) Search for official/public playlists, but do NOT trust search ranking. Reject any
+            // playlist whose title is not strongly about the same series.
+            runCatching {
+                val service = NewPipe.getService("YouTube")
+                val query = buildString {
+                    append(seriesName)
+                    if (sourceUploader.isNotBlank()) append(" ").append(sourceUploader)
+                }
+                val handler = service.searchQHFactory.fromQuery(query, listOf("playlists"), "")
+                val info = SearchInfo.getInfo(service, handler)
+
+                info.relatedItems
+                    .filterIsInstance<PlaylistInfoItem>()
+                    .mapNotNull { item ->
+                        val coverage = tokenCoverage(seriesTokens, relevanceTokens(item.name))
+                        val channelMatch = channelMatches(item.uploaderName.orEmpty())
+                        val accepted = (channelMatch && coverage >= 0.60) || coverage >= 0.90
+                        if (!accepted) return@mapNotNull null
+
+                        val score = coverage * 100.0 + if (channelMatch) 45.0 else 0.0
+                        score to DiscoveredPlaylist(
+                            title = item.name,
+                            url = item.url,
+                            uploader = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+                            itemCount = item.streamCount.coerceAtLeast(0L),
+                            thumbnailUrl = item.thumbnails.firstOrNull()?.url.orEmpty(),
+                            kind = if (channelMatch) "Matching channel playlist" else "Matching playlist"
+                        )
+                    }
+                    .sortedByDescending { it.first }
+                    .take(4)
+                    .forEach { candidates += it.second }
+            }
 
             candidates
-                .distinctBy { it.url.substringAfter("list=", it.url) }
-                .take(8)
+                .distinctBy { it.url }
+                .take(6)
         }
+
+    private fun normalizeForMatch(value: String): String =
+        value.lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+    private fun relevanceTokens(value: String): Set<String> {
+        val ignored = setOf(
+            "episode", "episodes", "ep", "part", "full", "official", "video", "videos",
+            "drama", "serial", "series", "eng", "english", "sub", "subtitle", "subtitles",
+            "promo", "teaser", "hd", "new", "latest"
+        )
+        return normalizeForMatch(value)
+            .split(' ')
+            .filter { token -> token.length >= 2 && token !in ignored && token.toIntOrNull() == null }
+            .toSet()
+    }
+
+    private fun tokenCoverage(reference: Set<String>, candidate: Set<String>): Double {
+        if (reference.isEmpty() || candidate.isEmpty()) return 0.0
+        return reference.count { it in candidate }.toDouble() / reference.size.toDouble()
+    }
+
+    private fun containsEpisodeWord(title: String): Boolean =
+        Regex("(?i)\\b(episode|episodes|ep\\.?|part)\\b").containsMatchIn(title)
+
+    private fun episodeNumber(title: String): Int? =
+        Regex("(?i)\\b(?:episode|ep\\.?|part)\\s*[-:#]?\\s*(\\d{1,4})\\b")
+            .find(title)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
 
     private fun seriesSearchQuery(title: String): String {
         var value = title

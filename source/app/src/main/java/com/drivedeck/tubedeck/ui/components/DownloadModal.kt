@@ -190,12 +190,6 @@ fun DownloadModal(
                 else if (isPlaylist) listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
                 else listOf("Best") + videoQualities
 
-                Text(
-                    if (isPlaylist) "Quality ceiling for each item; the actual available format may be lower."
-                    else "Available video streams; separate video and audio tracks are combined when compatible.",
-                    fontSize = 11.sp, color = TubeDeckTextSecondary
-                )
-
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     qualities.chunked(3).forEach { row ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -221,11 +215,6 @@ fun DownloadModal(
                     } else {
                         if (!hasPlaylist && playlistCandidates.isNotEmpty()) {
                             Text("Suggested collections", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(
-                                "MyTube first uses YouTube's own Watch Next playlist/context. Strict same-channel episode matching is only a fallback.",
-                                color = TubeDeckTextSecondary,
-                                fontSize = 11.sp
-                            )
                             Spacer(Modifier.height(6.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 playlistCandidates.take(6).forEach { candidate ->

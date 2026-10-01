@@ -568,6 +568,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
         setQueue(_downloadQueue.value.filterNot { it.status == TaskStatus.COMPLETED })
     }
 
+    fun refreshDownloadNotification() {
+        DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
+    }
+
     private fun updateTask(id: String, persist: Boolean = true, change: (DownloadTask) -> DownloadTask) {
         val updated = _downloadQueue.value.map { if (it.id == id) change(it) else it }
         if (persist) {

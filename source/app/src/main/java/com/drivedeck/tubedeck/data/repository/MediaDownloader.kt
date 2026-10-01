@@ -259,7 +259,7 @@ internal object MediaDownloader {
         try {
             val code = connection.responseCode
             if (connection.url.protocol != "https") error("Unsafe media redirect")
-            if (code == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE && offset > 0L) {
+            if (code == 416 && offset > 0L) {
                 val remoteTotal = connection.getHeaderField("Content-Range")
                     ?.substringAfter("*/")
                     ?.toLongOrNull()

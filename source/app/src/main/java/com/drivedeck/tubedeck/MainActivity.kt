@@ -11,12 +11,16 @@ import android.os.SystemClock
 import android.util.Rational
 import android.webkit.WebView
 import android.widget.Toast
+import android.window.OnBackInvokedDispatcher
+import android.window.OnBackInvokedCallback
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
@@ -24,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -31,10 +36,12 @@ import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
+import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
 import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
+import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
 import com.drivedeck.tubedeck.ui.screens.*
@@ -58,11 +65,24 @@ class MainActivity : ComponentActivity() {
     private var inboundUrl by mutableStateOf<String?>(null)
     private var lastNativeLaunchVideoId: String? = null
     private var lastNativeLaunchAt = 0L
+    private var lastPlaybackBackAt = 0L
+    private var showPlaybackExitChoices by mutableStateOf(false)
+    private var activePlaybackUrl: String = ""
+    private var activePlaybackTitle: String = "YouTube audio"
+    private var activePlaybackArtwork: String = ""
+    private var activePlaybackPositionMs: Long = 0L
+    private var systemPlaybackBackCallback: Any? = null
+    private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            handlePlaybackBack()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+        onBackPressedDispatcher.addCallback(this, legacyPlaybackBackCallback)
         YtDlpUpdateManager.scheduleWeekly(applicationContext)
         inboundUrl = intent?.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
 
@@ -158,8 +178,37 @@ class MainActivity : ComponentActivity() {
                 var showAdBlockSheet by remember { mutableStateOf(false) }
                 
                 SideEffect {
-                    playerActive = currentScreen == ActiveScreen.PLAYER || (currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null)
+                    playerActive = currentScreen == ActiveScreen.PLAYER ||
+                        (currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null)
                     autoPipEnabled = settings.pipEnabled
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        setSystemPlaybackBackEnabled(playerActive)
+                        legacyPlaybackBackCallback.isEnabled = false
+                    } else {
+                        legacyPlaybackBackCallback.isEnabled = playerActive
+                    }
+
+                    when {
+                        currentScreen == ActiveScreen.PLAYER && playingMedia != null -> {
+                            val media = playingMedia!!
+                            activePlaybackUrl = media.mediaUri
+                            activePlaybackTitle = media.title
+                            activePlaybackArtwork = media.thumbnailUrl
+                        }
+                        currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null -> {
+                            val videoId = YoutubeUrls.videoId(currentUrl).orEmpty()
+                            activePlaybackUrl = currentUrl
+                            activePlaybackTitle = webViewInstance?.title?.takeIf { !it.isNullOrBlank() } ?: "YouTube audio"
+                            activePlaybackArtwork = if (videoId.isNotBlank()) {
+                                repository.getVideoThumbnail(videoId)
+                            } else ""
+                        }
+                        else -> {
+                            activePlaybackUrl = ""
+                            activePlaybackPositionMs = 0L
+                        }
+                    }
                 }
 
                 val activeDownloads = downloadQueue.filter { it.status == TaskStatus.DOWNLOADING }
@@ -172,18 +221,8 @@ class MainActivity : ComponentActivity() {
                     when {
                         showAdBlockSheet -> { showAdBlockSheet = false }
                         showDownloadModal -> { showDownloadModal = false }
-                        currentScreen == ActiveScreen.PLAYER -> {
-                            if (settings.pipEnabled) {
-                                triggerPip()
-                            } else {
-                                currentScreen = playerReturnScreen
-                                playingMedia = null
-                            }
-                        }
-                        currentScreen == ActiveScreen.BROWSER &&
-                            YoutubeUrls.videoId(currentUrl) != null &&
-                            settings.pipEnabled -> {
-                            triggerPip()
+                        playerActive -> {
+                            handlePlaybackBack()
                         }
                         webViewInstance?.canGoBack() == true && currentScreen == ActiveScreen.BROWSER -> {
                             webViewInstance?.goBack()
@@ -437,7 +476,8 @@ class MainActivity : ComponentActivity() {
                                             currentScreen = ActiveScreen.PLAYER
                                         },
                                         googleAccount = googleAccount,
-                                        onGoogleAccountClick = onGoogleAccountClick
+                                        onGoogleAccountClick = onGoogleAccountClick,
+                                        onPlaybackPositionChanged = { activePlaybackPositionMs = it }
                                     )
                                 }
                             }
@@ -497,6 +537,21 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+
+                        if (showPlaybackExitChoices) {
+                            Dialog(onDismissRequest = { showPlaybackExitChoices = false }) {
+                                PlaybackBackChoiceOverlay(
+                                    onCloseVideo = {
+                                        showPlaybackExitChoices = false
+                                        closeActivePlaybackCompletely()
+                                    },
+                                    onAudioOnly = {
+                                        showPlaybackExitChoices = false
+                                        handoffActivePlaybackToAudio()
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -529,10 +584,122 @@ class MainActivity : ComponentActivity() {
         inboundUrl = intent.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
     }
 
+    private fun handlePlaybackBack() {
+        if (!playerActive) return
+
+        val now = SystemClock.elapsedRealtime()
+        val secondPress = lastPlaybackBackAt > 0L && now - lastPlaybackBackAt <= 1_400L
+        lastPlaybackBackAt = now
+
+        if (secondPress || isPipMode) {
+            showPlaybackExitChoices = true
+            return
+        }
+
+        if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            triggerPip()
+        } else {
+            showPlaybackExitChoices = true
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun setSystemPlaybackBackEnabled(enabled: Boolean) {
+        if (enabled && systemPlaybackBackCallback == null) {
+            val callback = OnBackInvokedCallback { handlePlaybackBack() }
+            systemPlaybackBackCallback = callback
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+                callback
+            )
+        } else if (!enabled) {
+            (systemPlaybackBackCallback as? OnBackInvokedCallback)?.let { callback ->
+                runCatching { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback) }
+            }
+            systemPlaybackBackCallback = null
+        }
+    }
+
+    private fun closeActivePlaybackCompletely() {
+        webViewInstance?.runCatching {
+            evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v){v.pause();v.src='';}return true;})()",
+                null
+            )
+            loadUrl("about:blank")
+        }
+        playerActive = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finish()
+        }
+    }
+
+    private fun handoffActivePlaybackToAudio() {
+        val sourceUrl = activePlaybackUrl
+        if (sourceUrl.isBlank()) {
+            Toast.makeText(this, "No active video is available for audio-only playback", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        fun startAt(positionMs: Long) {
+            Toast.makeText(this, "Switching to background audio…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                BackgroundAudioController.handoff(
+                    context = this@MainActivity,
+                    sourceUrl = sourceUrl,
+                    title = activePlaybackTitle,
+                    artworkUrl = activePlaybackArtwork,
+                    positionMs = positionMs.coerceAtLeast(0L)
+                ).onSuccess {
+                    webViewInstance?.runCatching {
+                        evaluateJavascript(
+                            "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                            null
+                        )
+                    }
+                    playerActive = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        finishAndRemoveTask()
+                    } else {
+                        finish()
+                    }
+                }.onFailure {
+                    Toast.makeText(
+                        this@MainActivity,
+                        it.message ?: "Background audio could not start",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+
+        val web = webViewInstance
+        if (web != null && YoutubeUrls.videoId(sourceUrl) != null) {
+            web.evaluateJavascript(
+                "(function(){var v=document.querySelector('video');return v?Math.floor(v.currentTime*1000):0;})()"
+            ) { value ->
+                val parsed = value
+                    ?.trim()
+                    ?.trim('"')
+                    ?.toDoubleOrNull()
+                    ?.toLong()
+                    ?: activePlaybackPositionMs
+                startAt(parsed)
+            }
+        } else {
+            startAt(activePlaybackPositionMs)
+        }
+    }
+
     private fun triggerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val params = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
-            enterPictureInPictureMode(params)
+            val entered = enterPictureInPictureMode(params)
+            if (!entered) {
+                Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -546,5 +713,12 @@ class MainActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
+    }
+
+    override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setSystemPlaybackBackEnabled(false)
+        }
+        super.onDestroy()
     }
 }

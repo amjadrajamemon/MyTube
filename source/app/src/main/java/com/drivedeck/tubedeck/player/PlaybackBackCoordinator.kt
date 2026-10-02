@@ -1,7 +1,6 @@
 package com.drivedeck.tubedeck.player
 
 internal enum class PlaybackBackAction {
-    WAIT_FOR_SECOND_PRESS,
     ENTER_PIP,
     EXPAND_PIP,
     SHOW_EXIT_CHOOSER,

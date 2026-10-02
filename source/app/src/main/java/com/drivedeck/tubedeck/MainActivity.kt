@@ -783,13 +783,304 @@ class MainActivity : ComponentActivity() {
 
                         if (showGoogleAuthorizationProblem) {
                             GoogleAuthorizationProblemDialog(
-                        message = googleAuthStatus.message,
-                        registrationInfo = googleSession.oauthRegistrationInfo(),
-                        onRetry = {
-                            showGoogleAuthorizationProblem = false
-                            onGoogleAccountClick()
-                        },
-                        onDismiss = { showGoogleAuthorizationProblem = false }
+                                message = googleAuthStatus.message,
+                                registrationInfo = googleSession.oauthRegistrationInfo(),
+                                onRetry = {
+                                    showGoogleAuthorizationProblem = false
+                                    onGoogleAccountClick()
+                                },
+                                onDismiss = { showGoogleAuthorizationProblem = false }
+                            )
+                        }
+
+                        if (showGoogleAccountDialog) {
+                            googleAccount?.let { account ->
+                                GoogleAccountDialog(
+                                    account = account,
+                                    onSignOut = {
+                                        lifecycleScope.launch {
+                                            googleSession.signOut()
+                                            showGoogleAccountDialog = false
+                                        }
+                                    },
+                                    onDismiss = { showGoogleAccountDialog = false }
+                                )
+                            }
+                        }
+
+                        if (showPlaybackExitChoices) {
+                            val bridgedSession = nativePipSessionId
+                            PlaybackBackChoiceOverlay(
+                                onCloseVideo = {
+                                    showPlaybackExitChoices = false
+                                    if (bridgedSession != null) {
+                                        NativePipSessionBridge.request(
+                                            bridgedSession,
+                                            NativePipSessionBridge.Action.CLOSE
+                                        )
+                                    } else {
+                                        closeActivePlaybackCompletely()
+                                    }
+                                },
+                                onAudioOnly = {
+                                    showPlaybackExitChoices = false
+                                    if (bridgedSession != null) {
+                                        NativePipSessionBridge.request(
+                                            bridgedSession,
+                                            NativePipSessionBridge.Action.AUDIO_ONLY
+                                        )
+                                    } else {
+                                        handoffActivePlaybackToAudio()
+                                    }
+                                },
+                                onPictureInPicture = {
+                                    showPlaybackExitChoices = false
+                                    playbackBackCoordinator.onChooserDismissed()
+                                    if (bridgedSession == null) {
+                                        triggerPip()
+                                    }
+                                },
+                                onTimeout = {
+                                    showPlaybackExitChoices = false
+                                    playbackBackCoordinator.onChooserDismissed()
+                                },
+                                pipLabel = if (bridgedSession != null) "Keep PiP" else "PiP",
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun launchNativePlayer(media: OfflineMedia) {
+        if (
+            PlaybackHostRouter.choose(
+                repository.settings.value.playerMode,
+                media.mediaUri
+            ) == PlaybackHost.WEB
+        ) {
+            inboundUrl = media.mediaUri
+            return
+        }
+
+        val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        val now = SystemClock.elapsedRealtime()
+        if (videoId.isNotBlank() && videoId == lastNativeLaunchVideoId && now - lastNativeLaunchAt < 1_800L) return
+        lastNativeLaunchVideoId = videoId.takeIf { it.isNotBlank() }
+        lastNativeLaunchAt = now
+
+        // A foreground video supersedes explicit audio-only playback. If it is the same video,
+        // discard the resolver entry created before/during the audio handoff so signed CDN URLs
+        // cannot poison the new foreground session.
+        val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+        val resumeFromAudio =
+            previousAudio?.takeIf {
+                YoutubeUrls.videoId(it.sourceUrl) == YoutubeUrls.videoId(media.mediaUri)
+            }
+        if (resumeFromAudio != null) {
+            YoutubeStreamResolver.invalidate(media.mediaUri)
+        }
+
+        // Start the measurable tap-to-first-frame path before extraction or Activity launch.
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
+        YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
+        val playbackSessionId = PlaybackSessionRegistry.open()
+
+        val intent = Intent(this, NativePlayerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(NativePlayerActivity.EXTRA_MEDIA_ID, media.id)
+            putExtra(NativePlayerActivity.EXTRA_TITLE, media.title)
+            putExtra(NativePlayerActivity.EXTRA_VIDEO_ID, media.videoId)
+            putExtra(NativePlayerActivity.EXTRA_THUMBNAIL, media.thumbnailUrl)
+            putExtra(NativePlayerActivity.EXTRA_MEDIA_URI, media.mediaUri)
+            putExtra(NativePlayerActivity.EXTRA_IS_AUDIO_ONLY, media.isAudioOnly)
+            putExtra(NativePlayerActivity.EXTRA_QUALITY_LABEL, media.qualityLabel)
+            putExtra(NativePlayerActivity.EXTRA_SESSION_ID, playbackSessionId)
+            putExtra(
+                NativePlayerActivity.EXTRA_START_POSITION_MS,
+                resumeFromAudio?.positionMs ?: 0L
+            )
+        }
+        startActivity(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (::repository.isInitialized) {
+            repository.resumeDownloadsAfterSystemTimeout()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        legacyPlaybackBackCallback.isEnabled = playerActive || NativePipSessionBridge.isActive()
+        if (playerActive) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (pendingChooserAfterPipExit && playerActive) {
+            pendingChooserAfterPipExit = false
+            playbackBackCoordinator.forceChooserVisible()
+            showPlaybackExitChoices = true
+        }
+    }
+
+    override fun onStop() {
+        if (!isPipMode) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (!isPipMode && playerActive) {
+            // Web playback must not silently survive task/background transitions. Only explicit
+            // Audio-only is allowed to continue after the visible player leaves the foreground.
+            webViewInstance?.runCatching {
+                evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                    null
+                )
+            }
+        }
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        when (intent.action) {
+            PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                pipChoicePending = false
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
+                return
+            }
+            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
+                pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.AUDIO_ONLY)
+                    return
+                }
+                handoffActivePlaybackToAudio()
+                return
+            }
+            PlaybackPipActions.ACTION_CLOSE -> {
+                pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.CLOSE)
+                    return
+                }
+                closeActivePlaybackCompletely()
+                return
+            }
+        }
+        if (intent.getBooleanExtra("open_downloads_queue", false)) {
+            openDownloadsQueueRequest = true
+        }
+        inboundUrl = intent.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
+    }
+
+    private fun handlePlaybackBack() {
+        if (NativePipSessionBridge.isActive()) {
+            showPlaybackExitChoices = true
+            return
+        }
+        if (!playerActive) return
+        dispatchPlaybackBackAction(
+            playbackBackCoordinator.onBack(
+                nowMs = SystemClock.elapsedRealtime(),
+                isInPip = isPipMode
+            )
+        )
+    }
+
+    private fun dispatchPlaybackBackAction(action: PlaybackBackAction) {
+        when (action) {
+            PlaybackBackAction.ENTER_PIP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                triggerPip()
+            }
+
+            PlaybackBackAction.EXPAND_PIP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                expandPlayerFromPip()
+            }
+
+            PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                showPlaybackExitChoices = true
+            }
+
+            PlaybackBackAction.IGNORE -> Unit
+        }
+    }
+
+    private fun expandPlayerFromPip() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(intent)
+    }
+
+    private fun closeActivePlaybackCompletely() {
+        pipChoicePending = false
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = null
+        playbackBackCoordinator.reset()
+        BackgroundAudioController.stop(applicationContext)
+        webViewInstance?.runCatching {
+            evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}return true;})()",
+                null
+            )
+        }
+        playerActive = false
+        closeActivePlaybackUi?.invoke()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finishAffinity()
+        }
+    }
+
+    private fun handoffActivePlaybackToAudio() {
+        pipChoicePending = false
+        val sourceUrl = activePlaybackUrl
+        if (sourceUrl.isBlank()) {
+            Toast.makeText(this, "No active video is available for audio-only playback", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        fun startAt(positionMs: Long) {
+            lifecycleScope.launch {
+                BackgroundAudioController.handoff(
+                    context = this@MainActivity,
+                    sourceUrl = sourceUrl,
+                    title = activePlaybackTitle,
+                    artworkUrl = activePlaybackArtwork,
+                    positionMs = positionMs.coerceAtLeast(0L)
+                ).onSuccess {
+                    webViewInstance?.runCatching {
+                        evaluateJavascript(
+                            "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                            null
+                        )
+                    }
+                    playerActive = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        finishAndRemoveTask()
+                    } else {
+                        finishAffinity()
+                    }
+                }.onFailure {
+                    Toast.makeText(
+                        this@MainActivity,
+                        it.message ?: "Background audio could not start",
+                        Toast.LENGTH_LONG
                     ).show()
                 }
             }

@@ -326,7 +326,8 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                showPlaybackExitChoices = false
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
                 return
             }
         }

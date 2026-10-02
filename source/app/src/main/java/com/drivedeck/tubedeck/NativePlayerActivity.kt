@@ -32,6 +32,7 @@ import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
@@ -253,6 +254,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun launchRelatedPlayer(media: OfflineMedia) {
         if (closingPlayer) return
+        YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
         replaceMedia(media, recordWatch = true)
     }
 

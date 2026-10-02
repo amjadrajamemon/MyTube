@@ -91,7 +91,13 @@ data class TubeDeckSettings(
     val pipEnabled: Boolean = true,
     // Performance-first: expensive companion shelves are opt-in by default.
     val autoLoadEpisodes: Boolean = false,
-    val autoLoadUpNext: Boolean = false
+    val autoLoadUpNext: Boolean = false,
+
+    // Appearance customization.
+    val fontScale: Float = 1.0f,
+    val themeAccentArgb: Long = 0xFF00D2FFL,
+    val themeBackgroundArgb: Long = 0xFF080B11L,
+    val themeTextArgb: Long = 0xFFFFFFFFL
 )
 
 

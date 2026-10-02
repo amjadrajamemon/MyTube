@@ -1,92 +1,3 @@
-package com.drivedeck.tubedeck.ui.components
-
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.drivedeck.tubedeck.data.model.TubeDeckSettings
-import com.drivedeck.tubedeck.ui.theme.*
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AdBlockShieldSheet(
-    blockedCount: Int,
-    settings: TubeDeckSettings,
-    onUpdateSettings: (TubeDeckSettings) -> Unit,
-    onResetStats: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = TubeDeckSurface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
-        dragHandle = {
-            BottomSheetDefaults.DragHandle(
-                color = TubeDeckBorder
-            )
-        },
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Header: Shield Icon & Status
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(TubeDeckAccentMint.copy(alpha = 0.15f))
-                            .border(1.dp, TubeDeckAccentMint.copy(alpha = 0.4f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Shield,
-                            contentDescription = "Request filtering",
-                            tint = TubeDeckAccentMint,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "MyTube Request Shield",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TubeDeckTextPrimary
-                        )
-                        Text(
-                            text = if (settings.adBlockEnabled) "Request filtering active" else "Filtering paused",
-                            fontSize = 12.sp,
-                            color = if (settings.adBlockEnabled) TubeDeckAccentMint else TubeDeckTextSecondary
-                        )
                     }
                 }
 
@@ -106,7 +17,7 @@ fun AdBlockShieldSheet(
             MetricCard(
                 title = "Blocked requests",
                 value = "$blockedCount",
-                unit = "matched by local rules",
+                unit = "",
                 color = TubeDeckAccentMint,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -132,7 +43,7 @@ fun AdBlockShieldSheet(
 
                     RuleSwitchRow(
                         title = "Try to skip video ads",
-                        subtitle = "Skips or speeds up ads detected in the page",
+                        subtitle = "",
                         checked = settings.blockVideoAds,
                         onChecked = { onUpdateSettings(settings.copy(blockVideoAds = it)) }
                     )
@@ -141,7 +52,7 @@ fun AdBlockShieldSheet(
 
                     RuleSwitchRow(
                         title = "Filter known ad requests",
-                        subtitle = "Also hides selected ad containers in the page",
+                        subtitle = "",
                         checked = settings.blockBannerAds,
                         onChecked = { onUpdateSettings(settings.copy(blockBannerAds = it)) }
                     )
@@ -150,7 +61,7 @@ fun AdBlockShieldSheet(
 
                     RuleSwitchRow(
                         title = "Block Trackers & Telemetry",
-                        subtitle = "Blocks a small list of known analytics hosts",
+                        subtitle = "",
                         checked = settings.blockTrackers,
                         onChecked = { onUpdateSettings(settings.copy(blockTrackers = it)) }
                     )
@@ -159,7 +70,7 @@ fun AdBlockShieldSheet(
 
                     RuleSwitchRow(
                         title = "SponsorBlock Integration",
-                        subtitle = "Auto-skips paid promotions and sponsors",
+                        subtitle = "",
                         checked = settings.sponsorBlockEnabled,
                         onChecked = { onUpdateSettings(settings.copy(sponsorBlockEnabled = it)) }
                     )
@@ -225,7 +136,7 @@ private fun MetricCard(
                 fontWeight = FontWeight.ExtraBold,
                 color = color
             )
-            Text(unit, fontSize = 10.sp, color = TubeDeckTextSecondary.copy(alpha = 0.7f))
+            if (unit.isNotBlank()) Text(unit, fontSize = 10.sp, color = TubeDeckTextSecondary.copy(alpha = 0.7f))
         }
     }
 }
@@ -244,7 +155,7 @@ private fun RuleSwitchRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary)
-            Text(subtitle, fontSize = 10.sp, color = TubeDeckTextSecondary)
+            if (subtitle.isNotBlank()) Text(subtitle, fontSize = 10.sp, color = TubeDeckTextSecondary)
         }
         Switch(
             checked = checked,

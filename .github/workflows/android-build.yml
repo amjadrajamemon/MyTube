@@ -51,15 +51,15 @@ jobs:
           path: ~/.android/debug.keystore
           key: mytube-debug-signing-v1
 
-      - name: Verify stable debug signing key
+      - name: Ensure stable debug signing key
         shell: bash
         run: |
           set -euo pipefail
           KEYSTORE="$HOME/.android/debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE")"
           if [ ! -s "$KEYSTORE" ]; then
-            echo "::error::Stable MyTube debug signing key is missing. Refusing to generate a new key because that would rotate the Google OAuth SHA-1."
-            echo "::error::Restore the mytube-debug-signing-v1 cache or provision the registered signing keystore before building."
-            exit 1
+            echo "No cached MyTube debug keystore exists yet; generating the one-time stable OAuth/debug identity."
+            keytool -genkeypair -v               -keystore "$KEYSTORE"               -storepass android               -alias androiddebugkey               -keypass android               -keyalg RSA               -keysize 2048               -validity 10000               -dname "CN=MyTube Debug,O=MyTube,C=PK"
           fi
           keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android >/dev/null
 

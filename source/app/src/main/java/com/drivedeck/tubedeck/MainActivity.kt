@@ -781,6 +781,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun closeActivePlaybackCompletely() {
+        pendingExitChooserAfterPip = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
@@ -816,6 +817,7 @@ class MainActivity : ComponentActivity() {
                     artworkUrl = activePlaybackArtwork,
                     positionMs = positionMs.coerceAtLeast(0L)
                 ).onSuccess {
+                    pendingExitChooserAfterPip = false
                     webViewInstance?.runCatching {
                         evaluateJavascript(
                             "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",

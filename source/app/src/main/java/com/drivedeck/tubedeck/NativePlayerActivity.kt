@@ -37,6 +37,7 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackPipActions
+import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,7 @@ class NativePlayerActivity : ComponentActivity() {
         const val EXTRA_MEDIA_URI = "native_player_media_uri"
         const val EXTRA_IS_AUDIO_ONLY = "native_player_audio_only"
         const val EXTRA_QUALITY_LABEL = "native_player_quality"
+        const val EXTRA_SESSION_ID = "native_player_session_id"
     }
 
     private lateinit var repository: TubeDeckRepository
@@ -63,8 +65,8 @@ class NativePlayerActivity : ComponentActivity() {
     private var closingPlayer = false
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
-    private var pendingExitChooserAfterPip = false
     private var currentPlaybackPositionMs = 0L
+    private var playbackSessionId: String = ""
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -80,6 +82,11 @@ class NativePlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+        playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
+            finish()
+            return
+        }
 
         // One Back pipeline for gesture navigation, 3-button navigation and legacy devices.
         // ComponentActivity bridges this dispatcher to Android's modern back dispatcher on API 33+,
@@ -210,9 +217,10 @@ class NativePlayerActivity : ComponentActivity() {
                             showPlaybackExitChoices = false
                             handoffToBackgroundAudio()
                         },
-                        onDismiss = {
+                        onPictureInPicture = {
                             showPlaybackExitChoices = false
                             playbackBackCoordinator.onChooserDismissed()
+                            enterPlayerPip()
                         },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
@@ -263,22 +271,21 @@ class NativePlayerActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
-            PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER -> {
+            PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                pendingExitChooserAfterPip = false
-                playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
-                showPlaybackExitChoices = true
+                showPlaybackExitChoices = false
                 return
             }
-            PlaybackPipActions.ACTION_CLOSE -> {
-                closePlaybackCompletely()
-                return
-            }
-            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
-                handoffToBackgroundAudio()
-                return
-            }
+        }
+        val incomingSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        if (!PlaybackSessionRegistry.isActive(incomingSessionId)) {
+            closePlaybackCompletely()
+            return
+        }
+        if (incomingSessionId != playbackSessionId) {
+            PlaybackSessionRegistry.close(playbackSessionId)
+            playbackSessionId = incomingSessionId
         }
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
     }
@@ -298,7 +305,6 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.onNewMedia()
-        pendingExitChooserAfterPip = false
         showPlaybackExitChoices = false
         closingPlayer = false
         playerActive = true
@@ -351,10 +357,10 @@ class NativePlayerActivity : ComponentActivity() {
                 enterPlayerPip()
             }
 
-            PlaybackBackAction.EXPAND_PIP_FOR_EXIT_CHOOSER -> {
+            PlaybackBackAction.EXPAND_PIP -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                requestExitChooserFromPip()
+                expandPlayerFromPip()
             }
 
             PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
@@ -364,20 +370,12 @@ class NativePlayerActivity : ComponentActivity() {
             }
 
             PlaybackBackAction.IGNORE -> Unit
-
-            PlaybackBackAction.EXIT_APP -> {
-                playbackBackDecisionJob?.cancel()
-                playbackBackDecisionJob = null
-                showPlaybackExitChoices = false
-                closePlaybackCompletely()
-            }
         }
     }
 
-    private fun requestExitChooserFromPip() {
-        pendingExitChooserAfterPip = true
+    private fun expandPlayerFromPip() {
         val intent = Intent(this, NativePlayerActivity::class.java).apply {
-            action = PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER
+            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
@@ -387,10 +385,11 @@ class NativePlayerActivity : ComponentActivity() {
         if (closingPlayer) return
         closingPlayer = true
         playerActive = false
-        pendingExitChooserAfterPip = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
+        PlaybackSessionRegistry.close(playbackSessionId)
+        BackgroundAudioController.stop(applicationContext)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             finishAndRemoveTask()
         } else {
@@ -411,6 +410,7 @@ class NativePlayerActivity : ComponentActivity() {
             ).onSuccess {
                 closingPlayer = true
                 playerActive = false
+                PlaybackSessionRegistry.close(playbackSessionId)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     finishAndRemoveTask()
                 } else {
@@ -430,6 +430,7 @@ class NativePlayerActivity : ComponentActivity() {
         if (closingPlayer) return
         closingPlayer = true
         playerActive = false
+        PlaybackSessionRegistry.close(playbackSessionId)
         finish()
     }
 
@@ -451,19 +452,14 @@ class NativePlayerActivity : ComponentActivity() {
         }
     }
 
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        // Preserve the existing auto-PiP behavior for the native player Activity.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playerActive && !closingPlayer && !isFinishing && !isPipMode && repository.settings.value.pipEnabled) {
-            enterPlayerPip()
-        }
-    }
-
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
         playerActive = false
+        if (isFinishing && !isChangingConfigurations) {
+            PlaybackSessionRegistry.close(playbackSessionId)
+        }
         super.onDestroy()
     }
 
@@ -471,10 +467,5 @@ class NativePlayerActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
-        if (!isInPictureInPictureMode && pendingExitChooserAfterPip) {
-            pendingExitChooserAfterPip = false
-            playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
-            showPlaybackExitChoices = true
-        }
     }
 }

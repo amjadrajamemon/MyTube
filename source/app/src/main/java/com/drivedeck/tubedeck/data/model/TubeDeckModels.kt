@@ -94,6 +94,7 @@ data class TubeDeckSettings(
     val autoLoadUpNext: Boolean = false,
 
     // Appearance customization.
+    val appearancePreset: String = "Glass Midnight",
     val fontScale: Float = 1.0f,
     val themeAccentArgb: Long = 0xFF00D2FFL,
     val themeBackgroundArgb: Long = 0xFF080B11L,

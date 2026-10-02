@@ -6,6 +6,7 @@ on:
     paths:
       - 'source/**'
       - '.github/workflows/android-build.yml'
+      - '.github/mytube-signing-sha1.txt'
   workflow_dispatch:
 
 permissions:

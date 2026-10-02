@@ -167,8 +167,8 @@ class NativePlayerActivity : ComponentActivity() {
                                 .onFailure {
                                     Toast.makeText(
                                         this@NativePlayerActivity,
-                                        it.message ?: "YouTube authorization failed",
-                                        Toast.LENGTH_LONG
+                                        "Google sign-in failed",
+                                        Toast.LENGTH_SHORT
                                     ).show()
                                 }
                         }
@@ -497,7 +497,6 @@ class NativePlayerActivity : ComponentActivity() {
     private fun handoffToBackgroundAudio() {
         pipChoicePending = false
         val media = currentMedia
-        Toast.makeText(this, "Switching to background audio…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             BackgroundAudioController.handoff(
                 context = this@NativePlayerActivity,

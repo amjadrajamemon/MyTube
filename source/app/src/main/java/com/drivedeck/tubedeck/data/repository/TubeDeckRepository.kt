@@ -74,6 +74,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
             putString("playerMode", next.playerMode.name)
+            putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
+            putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f))
+            putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
             putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
             putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
             putBoolean("adBlockEnabled", next.adBlockEnabled); putBoolean("blockVideoAds", next.blockVideoAds)
@@ -108,6 +111,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistMode = enumValue(prefs.getString("playlistMode", null), DownloadMode.VIDEO),
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
+        preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
+        preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 2.0f),
+        seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
         fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
         fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),
         adBlockEnabled = prefs.getBoolean("adBlockEnabled", true),

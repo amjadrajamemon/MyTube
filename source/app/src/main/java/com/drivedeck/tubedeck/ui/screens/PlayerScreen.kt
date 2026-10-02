@@ -1203,9 +1203,10 @@ fun NativeExoPlayer(
                     exoPlayer.seekTo((seconds * 1_000L).coerceAtLeast(0L))
                     controlsVisible = true
                 },
-                relatedVideos = if (autoLoadUpNext) resolved?.relatedVideos.orEmpty() else emptyList(),
+                relatedVideos = if (autoLoadUpNext && firstFrameRendered) resolved?.relatedVideos.orEmpty() else emptyList(),
                 autoLoadEpisodes = autoLoadEpisodes,
                 autoLoadUpNext = autoLoadUpNext,
+                playbackReadyForCompanionLoads = firstFrameRendered,
                 onPlayRelated = onPlayRelated,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
@@ -1316,6 +1317,7 @@ private fun PortraitCompanionPanel(
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    playbackReadyForCompanionLoads: Boolean,
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
@@ -1354,10 +1356,17 @@ private fun PortraitCompanionPanel(
         }
     }
 
-    LaunchedEffect(media.id, media.mediaUri, commentsAvailable, displayTitle, autoLoadEpisodes) {
+    LaunchedEffect(
+        media.id,
+        media.mediaUri,
+        commentsAvailable,
+        displayTitle,
+        autoLoadEpisodes,
+        playbackReadyForCompanionLoads
+    ) {
         episodeShelf = null
         episodesLoading = false
-        if (!autoLoadEpisodes) return@LaunchedEffect
+        if (!autoLoadEpisodes || !playbackReadyForCompanionLoads) return@LaunchedEffect
         if (!commentsAvailable || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
         // Browser-intercepted native playback initially arrives as "Now Playing"; wait for the
         // resolver's real YouTube title so episode matching does not search for that placeholder.
@@ -1574,7 +1583,19 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (!autoLoadEpisodes && !autoLoadUpNext) {
+                    if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
+                        Column(
+                            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Text("Starting video…", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(
+                                "Companion shelves will wait until the first frame so they cannot delay playback.",
+                                color = TubeDeckTextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else if (!autoLoadEpisodes && !autoLoadUpNext) {
                         Column(
                             Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp)

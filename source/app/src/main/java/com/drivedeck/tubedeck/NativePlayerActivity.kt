@@ -33,7 +33,8 @@ import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.BackgroundAudioController
-import com.drivedeck.tubedeck.player.ConsecutiveBackPressDetector
+import com.drivedeck.tubedeck.player.PlaybackBackAction
+import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -70,8 +71,7 @@ class NativePlayerActivity : ComponentActivity() {
             mediaUri = ""
         )
     )
-    private var pipEnteredByBack = false
-    private val playbackBackDetector = ConsecutiveBackPressDetector()
+    private val playbackBackCoordinator = PlaybackBackCoordinator()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -179,7 +179,10 @@ class NativePlayerActivity : ComponentActivity() {
                             showPlaybackExitChoices = false
                             handoffToBackgroundAudio()
                         },
-                        onDismiss = { showPlaybackExitChoices = false },
+                        onDismiss = {
+                            showPlaybackExitChoices = false
+                            playbackBackCoordinator.onChooserDismissed()
+                        },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -243,11 +246,10 @@ class NativePlayerActivity : ComponentActivity() {
     private fun replaceMedia(media: OfflineMedia, recordWatch: Boolean) {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
-        playbackBackDetector.clear()
+        playbackBackCoordinator.onNewMedia()
         showPlaybackExitChoices = false
         closingPlayer = false
         playerActive = true
-        pipEnteredByBack = false
         currentPlaybackPositionMs = 0L
         currentMedia = media
         if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
@@ -265,55 +267,49 @@ class NativePlayerActivity : ComponentActivity() {
             return
         }
 
-        if (showPlaybackExitChoices) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = false
-            closePlaybackCompletely()
-            return
-        }
+        dispatchPlaybackBackAction(
+            playbackBackCoordinator.onBack(
+                nowMs = SystemClock.elapsedRealtime(),
+                isInPip = isPipMode
+            )
+        )
+    }
 
-        if (isPipMode) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = true
-            return
-        }
+    private fun dispatchPlaybackBackAction(action: PlaybackBackAction) {
+        when (action) {
+            PlaybackBackAction.WAIT_FOR_SECOND_PRESS -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = lifecycleScope.launch {
+                    delay(PlaybackBackCoordinator.DEFAULT_WINDOW_MS)
+                    if (!playerActive || closingPlayer) return@launch
+                    playbackBackDecisionJob = null
+                    dispatchPlaybackBackAction(
+                        playbackBackCoordinator.onSinglePressTimeout(
+                            canEnterPip =
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                    repository.settings.value.pipEnabled
+                        )
+                    )
+                }
+            }
 
-        if (pipEnteredByBack) {
-            pipEnteredByBack = false
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = true
-            return
-        }
+            PlaybackBackAction.ENTER_PIP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                enterPlayerPip()
+            }
 
-        val isSecondPress = playbackBackDetector.registerPress(SystemClock.elapsedRealtime())
-
-        if (isSecondPress) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = true
-            return
-        }
-
-        playbackBackDecisionJob?.cancel()
-        playbackBackDecisionJob = lifecycleScope.launch {
-            delay(ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS)
-            if (!playerActive || closingPlayer) return@launch
-            playbackBackDetector.clear()
-            playbackBackDecisionJob = null
-            if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                repository.settings.value.pipEnabled
-            ) {
-                enterPlayerPip(fromBack = true)
-            } else {
+            PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
                 showPlaybackExitChoices = true
+            }
+
+            PlaybackBackAction.EXIT_APP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                showPlaybackExitChoices = false
+                closePlaybackCompletely()
             }
         }
     }
@@ -324,7 +320,7 @@ class NativePlayerActivity : ComponentActivity() {
         playerActive = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
-        playbackBackDetector.clear()
+        playbackBackCoordinator.reset()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             finishAndRemoveTask()
         } else {
@@ -367,8 +363,7 @@ class NativePlayerActivity : ComponentActivity() {
         finish()
     }
 
-    private fun enterPlayerPip(fromBack: Boolean = false) {
-        if (fromBack) pipEnteredByBack = true
+    private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
@@ -380,7 +375,7 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
-                pipEnteredByBack = false
+                playbackBackCoordinator.onPipEnterFailed()
                 // Do not fall through to Activity finish: preserving playback is preferable.
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
@@ -401,6 +396,7 @@ class NativePlayerActivity : ComponentActivity() {
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        playbackBackCoordinator.reset()
         playerActive = false
         super.onDestroy()
     }

@@ -92,6 +92,12 @@ fun SettingsScreen(
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
 
+    var appearancePreset by remember { mutableStateOf(currentSettings.appearancePreset) }
+    var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
+    var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
+    var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
+    var themeTextArgb by remember { mutableLongStateOf(currentSettings.themeTextArgb) }
+
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
 
     Column(
@@ -128,6 +134,167 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            SettingsCard(title = "Appearance & Customization") {
+                Text(
+                    "Preset: " + appearancePreset,
+                    color = TubeDeckTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+
+                Text("Top 10 built-in themes", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                Spacer(Modifier.height(6.dp))
+                appearancePresets.chunked(2).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        row.forEach { preset ->
+                            val selected = appearancePreset == preset.name
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(70.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        appearancePreset = preset.name
+                                        fontScale = preset.fontScale
+                                        themeAccentArgb = preset.accentArgb
+                                        themeBackgroundArgb = preset.backgroundArgb
+                                        themeTextArgb = preset.textArgb
+                                    }
+                                    .border(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) Color(preset.accentArgb.toInt()) else TubeDeckBorder,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ),
+                                color = Color(preset.backgroundArgb.toInt())
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        preset.name,
+                                        color = Color(preset.textArgb.toInt()),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        Box(
+                                            Modifier.size(13.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(preset.accentArgb.toInt()))
+                                        )
+                                        Text(
+                                            preset.subtitle,
+                                            color = Color(preset.textArgb.toInt()).copy(alpha = 0.72f),
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = TubeDeckBorder
+                )
+
+                Text(
+                    "Font size " + (fontScale * 100).toInt() + "%",
+                    color = TubeDeckTextPrimary,
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = fontScale,
+                    onValueChange = {
+                        fontScale = it.coerceIn(0.80f, 1.35f)
+                        appearancePreset = "Custom"
+                    },
+                    valueRange = 0.80f..1.35f
+                )
+                Text(
+                    "Adjusts text throughout MyTube. Range is limited to keep controls usable.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 10.sp
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Custom color adjusters",
+                    color = TubeDeckTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(6.dp))
+
+                RgbColorAdjuster(
+                    label = "Accent / controls",
+                    argb = themeAccentArgb,
+                    onChange = {
+                        themeAccentArgb = it
+                        appearancePreset = "Custom"
+                    }
+                )
+                RgbColorAdjuster(
+                    label = "Overall theme / background",
+                    argb = themeBackgroundArgb,
+                    onChange = {
+                        themeBackgroundArgb = it
+                        appearancePreset = "Custom"
+                    }
+                )
+                RgbColorAdjuster(
+                    label = "Primary text",
+                    argb = themeTextArgb,
+                    onChange = {
+                        themeTextArgb = it
+                        appearancePreset = "Custom"
+                    }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            appearancePreset = "Glass Midnight"
+                            fontScale = 1.0f
+                            themeAccentArgb = 0xFF00D2FFL
+                            themeBackgroundArgb = 0xFF080B11L
+                            themeTextArgb = 0xFFFFFFFFL
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Reset appearance")
+                    }
+                    Surface(
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(themeBackgroundArgb.toInt()),
+                        border = androidx.compose.foundation.BorderStroke(
+                            2.dp,
+                            Color(themeAccentArgb.toInt())
+                        )
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "Preview",
+                                color = Color(themeTextArgb.toInt()),
+                                fontSize = (12f * fontScale).sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
             // Player Mode
             SettingsCard(title = "Default Media Player") {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -268,7 +435,12 @@ fun SettingsScreen(
                             sponsorBlockEnabled = sponsorBlockEnabled,
                             pipEnabled = pipEnabled,
                             autoLoadEpisodes = autoLoadEpisodes,
-                            autoLoadUpNext = autoLoadUpNext
+                            autoLoadUpNext = autoLoadUpNext,
+                            appearancePreset = appearancePreset,
+                            fontScale = fontScale.coerceIn(0.80f, 1.35f),
+                            themeAccentArgb = themeAccentArgb,
+                            themeBackgroundArgb = themeBackgroundArgb,
+                            themeTextArgb = themeTextArgb
                         )
                     )
                     onClose()
@@ -292,6 +464,112 @@ fun SettingsScreen(
         }
     }
 }
+
+
+private data class AppearancePreset(
+    val name: String,
+    val subtitle: String,
+    val accentArgb: Long,
+    val backgroundArgb: Long,
+    val textArgb: Long = 0xFFFFFFFFL,
+    val fontScale: Float = 1.0f
+)
+
+private val appearancePresets = listOf(
+    AppearancePreset("Glass Midnight", "Glass • balanced", 0xFF00D2FFL, 0xFF080B11L),
+    AppearancePreset("Glass Slate", "Glass • soft blue", 0xFF7DD3FCL, 0xFF10151DL),
+    AppearancePreset("Neon Cyan", "Neon • electric", 0xFF00F5FFL, 0xFF02070AL),
+    AppearancePreset("Neon Purple", "Neon • violet", 0xFFD946EFL, 0xFF0A0614L),
+    AppearancePreset("Neon Lime", "Neon • vivid green", 0xFF39FF14L, 0xFF050806L),
+    AppearancePreset("Ocean Deep", "Ocean • deep blue", 0xFF00B4D8L, 0xFF03111DL),
+    AppearancePreset("Ocean Teal", "Ocean • teal glass", 0xFF2DD4BFL, 0xFF041716L),
+    AppearancePreset("HD Graphite", "HD • neutral", 0xFF60A5FAL, 0xFF0B0D10L),
+    AppearancePreset("HD Crimson", "HD • cinematic", 0xFFFF4D6DL, 0xFF12070AL),
+    AppearancePreset("AMOLED Black", "Pure black • OLED", 0xFF00E5FFL, 0xFF000000L)
+)
+
+@Composable
+private fun RgbColorAdjuster(
+    label: String,
+    argb: Long,
+    onChange: (Long) -> Unit
+) {
+    val red = ((argb shr 16) and 0xFF).toInt()
+    val green = ((argb shr 8) and 0xFF).toInt()
+    val blue = (argb and 0xFF).toInt()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, color = TubeDeckTextSecondary, fontSize = 10.5.sp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    Modifier.size(18.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Color(argb.toInt()))
+                        .border(1.dp, TubeDeckBorder, RoundedCornerShape(5.dp))
+                )
+                Text(
+                    "#%06X".format(argb and 0xFFFFFFL),
+                    color = TubeDeckTextSecondary,
+                    fontSize = 9.sp
+                )
+            }
+        }
+        ColorChannelSlider("R", red) { onChange(withRgb(argb, red = it)) }
+        ColorChannelSlider("G", green) { onChange(withRgb(argb, green = it)) }
+        ColorChannelSlider("B", blue) { onChange(withRgb(argb, blue = it)) }
+    }
+}
+
+@Composable
+private fun ColorChannelSlider(
+    label: String,
+    value: Int,
+    onChange: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, modifier = Modifier.width(18.dp), color = TubeDeckTextSecondary, fontSize = 9.sp)
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.toInt().coerceIn(0, 255)) },
+            valueRange = 0f..255f,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            value.toString(),
+            modifier = Modifier.width(32.dp),
+            color = TubeDeckTextSecondary,
+            fontSize = 9.sp,
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+private fun withRgb(
+    source: Long,
+    red: Int = ((source shr 16) and 0xFF).toInt(),
+    green: Int = ((source shr 8) and 0xFF).toInt(),
+    blue: Int = (source and 0xFF).toInt()
+): Long =
+    0xFF000000L or
+        ((red.coerceIn(0, 255).toLong()) shl 16) or
+        ((green.coerceIn(0, 255).toLong()) shl 8) or
+        blue.coerceIn(0, 255).toLong()
 
 @Composable
 private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) -> Unit) {

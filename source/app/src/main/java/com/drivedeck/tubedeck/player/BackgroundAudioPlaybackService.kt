@@ -71,14 +71,31 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var currentTitle: String = "MyTube audio"
     private var currentArtwork: String? = null
     private var recovering = false
+    private var recoveryAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
         player = ExoPlayer.Builder(this).build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) recoveryAttempts = 0
+                }
+
                 override fun onPlayerError(error: PlaybackException) {
-                    refreshExpiredYoutubeAudio()
+                    val retryable =
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                            error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                            error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+
+                    if (retryable && recoveryAttempts < 3) {
+                        recoveryAttempts += 1
+                        refreshExpiredYoutubeAudio()
+                    } else {
+                        player.pause()
+                        stopSelf()
+                    }
                 }
             })
         }
@@ -150,7 +167,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                         originalUrl,
                         forceRefresh = true
                     )
-                    resolved.audioOptions.firstOrNull()?.url
+                    resolved.audioOptions.maxByOrNull { it.bitrate }?.url
                         ?: resolved.progressiveUrl
                         ?: error("No refreshed audio stream is available.")
                 }
@@ -244,7 +261,7 @@ object BackgroundAudioController {
                     sourceUrl,
                     forceRefresh = true
                 )
-                resolved.audioOptions.firstOrNull()?.url
+                resolved.audioOptions.maxByOrNull { it.bitrate }?.url
                     ?: resolved.progressiveUrl
                     ?: error("No playable audio stream is available for this video.")
             } else {

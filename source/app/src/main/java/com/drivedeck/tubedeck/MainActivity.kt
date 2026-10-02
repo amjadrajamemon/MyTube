@@ -98,11 +98,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings by repository.settings.collectAsStateWithLifecycle()
+            var previewAppearance by remember { mutableStateOf<TubeDeckSettings?>(null) }
+            val activeAppearance = previewAppearance ?: settings
             TubeDeckTheme(
-                fontScale = settings.fontScale,
-                accentArgb = settings.themeAccentArgb,
-                backgroundArgb = settings.themeBackgroundArgb,
-                textArgb = settings.themeTextArgb
+                fontScale = activeAppearance.fontScale,
+                accentArgb = activeAppearance.themeAccentArgb,
+                backgroundArgb = activeAppearance.themeBackgroundArgb,
+                textArgb = activeAppearance.themeTextArgb
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
@@ -325,6 +327,11 @@ class MainActivity : ComponentActivity() {
                             navigateTo(ActiveScreen.BROWSER, it)
                         }
                         inboundUrl = null
+                    }
+                }
+                LaunchedEffect(currentScreen) {
+                    if (currentScreen != ActiveScreen.SETTINGS) {
+                        previewAppearance = null
                     }
                 }
                 LaunchedEffect(currentScreen, playingMedia) {
@@ -635,9 +642,14 @@ class MainActivity : ComponentActivity() {
                                 SettingsScreen(
                                     currentSettings = settings,
                                     blockedAdsCount = blockedAdsCount,
-                                    onSaveSettings = { repository.updateSettings(it) },
+                                    onPreviewSettings = { previewAppearance = it },
+                                    onSaveSettings = {
+                                        repository.updateSettings(it)
+                                        previewAppearance = null
+                                    },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
                                     onClose = {
+                                        previewAppearance = null
                                         if (!navigateBack()) {
                                             navigation.reset(NavigationEntry(ActiveScreen.HOME))
                                             applyNavigationEntry(navigation.current)
@@ -843,7 +855,8 @@ class MainActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                showPlaybackExitChoices = false
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
                 return
             }
         }

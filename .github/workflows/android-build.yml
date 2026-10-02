@@ -26,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.3.7 dual-APK source
+      - name: Verify v1.3.8 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +36,7 @@ jobs:
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.3.7 ARM64 + Universal source tree."
+          echo "Building MyTube v1.3.8 ARM64 + Universal source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -126,10 +126,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.7-ARM64-Whisper-YtDlp-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.7-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.8-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.8-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.7-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.8-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -139,33 +139,33 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.3.7-ARM64-Whisper-YtDlp-debug.apk > dist/MyTube-v1.3.7-ARM64-Whisper-YtDlp-debug.apk.sha256
-          sha256sum dist/MyTube-v1.3.7-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.7-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.7-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.7-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.3.8-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.8-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.3.8-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.8-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.8-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.8-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.3.7 dual APK release
+      - name: Publish v1.3.8 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.3.7-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.3.7.
+          TAG="v1.3.8-dual-arm64-universal-debug"
+          NOTES="MyTube r6.5 LiveDub v1.3.8.
 
           Two APK editions are published for every release:
-          - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and yt-dlp.
+          - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and Download Engine.
           - Universal: includes arm64-v8a, armeabi-v7a, x86 and x86_64 native support from compatible bundled components, intended for broader/older/rooted-device compatibility.
           - On non-ARM64 devices the current Whisper native AAR is not available, so MyTube disables native Whisper safely and retains caption-based dubbing instead of crashing.
-          - Minimum Android API is 24 (Android 7.0), matching the maintained yt-dlp runtime requirement.
+          - Minimum Android API is 24 (Android 7.0), matching the maintained Download Engine runtime requirement.
           - No root-detection or root-blocking logic is used.
           - System Back prioritizes PiP for active video playback in both native and web modes.
           - The ExoPlayer quality control opens its own Auto/all-quality chooser, not Player Settings.
-          - Comments use NewPipe pagination with updated yt-dlp fallback.
+          - Comments use NewPipe pagination with updated Download Engine fallback.
           - Google account state is only set after a real Google Identity credential succeeds; GOOGLE_WEB_CLIENT_ID can be supplied as a repository Actions secret.
-          - Weekly automatic and manual yt-dlp updates remain enabled.
+          - Weekly automatic and manual Download Engine updates remain enabled.
           - The auxiliary speed/quality/Zoom/fullscreen/CC/Dub row is moved down beside the seek bar and away from the center transport controls.
           - Playlist discovery is now YouTube-context-first, modeled on the Watch Next architecture used by clients such as SmartTube.
           - MyTube reads YouTube's current InnerTube key/client version from the watch page and calls /youtubei/v1/next for the active video.
@@ -209,19 +209,26 @@ jobs:
           - Playback Back sequence is now: single Back to PiP, consecutive Back to the Close/Audio-only chooser, and another Back while the chooser is visible exits the MyTube task.
           - Close exits MyTube completely; Audio-only exits the UI task only after handing playback to the foreground MediaSession service.
           - Download destinations are now user-selected folders only; the app-storage destination option and folder-name field have been removed from Settings.
-          - All user-facing yt-dlp wording has been renamed to Download Engine.
+          - All user-facing Download Engine wording has been renamed to Download Engine.
           - NativePlayerActivity is now single-task and replaces media in-place, preventing a previous PiP video from continuing alongside a newly selected video.
           - Browser native-video interception now removes consumed /watch navigation from the Back path instead of reloading search/watch pages in a loop.
           - After Back enters PiP and the PiP is expanded again, the next Back shows Close / Audio-only directly; rapid double-Back remains supported.
+          - Navigation is now coordinated by a logical MyTube route history rather than WebView history, with deterministic Back/Forward restoration across Home, Search/Browser, Downloads, Settings and Player.
+          - Native /watch URLs are excluded from logical history, preventing video -> search -> same video navigation loops.
+          - New navigation after going Back clears obsolete Forward history, matching normal browser behavior.
+          - MainActivity and NativePlayerActivity now share one unit-tested playback Back state machine for single Back, rapid double Back, PiP expansion, exit chooser and final app exit.
+          - Any PiP session that is expanded back to full player arms the next Back to show Close / Audio-only directly.
+          - Android system PiP now also exposes explicit Close and Audio-only actions so users are not dependent on Back delivery while the PiP window owns focus.
+          - Fullscreen WebView owns Back exclusively while fullscreen is active; normal app Back resumes only after fullscreen closes.
           - Unit tests, both APK builds and ABI verification must pass before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.3.7-ARM64-Whisper-YtDlp-debug.apk
-            dist/MyTube-v1.3.7-ARM64-Whisper-YtDlp-debug.apk.sha256
-            dist/MyTube-v1.3.7-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.3.7-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.3.7-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.3.7-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.8-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.3.8-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.3.8-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.3.8-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.3.8-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.3.8-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -229,7 +236,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.3.7 ARM64 + Universal Debug" \
+              --title "MyTube v1.3.8 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
+    private var pendingExitChooserAfterPip = false
     private var activePlaybackUrl: String = ""
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
@@ -693,6 +694,7 @@ class MainActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
+                pendingExitChooserAfterPip = false
                 playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
                 showPlaybackExitChoices = true
                 return
@@ -770,6 +772,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestExitChooserFromPip() {
+        pendingExitChooserAfterPip = true
         val intent = Intent(this, MainActivity::class.java).apply {
             action = PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -880,6 +883,11 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode && pendingExitChooserAfterPip) {
+            pendingExitChooserAfterPip = false
+            playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
+            showPlaybackExitChoices = true
+        }
     }
 
     override fun onDestroy() {

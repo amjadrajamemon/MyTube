@@ -303,6 +303,10 @@ class NativePlayerActivity : ComponentActivity() {
                             playbackBackCoordinator.onChooserDismissed()
                             enterPlayerPip()
                         },
+                        onTimeout = {
+                            showPlaybackExitChoices = false
+                            playbackBackCoordinator.onChooserDismissed()
+                        },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }

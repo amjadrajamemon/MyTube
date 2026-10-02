@@ -37,6 +37,19 @@ data class YoutubeAuthorizationOutcome(
     val resolution: IntentSenderRequest? = null
 )
 
+enum class YoutubeAuthorizationState {
+    SIGNED_OUT,
+    CONNECTING,
+    CONNECTED,
+    CONFIGURATION_REQUIRED,
+    ERROR
+}
+
+data class YoutubeAuthorizationStatus(
+    val state: YoutubeAuthorizationState = YoutubeAuthorizationState.SIGNED_OUT,
+    val message: String = ""
+)
+
 /**
  * Real YouTube account authorization.
  *
@@ -62,11 +75,15 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val _account = MutableStateFlow<GoogleAccountProfile?>(null)
     val account: StateFlow<GoogleAccountProfile?> = _account.asStateFlow()
+    private val _status = MutableStateFlow(YoutubeAuthorizationStatus())
+    val status: StateFlow<YoutubeAuthorizationStatus> = _status.asStateFlow()
 
     @Volatile private var youtubeAccessToken: String? = null
     @Volatile private var authorizedAndroidAccount: Account? = null
 
-    suspend fun restoreYoutubeAuthorization(): Result<Boolean> = runCatching {
+    suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
+        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
+        return runCatching {
         val result = Identity.getAuthorizationClient(appContext)
             .authorize(
                 AuthorizationRequest.builder()
@@ -82,11 +99,15 @@ class GoogleAccountSession private constructor(context: Context) {
             completeAuthorizationResult(result)
             true
         }
-    }.recoverCatching { throw decorateAuthorizationError(it) }
+        }.onFailure(::recordAuthorizationFailure)
+            .recoverCatching { throw decorateAuthorizationError(it) }
+    }
 
     suspend fun beginYoutubeAuthorization(
         activity: Activity
-    ): Result<YoutubeAuthorizationOutcome> = runCatching {
+    ): Result<YoutubeAuthorizationOutcome> {
+        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
+        return runCatching {
         val result = Identity.getAuthorizationClient(activity)
             .authorize(
                 AuthorizationRequest.builder()
@@ -106,17 +127,23 @@ class GoogleAccountSession private constructor(context: Context) {
         } else {
             YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
         }
-    }.recoverCatching { throw decorateAuthorizationError(it) }
+        }.onFailure(::recordAuthorizationFailure)
+            .recoverCatching { throw decorateAuthorizationError(it) }
+    }
 
     suspend fun completeYoutubeAuthorization(
         activity: Activity,
         data: Intent?
-    ): Result<GoogleAccountProfile> = runCatching {
+    ): Result<GoogleAccountProfile> {
+        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
+        return runCatching {
         val resultIntent = requireNotNull(data) { "YouTube authorization was cancelled." }
         val result = Identity.getAuthorizationClient(activity)
             .getAuthorizationResultFromIntent(resultIntent)
         completeAuthorizationResult(result)
-    }.recoverCatching { throw decorateAuthorizationError(it) }
+        }.onFailure(::recordAuthorizationFailure)
+            .recoverCatching { throw decorateAuthorizationError(it) }
+    }
 
     fun currentYoutubeAccessToken(): String? = youtubeAccessToken
 
@@ -137,6 +164,27 @@ class GoogleAccountSession private constructor(context: Context) {
                 .await()
         }
         clearLocalSession()
+    }
+
+    private fun recordAuthorizationFailure(error: Throwable) {
+        val decorated = decorateAuthorizationError(error)
+        val message = decorated.message.orEmpty()
+        val state = if (
+            decorated is IllegalStateException &&
+            (
+                message.contains("unregistered Android OAuth", ignoreCase = true) ||
+                message.contains("Google Cloud", ignoreCase = true) ||
+                message.contains("accessNotConfigured", ignoreCase = true)
+            )
+        ) {
+            YoutubeAuthorizationState.CONFIGURATION_REQUIRED
+        } else {
+            YoutubeAuthorizationState.ERROR
+        }
+        youtubeAccessToken = null
+        authorizedAndroidAccount = null
+        _account.value = null
+        _status.value = YoutubeAuthorizationStatus(state, message)
     }
 
     private suspend fun completeAuthorizationResult(
@@ -172,6 +220,10 @@ class GoogleAccountSession private constructor(context: Context) {
 
         youtubeAccessToken = token
         _account.value = profile
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTED,
+            "YouTube account verified"
+        )
         return profile
     }
 
@@ -288,6 +340,7 @@ class GoogleAccountSession private constructor(context: Context) {
         youtubeAccessToken = null
         authorizedAndroidAccount = null
         _account.value = null
+        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.SIGNED_OUT)
     }
 
     private data class VerifiedYoutubeIdentity(

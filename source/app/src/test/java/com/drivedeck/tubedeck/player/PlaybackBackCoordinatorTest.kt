@@ -40,6 +40,18 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
+    fun expandedManualPipMakesNextBackShowChooser() {
+        val coordinator = PlaybackBackCoordinator(500L)
+        coordinator.onPipModeChanged(true)
+        coordinator.onPipModeChanged(false)
+
+        assertEquals(
+            PlaybackBackAction.SHOW_EXIT_CHOOSER,
+            coordinator.onBack(2_000L, isInPip = false)
+        )
+    }
+
+    @Test
     fun backWhileChooserVisibleExits() {
         val coordinator = PlaybackBackCoordinator(500L)
         coordinator.onBack(1_000L, isInPip = false)

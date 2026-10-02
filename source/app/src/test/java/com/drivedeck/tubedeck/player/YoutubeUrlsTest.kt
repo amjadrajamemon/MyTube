@@ -24,4 +24,15 @@ class YoutubeUrlsTest {
         assertFalse(YoutubeUrls.playlist("http://www.youtube.com/playlist?list=PL123"))
         assertFalse(YoutubeUrls.playlist("https://example.com/playlist?list=PL123"))
     }
+    @Test
+    fun startPositionReplacesOldTimestampAndPreservesOtherQueryData() {
+        assertEquals(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123&t=125s",
+            YoutubeUrls.withStartPosition(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123&t=4s",
+                125_900L
+            )
+        )
+    }
+
 }

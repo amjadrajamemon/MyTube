@@ -20,8 +20,27 @@ import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 fun GoogleAccountButton(
     account: GoogleAccountProfile?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showLabelWhenSignedOut: Boolean = false
 ) {
+    if (account == null && showLabelWhenSignedOut) {
+        TextButton(
+            onClick = onClick,
+            modifier = modifier.height(38.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+        ) {
+            Icon(
+                Icons.Default.AccountCircle,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("Sign in with Google", color = Color.White)
+        }
+        return
+    }
+
     IconButton(onClick = onClick, modifier = modifier.size(38.dp)) {
         val photo = account?.photoUrl
         if (!photo.isNullOrBlank()) {
@@ -34,7 +53,7 @@ fun GoogleAccountButton(
         } else {
             Icon(
                 Icons.Default.AccountCircle,
-                contentDescription = if (account == null) "Connect YouTube account" else account.displayName,
+                contentDescription = if (account == null) "Sign in with Google" else account.displayName,
                 tint = Color.White,
                 modifier = Modifier.size(29.dp)
             )

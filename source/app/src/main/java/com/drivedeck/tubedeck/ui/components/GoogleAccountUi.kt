@@ -34,7 +34,7 @@ fun GoogleAccountButton(
         } else {
             Icon(
                 Icons.Default.AccountCircle,
-                contentDescription = if (account == null) "Sign in with Google" else account.displayName,
+                contentDescription = if (account == null) "Connect YouTube account" else account.displayName,
                 tint = Color.White,
                 modifier = Modifier.size(29.dp)
             )
@@ -65,8 +65,13 @@ fun GoogleAccountDialog(
         },
         title = { Text(account.displayName) },
         text = {
-            if (account.email.isNotBlank()) {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("YouTube account authorized")
+                if (account.email.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(account.email)
                 }
             }

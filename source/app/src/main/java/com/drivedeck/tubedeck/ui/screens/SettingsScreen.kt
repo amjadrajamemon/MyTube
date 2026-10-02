@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.DownloadMode
@@ -41,6 +42,8 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     currentSettings: TubeDeckSettings,
     blockedAdsCount: Int,
+    googleAccount: GoogleAccountProfile? = null,
+    onGoogleAccountClick: () -> Unit = {},
     onPreviewSettings: (TubeDeckSettings) -> Unit,
     onSaveSettings: (TubeDeckSettings) -> Unit,
     onResetAdBlockStats: () -> Unit,
@@ -282,7 +285,7 @@ fun SettingsScreen(
                 val statusLabel = when (youtubeAuthStatus.state) {
                     YoutubeAuthorizationState.SIGNED_OUT -> "Signed out"
                     YoutubeAuthorizationState.CONNECTING -> "Connecting…"
-                    YoutubeAuthorizationState.CONNECTED -> "Connected"
+                    YoutubeAuthorizationState.CONNECTED -> googleAccount?.displayName?.ifBlank { "Connected" } ?: "Connected"
                     YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "Setup required"
                     YoutubeAuthorizationState.ERROR -> "Error"
                 }
@@ -301,6 +304,20 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp
                 )
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = onGoogleAccountClick,
+                    enabled = youtubeAuthStatus.state != YoutubeAuthorizationState.CONNECTING,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TubeDeckAccentCyan,
+                        contentColor = Color.Black
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (googleAccount == null) "Sign in with Google" else "Google account")
+                }
             }
 
             SettingsCard(title = "Download Engine") {
@@ -409,6 +426,24 @@ fun SettingsScreen(
                             onClick = { seekIntervalSeconds = seconds },
                             label = { Text("${seconds}s") }
                         )
+                    }
+                }
+            }
+
+            SettingsCard(title = "Enhanced Player") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "Adaptive network",
+                        "Seek preview",
+                        "Chapters",
+                        "Sponsor markers",
+                        "Long-press actions",
+                        "Gestures"
+                    ).forEach { label ->
+                        AssistChip(onClick = {}, label = { Text(label) })
                     }
                 }
             }

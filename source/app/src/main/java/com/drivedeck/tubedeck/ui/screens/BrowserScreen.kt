@@ -204,15 +204,29 @@ fun BrowserScreen(
                 ${if (settings.adBlockEnabled && settings.blockVideoAds) """
                     const video = document.querySelector('video');
                     const player = document.querySelector('#movie_player');
-                    if (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
+                    const adActive = !!(player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')));
+                    if (adActive) {
                         if (video) {
+                            if (!window.__tdAdActive) {
+                                window.__tdPreviousMuted = !!video.muted;
+                                window.__tdPreviousRate = Number(video.playbackRate || 1.0);
+                            }
+                            window.__tdAdActive = true;
                             video.muted = true;
                             video.playbackRate = 16.0;
                             if (video.duration > 0.1) video.currentTime = video.duration - 0.01;
                         }
+                        const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button');
+                        if (skipBtn) skipBtn.click();
+                    } else if (window.__tdAdActive) {
+                        if (video) {
+                            video.muted = !!window.__tdPreviousMuted;
+                            video.playbackRate = Number(window.__tdPreviousRate || 1.0);
+                        }
+                        window.__tdAdActive = false;
+                        delete window.__tdPreviousMuted;
+                        delete window.__tdPreviousRate;
                     }
-                    const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button');
-                    if (skipBtn) skipBtn.click();
                 """ else ""}
             }
             window.__tdInterval = setInterval(runAdBlockEngine, 750);

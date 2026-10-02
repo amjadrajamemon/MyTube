@@ -59,7 +59,7 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
             android:supportsPictureInPicture="true"
-            android:launchMode="standard"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize" />
 
     </application>

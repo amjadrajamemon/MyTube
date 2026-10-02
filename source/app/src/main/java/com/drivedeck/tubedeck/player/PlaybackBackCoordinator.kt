@@ -9,68 +9,56 @@ internal enum class PlaybackBackAction {
 }
 
 /**
- * Deterministic playback Back behavior shared by both player hosts.
+ * Playback Back state machine shared by both player hosts.
  *
- * Back never silently chooses a terminal playback mode. The user explicitly selects Close,
- * Audio-only or PiP from the chooser.
+ * There is deliberately no double-press timer here. Android PiP entry/exit is asynchronous, so
+ * interpreting Back by elapsed milliseconds races the Activity lifecycle. Instead:
+ *  - first Back from normal playback enters PiP immediately;
+ *  - Back while PiP is active expands the existing Activity;
+ *  - once expanded from PiP, the next handled Back shows the explicit Close / Audio / PiP chooser.
  */
-internal class PlaybackBackCoordinator(
-    private val consecutiveWindowMs: Long = DEFAULT_WINDOW_MS
-) {
-    companion object {
-        const val DEFAULT_WINDOW_MS: Long = ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS
-        const val PIP_ENTRY_DELAY_MS: Long = 180L
-    }
-
-    private val detector = ConsecutiveBackPressDetector(consecutiveWindowMs)
+internal class PlaybackBackCoordinator {
     private var chooserVisible = false
     private var pipEnteredFromBack = false
     private var wasInPip = false
     private var expandedFromPip = false
 
     fun onBack(nowMs: Long, isInPip: Boolean): PlaybackBackAction {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredTimestamp = nowMs
         if (chooserVisible) return PlaybackBackAction.IGNORE
 
         if (isInPip) {
-            detector.clear()
             pipEnteredFromBack = false
             expandedFromPip = false
-            // This is the user's second playback Back. Arm the explicit decision surface now;
-            // the Activity expansion intent will render Close / Audio / PiP immediately.
-            chooserVisible = true
             return PlaybackBackAction.EXPAND_PIP
         }
 
         if (expandedFromPip || pipEnteredFromBack) {
-            detector.clear()
             pipEnteredFromBack = false
             expandedFromPip = false
             chooserVisible = true
             return PlaybackBackAction.SHOW_EXIT_CHOOSER
         }
 
-        return if (detector.registerPress(nowMs)) {
-            detector.clear()
-            pipEnteredFromBack = true
-            PlaybackBackAction.ENTER_PIP
-        } else {
-            PlaybackBackAction.WAIT_FOR_SECOND_PRESS
-        }
+        pipEnteredFromBack = true
+        return PlaybackBackAction.ENTER_PIP
     }
 
-    fun onSinglePressTimeout(canEnterPip: Boolean): PlaybackBackAction {
-        detector.clear()
-        return if (canEnterPip) {
+    /**
+     * Kept for source compatibility with older hosts. New hosts should never need a timing
+     * timeout; if invoked, it resolves directly from capability rather than press timing.
+     */
+    fun onSinglePressTimeout(canEnterPip: Boolean): PlaybackBackAction =
+        if (canEnterPip) {
             pipEnteredFromBack = true
             PlaybackBackAction.ENTER_PIP
         } else {
             chooserVisible = true
             PlaybackBackAction.SHOW_EXIT_CHOOSER
         }
-    }
 
     fun forceChooserVisible() {
-        detector.clear()
         pipEnteredFromBack = false
         expandedFromPip = false
         chooserVisible = true
@@ -85,20 +73,17 @@ internal class PlaybackBackCoordinator(
         chooserVisible = false
         pipEnteredFromBack = false
         expandedFromPip = false
-        detector.clear()
     }
 
     fun onPipEnterFailed() {
         pipEnteredFromBack = false
         expandedFromPip = false
         chooserVisible = true
-        detector.clear()
     }
 
     fun onNewMedia() = reset()
 
     fun reset() {
-        detector.clear()
         chooserVisible = false
         pipEnteredFromBack = false
         wasInPip = false

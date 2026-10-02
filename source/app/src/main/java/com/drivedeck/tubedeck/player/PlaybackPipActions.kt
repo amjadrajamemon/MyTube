@@ -8,11 +8,13 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
+import androidx.annotation.RequiresApi
 
 internal object PlaybackPipActions {
     const val ACTION_CLOSE = "com.drivedeck.tubedeck.action.PIP_CLOSE"
     const val ACTION_AUDIO_ONLY = "com.drivedeck.tubedeck.action.PIP_AUDIO_ONLY"
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun buildParams(
         context: Context,
         activityClass: Class<*>,

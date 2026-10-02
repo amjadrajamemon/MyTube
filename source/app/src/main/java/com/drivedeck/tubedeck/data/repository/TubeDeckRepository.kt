@@ -83,7 +83,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             putString("appearancePreset", next.appearancePreset)
-            putString("themePreset", next.themePreset.name)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
             putLong("themeBackgroundArgb", next.themeBackgroundArgb)

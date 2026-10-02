@@ -75,6 +75,10 @@ data class TubeDeckSettings(
     
     // Player settings
     val playerMode: PlayerMode = PlayerMode.NATIVE,
+    // 0 = adaptive Auto. Positive values remember a fixed preferred height.
+    val preferredPlaybackQualityHeight: Int = 0,
+    val preferredPlaybackSpeed: Float = 1.0f,
+    val seekIntervalSeconds: Int = 10,
     
     // Movable browser buttons, stored in screen pixels.
     val fabInstantX: Float = 40f,

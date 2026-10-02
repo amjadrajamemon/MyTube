@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,6 +87,9 @@ fun SettingsScreen(
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
+    var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
+    var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
+    var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
     var blockVideoAds by remember { mutableStateOf(currentSettings.blockVideoAds) }
@@ -364,6 +368,49 @@ fun SettingsScreen(
             SettingsCard(title = "Playback") {
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
+                HorizontalDivider()
+
+                Text("Remembered quality", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0, 360, 480, 720, 1080, 1440, 2160).forEach { height ->
+                        FilterChip(
+                            selected = preferredPlaybackQualityHeight == height,
+                            onClick = { preferredPlaybackQualityHeight = height },
+                            label = { Text(if (height == 0) "Auto" else "${height}p") }
+                        )
+                    }
+                }
+
+                Text("Remembered playback speed", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { speed ->
+                        FilterChip(
+                            selected = kotlin.math.abs(preferredPlaybackSpeed - speed) < 0.01f,
+                            onClick = { preferredPlaybackSpeed = speed },
+                            label = { Text("${speed}x") }
+                        )
+                    }
+                }
+
+                Text("Seek interval", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(5, 10, 15, 30, 60).forEach { seconds ->
+                        FilterChip(
+                            selected = seekIntervalSeconds == seconds,
+                            onClick = { seekIntervalSeconds = seconds },
+                            label = { Text("${seconds}s") }
+                        )
+                    }
+                }
             }
 
             // Blocking Toggle
@@ -390,6 +437,9 @@ fun SettingsScreen(
                             playlistMode = playlistMode,
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
+                            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
+                            preferredPlaybackSpeed = preferredPlaybackSpeed,
+                            seekIntervalSeconds = seekIntervalSeconds,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,
                             blockBannerAds = blockBannerAds,

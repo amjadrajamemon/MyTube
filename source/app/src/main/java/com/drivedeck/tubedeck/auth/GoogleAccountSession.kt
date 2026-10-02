@@ -147,18 +147,16 @@ class GoogleAccountSession private constructor(context: Context) {
     ): Result<YoutubeAuthorizationOutcome> {
         _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
         return runCatching {
+            require(isIdentityConfigured()) {
+                "Google Web OAuth client ID is missing from this build"
+            }
+
+            val identity = signInGoogleIdentity(activity)
+            pendingIdentity = identity
+
             val builder = AuthorizationRequest.builder()
                 .setRequestedScopes(YOUTUBE_SCOPES)
-
-            if (isIdentityConfigured()) {
-                val identity = signInGoogleIdentity(activity)
-                pendingIdentity = identity
-                builder.setAccount(Account(identity.email, "com.google"))
-            } else {
-                // AuthorizationClient remains a genuine Google/YouTube account connection on
-                // Android. The Android OAuth client (package + signing SHA-1) is authoritative.
-                builder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
-            }
+                .setAccount(Account(identity.email, "com.google"))
 
             val result = Identity.getAuthorizationClient(activity)
                 .authorize(builder.build())
@@ -368,7 +366,14 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     private fun initialStatus(): YoutubeAuthorizationStatus =
-        YoutubeAuthorizationStatus()
+        if (isIdentityConfigured()) {
+            YoutubeAuthorizationStatus()
+        } else {
+            YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONFIGURATION_REQUIRED,
+                "Google Web OAuth client ID is missing from this build"
+            )
+        }
 
     private fun recordAuthorizationFailure(error: Throwable) {
         val decorated = decorateAuthorizationError(error)

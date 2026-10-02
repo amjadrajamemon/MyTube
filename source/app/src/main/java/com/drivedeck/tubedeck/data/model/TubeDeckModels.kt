@@ -62,7 +62,6 @@ data class SponsorSegment(
 data class TubeDeckSettings(
     val downloadDir: String = "MyTube",
     val downloadTreeUri: String? = null,
-    val maxConcurrent: Int = 2,
     
     // Separate settings for different download types
     val instantMode: DownloadMode = DownloadMode.VIDEO,

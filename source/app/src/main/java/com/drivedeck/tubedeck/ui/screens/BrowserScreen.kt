@@ -229,7 +229,7 @@ fun BrowserScreen(
                     }
                 """ else ""}
             }
-            window.__tdInterval = setInterval(runAdBlockEngine, 750);
+            ${if (settings.adBlockEnabled && settings.blockVideoAds) "window.__tdInterval = setInterval(runAdBlockEngine, 750);" else "window.__tdInterval = null;"}
         })();
         """.trimIndent()
     }

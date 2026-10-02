@@ -15,6 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -81,6 +83,12 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             })
         }
         mediaSession = MediaSession.Builder(this, player).build()
+        serviceScope.launch {
+            while (isActive) {
+                BackgroundAudioController.markPosition(sourceUrl, player.currentPosition.coerceAtLeast(0L))
+                delay(500L)
+            }
+        }
     }
 
     override fun onGetSession(
@@ -174,28 +182,52 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 }
 
+data class BackgroundAudioSnapshot(
+    val sourceUrl: String,
+    val positionMs: Long
+)
+
 object BackgroundAudioController {
     @Volatile
     private var activeSourceUrl: String? = null
+    @Volatile
+    private var activePositionMs: Long = 0L
 
     internal fun markStarted(sourceUrl: String) {
         activeSourceUrl = sourceUrl.takeIf { it.isNotBlank() }
+        activePositionMs = 0L
+    }
+
+    internal fun markPosition(sourceUrl: String, positionMs: Long) {
+        if (activeSourceUrl == sourceUrl && sourceUrl.isNotBlank()) {
+            activePositionMs = positionMs.coerceAtLeast(0L)
+        }
     }
 
     internal fun markStopped(sourceUrl: String) {
         if (activeSourceUrl == sourceUrl || sourceUrl.isBlank()) {
             activeSourceUrl = null
+            activePositionMs = 0L
         }
     }
 
     fun currentSourceUrl(): String? = activeSourceUrl
 
-    fun stop(context: Context): String? {
-        val previous = activeSourceUrl
+    fun snapshot(): BackgroundAudioSnapshot? =
+        activeSourceUrl?.takeIf { it.isNotBlank() }?.let {
+            BackgroundAudioSnapshot(it, activePositionMs.coerceAtLeast(0L))
+        }
+
+    fun takeSnapshotAndStop(context: Context): BackgroundAudioSnapshot? {
+        val snapshot = snapshot()
         activeSourceUrl = null
+        activePositionMs = 0L
         BackgroundAudioPlaybackService.stop(context)
-        return previous
+        return snapshot
     }
+
+    fun stop(context: Context): String? =
+        takeSnapshotAndStop(context)?.sourceUrl
 
     suspend fun handoff(
         context: Context,

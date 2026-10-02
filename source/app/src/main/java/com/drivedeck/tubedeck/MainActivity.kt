@@ -2,13 +2,11 @@ package com.drivedeck.tubedeck
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Rational
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -36,6 +34,7 @@ import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackPipActions
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
@@ -690,6 +689,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        when (intent.action) {
+            PlaybackPipActions.ACTION_CLOSE -> {
+                closeActivePlaybackCompletely()
+                return
+            }
+            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
+                handoffActivePlaybackToAudio()
+                return
+            }
+        }
         if (intent.getBooleanExtra("open_downloads_queue", false)) {
             openDownloadsQueueRequest = true
         }
@@ -823,7 +832,11 @@ class MainActivity : ComponentActivity() {
 
     private fun triggerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
+            val params = PlaybackPipActions.buildParams(
+                context = this,
+                activityClass = MainActivity::class.java
+            )
+            setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
                 playbackBackCoordinator.onPipEnterFailed()

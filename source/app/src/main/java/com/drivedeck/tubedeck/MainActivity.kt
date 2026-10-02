@@ -800,6 +800,10 @@ class MainActivity : ComponentActivity() {
                                     playbackBackCoordinator.onChooserDismissed()
                                     triggerPip()
                                 },
+                                onTimeout = {
+                                    showPlaybackExitChoices = false
+                                    playbackBackCoordinator.onChooserDismissed()
+                                },
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }

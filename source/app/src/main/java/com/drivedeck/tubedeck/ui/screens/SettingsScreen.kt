@@ -446,6 +446,17 @@ fun SettingsScreen(
                         AssistChip(onClick = {}, label = { Text(label) })
                     }
                 }
+                if (playerMode == PlayerMode.WEB) {
+                    Spacer(Modifier.height(6.dp))
+                    FilledTonalButton(
+                        onClick = { playerMode = PlayerMode.NATIVE },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PlayCircle, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Use enhanced native player")
+                    }
+                }
             }
 
             // Blocking Toggle

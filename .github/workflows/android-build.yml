@@ -47,7 +47,8 @@ jobs:
           MAIN=source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
           NATIVE=source/app/src/main/java/com/drivedeck/tubedeck/NativePlayerActivity.kt
           BRIDGE=source/app/src/main/java/com/drivedeck/tubedeck/player/NativePipSessionBridge.kt
-          grep -Fq 'AuthorizationRequest.Prompt.SELECT_ACCOUNT' "$AUTH"
+          grep -Fq 'signInGoogleIdentity(activity)' "$AUTH"
+          grep -Fq 'setAccount(Account(identity.email, "com.google"))' "$AUTH"
           grep -Fq 'https://www.googleapis.com/auth/youtube.readonly' "$AUTH"
           grep -Fq 'channels?part=snippet&mine=true' "$AUTH"
           grep -Fq 'subscriptions?part=id&mine=true' "$AUTH"

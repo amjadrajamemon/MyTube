@@ -729,7 +729,7 @@ class MainActivity : ComponentActivity() {
             PlaybackBackAction.WAIT_FOR_SECOND_PRESS -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = lifecycleScope.launch {
-                    delay(PlaybackBackCoordinator.DEFAULT_WINDOW_MS)
+                    delay(PlaybackBackCoordinator.PIP_ENTRY_DELAY_MS)
                     if (!playerActive) return@launch
                     playbackBackDecisionJob = null
                     dispatchPlaybackBackAction(

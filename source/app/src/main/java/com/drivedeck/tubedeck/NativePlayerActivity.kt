@@ -404,5 +404,6 @@ class NativePlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
+        playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
     }
 }

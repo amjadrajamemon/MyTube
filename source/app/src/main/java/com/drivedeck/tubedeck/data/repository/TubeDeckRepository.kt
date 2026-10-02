@@ -77,6 +77,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockBannerAds", next.blockBannerAds)
             putBoolean("blockTrackers", next.blockTrackers); putBoolean("sponsorBlockEnabled", next.sponsorBlockEnabled)
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
+            putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
+            putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             apply()
         }
         processQueue()
@@ -100,7 +102,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         blockTrackers = prefs.getBoolean("blockTrackers", false),
         sponsorBlockEnabled = prefs.getBoolean("sponsorBlockEnabled", true),
         blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
-        pipEnabled = prefs.getBoolean("pipEnabled", true)
+        pipEnabled = prefs.getBoolean("pipEnabled", true),
+        autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
+        autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false)
     )
 
     private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T): T =

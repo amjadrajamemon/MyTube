@@ -264,6 +264,7 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.onNewMedia()
+        pendingExitChooserAfterPip = false
         showPlaybackExitChoices = false
         closingPlayer = false
         playerActive = true
@@ -352,6 +353,7 @@ class NativePlayerActivity : ComponentActivity() {
         if (closingPlayer) return
         closingPlayer = true
         playerActive = false
+        pendingExitChooserAfterPip = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()

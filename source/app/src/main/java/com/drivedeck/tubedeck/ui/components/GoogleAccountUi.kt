@@ -69,10 +69,12 @@ fun GoogleAccountDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("YouTube account authorized")
                 if (account.email.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
                     Text(account.email)
+                }
+                account.subscriptionCount?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text("$it subscriptions")
                 }
             }
         },
@@ -88,37 +90,11 @@ fun GoogleAccountDialog(
 
 @Composable
 fun GoogleAuthorizationProblemDialog(
-    message: String,
-    registrationInfo: String,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                Icons.Default.AccountCircle,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp)
-            )
-        },
-        title = { Text("YouTube sign-in is not configured") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "MyTube has not established a verified YouTube OAuth session. A Google profile chooser alone is not treated as sign-in."
-                )
-                if (message.isNotBlank()) {
-                    Text(message, style = MaterialTheme.typography.bodySmall)
-                }
-                Text(
-                    registrationInfo,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    "Google Cloud must register this exact Android package and signing SHA-1 and enable YouTube Data API v3."
-                )
-            }
-        },
+        title = { Text("Google sign-in unavailable") },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("OK") }
         }

@@ -404,10 +404,10 @@ fun NativeExoPlayer(
         }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                35_000,
-                120_000,
-                1_500,
-                3_000
+                15_000,
+                60_000,
+                650,
+                1_750
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -517,7 +517,11 @@ fun NativeExoPlayer(
                     playbackScope.launch {
                         try {
                             delay(350)
-                            val fresh = YoutubeStreamResolver.resolve(context, media.mediaUri)
+                            val fresh = YoutubeStreamResolver.resolve(
+                                context,
+                                media.mediaUri,
+                                forceRefresh = true
+                            )
                             resolved = fresh
                             hasCaptions = fresh.subtitles.isNotEmpty()
                             val target = if (autoQuality) {
@@ -569,8 +573,18 @@ fun NativeExoPlayer(
                 resolved = result
                 result.title.takeIf { it.isNotBlank() }?.let(onResolvedTitleChanged)
                 hasCaptions = result.subtitles.isNotEmpty()
-                val target = chooseAutoHeight(context, result.options.map { it.height }, bandwidthMeter.bitrateEstimate)
-                loadResolvedStream(result, target, autoSelected = true, preservePosition = false)
+                val autoTarget = chooseAutoHeight(
+                    context,
+                    result.options.map { it.height },
+                    bandwidthMeter.bitrateEstimate
+                )
+                val startupTarget = chooseFastStartHeight(result, autoTarget)
+                loadResolvedStream(
+                    result,
+                    startupTarget,
+                    autoSelected = true,
+                    preservePosition = false
+                )
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (t: Exception) {
@@ -2364,6 +2378,27 @@ private fun buildResolvedSource(
     val audioItem = MediaItem.fromUri(Uri.parse(audioUrl))
     val audioSource = ProgressiveMediaSource.Factory(factory).createMediaSource(audioItem)
     return MergingMediaSource(videoSource, audioSource)
+}
+
+private fun chooseFastStartHeight(
+    resolved: YoutubeStreamResolver.ResolvedMedia,
+    autoTargetHeight: Int
+): Int {
+    val progressiveHeights = resolved.progressiveOptions
+        .map { it.height }
+        .filter { it > 0 }
+        .distinct()
+        .sorted()
+
+    if (progressiveHeights.isEmpty()) return autoTargetHeight
+
+    // Prefer a single progressive audio+video representation for startup. This avoids waiting
+    // for two independent adaptive sources to buffer/merge before the first frame. Higher
+    // extracted resolutions remain available through the quality chooser.
+    return progressiveHeights
+        .filter { it <= autoTargetHeight }
+        .maxOrNull()
+        ?: progressiveHeights.first()
 }
 
 private fun chooseAutoHeight(context: Context, heights: List<Int>, measuredBitrate: Long): Int {

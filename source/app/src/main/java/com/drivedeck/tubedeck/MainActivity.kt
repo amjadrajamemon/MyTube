@@ -843,6 +843,7 @@ class MainActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
+        playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
     }
 
     override fun onDestroy() {

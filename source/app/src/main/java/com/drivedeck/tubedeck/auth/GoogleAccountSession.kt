@@ -1,22 +1,24 @@
 package com.drivedeck.tubedeck.auth
 
+import android.accounts.Account
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import androidx.credentials.ClearCredentialStateRequest
-import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest
+import com.google.android.gms.common.api.Scope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.security.SecureRandom
-import android.util.Base64
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class GoogleAccountProfile(
     val uniqueId: String,
@@ -25,12 +27,26 @@ data class GoogleAccountProfile(
     val photoUrl: String?
 )
 
+data class YoutubeAuthorizationOutcome(
+    val profile: GoogleAccountProfile? = null,
+    val resolution: IntentSenderRequest? = null
+)
+
+/**
+ * Real YouTube account authorization.
+ *
+ * A Google profile or ID-token alone is deliberately not treated as a YouTube session. The
+ * public account state becomes non-null only after Google AuthorizationClient grants the
+ * youtube.readonly OAuth scope and an authenticated YouTube Data API request succeeds.
+ */
 class GoogleAccountSession private constructor(context: Context) {
     companion object {
-        @Volatile private var instance: GoogleAccountSession? = null
+        private const val YOUTUBE_READONLY =
+            "https://www.googleapis.com/auth/youtube.readonly"
 
-        fun credentialManagerConfigured(webClientId: String): Boolean =
-            webClientId.isNotBlank()
+        private val YOUTUBE_SCOPES = listOf(Scope(YOUTUBE_READONLY))
+
+        @Volatile private var instance: GoogleAccountSession? = null
 
         fun get(context: Context): GoogleAccountSession =
             instance ?: synchronized(this) {
@@ -39,112 +55,184 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val credentialManager = CredentialManager.create(appContext)
-    private val prefs = appContext.getSharedPreferences("google_account_session", Context.MODE_PRIVATE)
-    private val _account = MutableStateFlow(loadProfile())
+    private val _account = MutableStateFlow<GoogleAccountProfile?>(null)
     val account: StateFlow<GoogleAccountProfile?> = _account.asStateFlow()
 
-    fun googlePlayServicesSignInIntent(activity: Activity): Intent =
-        GoogleSignIn.getClient(activity, basicGoogleSignInOptions()).signInIntent
+    @Volatile private var youtubeAccessToken: String? = null
+    @Volatile private var authorizedAndroidAccount: Account? = null
 
-    fun completeGooglePlayServicesSignIn(data: Intent?): Result<GoogleAccountProfile> = runCatching {
-        requireNotNull(data) { "Google sign-in was cancelled" }
-        val google = GoogleSignIn.getSignedInAccountFromIntent(data)
-            .getResult(ApiException::class.java)
-            ?: error("Google did not return an account")
+    suspend fun restoreYoutubeAuthorization(): Result<Boolean> = runCatching {
+        val result = Identity.getAuthorizationClient(appContext)
+            .authorize(
+                AuthorizationRequest.builder()
+                    .setRequestedScopes(YOUTUBE_SCOPES)
+                    .build()
+            )
+            .await()
 
-        val email = google.email.orEmpty()
-        val uniqueId = google.id?.takeIf { it.isNotBlank() }
-            ?: email.lowercase().takeIf { it.isNotBlank() }
-            ?: error("Google account identity was unavailable")
-
-        val profile = GoogleAccountProfile(
-            uniqueId = uniqueId,
-            email = email,
-            displayName = google.displayName?.takeIf { it.isNotBlank() }
-                ?: email.substringBefore('@').ifBlank { "Google Account" },
-            photoUrl = google.photoUrl?.toString()
-        )
-        saveProfile(profile)
-        _account.value = profile
-        profile
+        if (result.hasResolution()) {
+            clearLocalSession()
+            false
+        } else {
+            completeAuthorizationResult(result)
+            true
+        }
     }
 
-    suspend fun signIn(activity: Activity, webClientId: String): Result<GoogleAccountProfile> = runCatching {
-        require(webClientId.isNotBlank()) {
-            "Google ID-token sign-in is not configured; use the Google Play Services account chooser."
+    suspend fun beginYoutubeAuthorization(
+        activity: Activity
+    ): Result<YoutubeAuthorizationOutcome> = runCatching {
+        val result = Identity.getAuthorizationClient(activity)
+            .authorize(
+                AuthorizationRequest.builder()
+                    .setRequestedScopes(YOUTUBE_SCOPES)
+                    .setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
+                    .build()
+            )
+            .await()
+
+        if (result.hasResolution()) {
+            val pendingIntent = requireNotNull(result.pendingIntent) {
+                "Google authorization requires interaction but returned no authorization screen."
+            }
+            YoutubeAuthorizationOutcome(
+                resolution = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+            )
+        } else {
+            YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
         }
-
-        val option = GetSignInWithGoogleOption.Builder(webClientId.trim())
-            .setNonce(generateNonce())
-            .build()
-
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(option)
-            .build()
-
-        val result = CredentialManager.create(activity).getCredential(
-            context = activity,
-            request = request
-        )
-        val custom = result.credential as? CustomCredential
-            ?: error("Google did not return a supported credential")
-        require(custom.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-            "Unexpected Google credential type"
-        }
-
-        val google = GoogleIdTokenCredential.createFrom(custom.data)
-        @Suppress("DEPRECATION")
-        val accountId = google.id
-        val profile = GoogleAccountProfile(
-            uniqueId = accountId,
-            email = accountId,
-            displayName = google.displayName?.takeIf { it.isNotBlank() }
-                ?: accountId.substringBefore('@').ifBlank { "Google Account" },
-            photoUrl = google.profilePictureUri?.toString()
-        )
-        saveProfile(profile)
-        _account.value = profile
-        profile
     }
+
+    suspend fun completeYoutubeAuthorization(
+        activity: Activity,
+        data: Intent?
+    ): Result<GoogleAccountProfile> = runCatching {
+        val resultIntent = requireNotNull(data) { "YouTube authorization was cancelled." }
+        val result = Identity.getAuthorizationClient(activity)
+            .getAuthorizationResultFromIntent(resultIntent)
+        completeAuthorizationResult(result)
+    }
+
+    fun currentYoutubeAccessToken(): String? = youtubeAccessToken
 
     suspend fun signOut() {
-        runCatching { credentialManager.clearCredentialState(ClearCredentialStateRequest()) }
+        val request = RevokeAccessRequest.builder()
+            .setScopes(YOUTUBE_SCOPES)
+            .apply {
+                authorizedAndroidAccount?.let(::setAccount)
+            }
+            .build()
+
         runCatching {
-            GoogleSignIn.getClient(appContext, basicGoogleSignInOptions()).signOut()
+            Identity.getAuthorizationClient(appContext)
+                .revokeAccess(request)
+                .await()
         }
-        prefs.edit().clear().apply()
+        clearLocalSession()
+    }
+
+    private suspend fun completeAuthorizationResult(
+        result: AuthorizationResult
+    ): GoogleAccountProfile {
+        require(result.grantedScopes.contains(YOUTUBE_READONLY)) {
+            "Google did not grant YouTube account access."
+        }
+
+        val token = result.accessToken?.takeIf { it.isNotBlank() }
+            ?: error("Google authorized the account but did not return a YouTube access token.")
+
+        @Suppress("DEPRECATION")
+        val googleAccount = result.toGoogleSignInAccount()
+        authorizedAndroidAccount = googleAccount?.account
+
+        val verified = fetchYoutubeIdentity(token)
+        val email = googleAccount?.email.orEmpty()
+        val googleId = googleAccount?.id.orEmpty()
+
+        val profile = GoogleAccountProfile(
+            uniqueId = verified.channelId
+                .ifBlank { googleId }
+                .ifBlank { email.lowercase() }
+                .ifBlank { error("The authorized YouTube account has no stable identity.") },
+            email = email,
+            displayName = verified.channelTitle
+                .ifBlank { googleAccount?.displayName.orEmpty() }
+                .ifBlank { email.substringBefore('@') }
+                .ifBlank { "YouTube Account" },
+            photoUrl = verified.photoUrl ?: googleAccount?.photoUrl?.toString()
+        )
+
+        youtubeAccessToken = token
+        _account.value = profile
+        return profile
+    }
+
+    private suspend fun fetchYoutubeIdentity(accessToken: String): VerifiedYoutubeIdentity =
+        withContext(Dispatchers.IO) {
+            val connection = (URL(
+                "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1"
+            ).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                setRequestProperty("Accept", "application/json")
+            }
+
+            try {
+                val code = connection.responseCode
+                val bodyStream =
+                    if (code in 200..299) connection.inputStream else connection.errorStream
+                val body = bodyStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+
+                if (code !in 200..299) {
+                    val apiMessage = runCatching {
+                        JSONObject(body)
+                            .optJSONObject("error")
+                            ?.optString("message")
+                    }.getOrNull().orEmpty()
+
+                    error(
+                        apiMessage.ifBlank {
+                            "YouTube authorization verification failed (HTTP $code). " +
+                                "Confirm the Android OAuth client and YouTube Data API are enabled for this app."
+                        }
+                    )
+                }
+
+                val item = JSONObject(body)
+                    .optJSONArray("items")
+                    ?.optJSONObject(0)
+
+                val snippet = item?.optJSONObject("snippet")
+                val thumbnails = snippet?.optJSONObject("thumbnails")
+                val photoUrl = listOf("high", "medium", "default")
+                    .firstNotNullOfOrNull { size ->
+                        thumbnails
+                            ?.optJSONObject(size)
+                            ?.optString("url")
+                            ?.takeIf { it.isNotBlank() }
+                    }
+
+                VerifiedYoutubeIdentity(
+                    channelId = item?.optString("id").orEmpty(),
+                    channelTitle = snippet?.optString("title").orEmpty(),
+                    photoUrl = photoUrl
+                )
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+    private fun clearLocalSession() {
+        youtubeAccessToken = null
+        authorizedAndroidAccount = null
         _account.value = null
     }
 
-    private fun basicGoogleSignInOptions(): GoogleSignInOptions =
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .build()
-
-    private fun saveProfile(profile: GoogleAccountProfile) {
-        prefs.edit()
-            .putString("unique_id", profile.uniqueId)
-            .putString("email", profile.email)
-            .putString("display_name", profile.displayName)
-            .putString("photo_url", profile.photoUrl)
-            .apply()
-    }
-
-    private fun loadProfile(): GoogleAccountProfile? {
-        val uniqueId = prefs.getString("unique_id", null)?.takeIf { it.isNotBlank() } ?: return null
-        return GoogleAccountProfile(
-            uniqueId = uniqueId,
-            email = prefs.getString("email", "").orEmpty(),
-            displayName = prefs.getString("display_name", "Google Account").orEmpty().ifBlank { "Google Account" },
-            photoUrl = prefs.getString("photo_url", null)
-        )
-    }
-
-    private fun generateNonce(byteLength: Int = 32): String {
-        val bytes = ByteArray(byteLength)
-        SecureRandom().nextBytes(bytes)
-        return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
-    }
+    private data class VerifiedYoutubeIdentity(
+        val channelId: String,
+        val channelTitle: String,
+        val photoUrl: String?
+    )
 }

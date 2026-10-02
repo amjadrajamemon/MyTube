@@ -132,11 +132,16 @@ fun PlayerScreen(
     pipEnabled: Boolean = true,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    preferredPlaybackQualityHeight: Int = 0,
+    preferredPlaybackSpeed: Float = 1.0f,
+    seekIntervalSeconds: Int = 10,
     initialPositionMs: Long = 0L,
     resumeGeneration: Int = 0,
     foregroundPlaybackAllowed: Boolean = true,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
+    onAudioOnly: () -> Unit = {},
+    onPlaybackPreferenceChanged: (Float, Int, Int) -> Unit = { _, _, _ -> },
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
@@ -183,11 +188,16 @@ fun PlayerScreen(
             pipEnabled = pipEnabled,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
+            preferredPlaybackSpeed = preferredPlaybackSpeed,
+            seekIntervalSeconds = seekIntervalSeconds,
             initialPositionMs = initialPositionMs,
             resumeGeneration = resumeGeneration,
             foregroundPlaybackAllowed = foregroundPlaybackAllowed,
             onClose = onClose,
             onEnterPip = onEnterPip,
+            onAudioOnly = onAudioOnly,
+            onPlaybackPreferenceChanged = onPlaybackPreferenceChanged,
             onWebFallback = { useWebFallback = true },
             onDownloadVideo = onDownloadVideo,
             onDownloadPlaylist = onDownloadPlaylist,
@@ -330,11 +340,16 @@ fun NativeExoPlayer(
     pipEnabled: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    preferredPlaybackQualityHeight: Int,
+    preferredPlaybackSpeed: Float,
+    seekIntervalSeconds: Int,
     initialPositionMs: Long,
     resumeGeneration: Int,
     foregroundPlaybackAllowed: Boolean,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
+    onAudioOnly: () -> Unit,
+    onPlaybackPreferenceChanged: (Float, Int, Int) -> Unit,
     onWebFallback: () -> Unit,
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
@@ -363,21 +378,23 @@ fun NativeExoPlayer(
 
     var resolved by remember(media.id) { mutableStateOf<YoutubeStreamResolver.ResolvedMedia?>(null) }
     var resolveError by remember(media.id) { mutableStateOf<String?>(null) }
-    var selectedHeight by remember(media.id) { mutableIntStateOf(0) }
-    var autoQuality by remember(media.id) { mutableStateOf(true) }
+    var selectedHeight by remember(media.id) { mutableIntStateOf(preferredPlaybackQualityHeight.coerceAtLeast(0)) }
+    var autoQuality by remember(media.id) { mutableStateOf(preferredPlaybackQualityHeight <= 0) }
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(1L) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_ZOOM) }
-    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
     var captionsEnabled by remember { mutableStateOf(true) }
     var captionLanguageTag by rememberSaveable(media.id) { mutableStateOf("auto") }
     var qualityLabel by remember { mutableStateOf("Auto") }
     var hasCaptions by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var scrubFraction by remember(media.id) { mutableStateOf<Float?>(null) }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
     var gestureOverlayVisible by remember { mutableStateOf(false) }
@@ -440,6 +457,11 @@ fun NativeExoPlayer(
             .setLoadControl(loadControl)
             .build()
     }
+    LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
+        playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)
+        exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
     val mediaSession = remember(exoPlayer) {
         MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}").build()
     }
@@ -476,8 +498,10 @@ fun NativeExoPlayer(
         if (height == null) {
             val target = chooseAutoHeight(context, sourceMedia.options.map { it.height }, bandwidthMeter.bitrateEstimate)
             loadResolvedStream(sourceMedia, target, autoSelected = true, preservePosition = true)
+            onPlaybackPreferenceChanged(playbackSpeed, 0, seekIntervalSeconds)
         } else {
             loadResolvedStream(sourceMedia, height, autoSelected = false, preservePosition = true)
+            onPlaybackPreferenceChanged(playbackSpeed, height, seekIntervalSeconds)
         }
         controlsVisible = true
     }
@@ -607,18 +631,27 @@ fun NativeExoPlayer(
                 resolved = result
                 result.title.takeIf { it.isNotBlank() }?.let(onResolvedTitleChanged)
                 hasCaptions = result.subtitles.isNotEmpty()
-                val autoTarget = chooseAutoHeight(
-                    context,
-                    result.options.map { it.height },
-                    bandwidthMeter.bitrateEstimate
-                )
-                val startupTarget = chooseFastStartHeight(result, autoTarget)
-                loadResolvedStream(
-                    result,
-                    startupTarget,
-                    autoSelected = true,
-                    preservePosition = false
-                )
+                if (preferredPlaybackQualityHeight > 0) {
+                    loadResolvedStream(
+                        result,
+                        preferredPlaybackQualityHeight,
+                        autoSelected = false,
+                        preservePosition = false
+                    )
+                } else {
+                    val autoTarget = chooseAutoHeight(
+                        context,
+                        result.options.map { it.height },
+                        bandwidthMeter.bitrateEstimate
+                    )
+                    val startupTarget = chooseFastStartHeight(result, autoTarget)
+                    loadResolvedStream(
+                        result,
+                        startupTarget,
+                        autoSelected = true,
+                        preservePosition = false
+                    )
+                }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (t: Exception) {
@@ -881,34 +914,15 @@ fun NativeExoPlayer(
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                         .pointerInput(gestureEnabled, duration) {
                             detectTapGestures(
-                                onPress = { position ->
-                                    coroutineScope {
-                                        val direction = if (position.x < size.width / 2f) -1 else 1
-                                        val seekJob = launch {
-                                            delay(380)
-                                            var ticks = 0
-                                            while (isActive) {
-                                                val stepMs = if (ticks < 10) 750L else 1_250L
-                                                val target = (exoPlayer.currentPosition + direction * stepMs)
-                                                    .coerceIn(0L, duration.coerceAtLeast(0L))
-                                                exoPlayer.seekTo(target)
-                                                gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
-                                                gestureValue = (target.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                                                gestureOverlayVisible = true
-                                                controlsVisible = true
-                                                ticks++
-                                                delay(90)
-                                            }
-                                        }
-                                        tryAwaitRelease()
-                                        seekJob.cancel()
-                                    }
-                                },
                                 onTap = { controlsVisible = !controlsVisible },
+                                onLongPress = {
+                                    showQuickActions = true
+                                    controlsVisible = true
+                                },
                                 onDoubleTap = { position ->
                                     val direction = if (position.x < size.width / 2f) -1 else 1
                                     exoPlayer.seekTo(
-                                        (exoPlayer.currentPosition + direction * 10_000L)
+                                        (exoPlayer.currentPosition + direction * seekIntervalSeconds * 1_000L)
                                             .coerceIn(0L, duration.coerceAtLeast(0L))
                                     )
                                     gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
@@ -941,7 +955,7 @@ fun NativeExoPlayer(
                                         if (steps != 0) {
                                             pinchDistance -= steps * 32f
                                             exoPlayer.seekTo(
-                                                (exoPlayer.currentPosition + steps * 5_000L)
+                                                (exoPlayer.currentPosition + steps * (seekIntervalSeconds.coerceAtLeast(5) * 500L))
                                                     .coerceIn(0L, duration.coerceAtLeast(0L))
                                             )
                                             gestureIcon = if (steps > 0) Icons.Default.FastForward else Icons.Default.FastRewind
@@ -1074,7 +1088,7 @@ fun NativeExoPlayer(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
                     ) {
-                        HoldSeekButton(Icons.Default.FastRewind, "Reverse", -1, exoPlayer, duration)
+                        HoldSeekButton(Icons.Default.FastRewind, "Reverse", -1, exoPlayer, duration, seekIntervalSeconds)
                         Surface(
                             onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                             shape = CircleShape,
@@ -1090,7 +1104,7 @@ fun NativeExoPlayer(
                                 )
                             }
                         }
-                        HoldSeekButton(Icons.Default.FastForward, "Fast forward", 1, exoPlayer, duration)
+                        HoldSeekButton(Icons.Default.FastForward, "Fast forward", 1, exoPlayer, duration, seekIntervalSeconds)
                     }
 
                     Column(
@@ -1113,7 +1127,15 @@ fun NativeExoPlayer(
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             TextButton(
-                                onClick = { playbackSpeed = cycleSpeed(exoPlayer); controlsVisible = true },
+                                onClick = {
+                                    playbackSpeed = cycleSpeed(exoPlayer)
+                                    onPlaybackPreferenceChanged(
+                                        playbackSpeed,
+                                        if (autoQuality) 0 else selectedHeight,
+                                        seekIntervalSeconds
+                                    )
+                                    controlsVisible = true
+                                },
                                 modifier = Modifier.height(30.dp),
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                             ) {
@@ -1257,9 +1279,37 @@ fun NativeExoPlayer(
                                 )
                             }
                         }
+                        scrubFraction?.let { fraction ->
+                            SeekPreviewThumbnail(
+                                fraction = fraction,
+                                durationMs = duration,
+                                storyboard = resolved?.previewStoryboard,
+                                chapters = resolved?.chapters.orEmpty(),
+                                fallbackThumbnailUrl = media.thumbnailUrl.ifBlank {
+                                    YoutubeUrls.videoId(media.mediaUri)?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }.orEmpty()
+                                }
+                            )
+                        }
                         CompactSeekBar(
-                            progress = if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                            onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) }
+                            progress = scrubFraction
+                                ?: if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                            chapterFractions = resolved?.chapters.orEmpty()
+                                .mapNotNull { chapter ->
+                                    if (duration <= 0L) null
+                                    else (chapter.startTimeSeconds * 1000f / duration.toFloat()).coerceIn(0f, 1f)
+                                },
+                            sponsorRanges = sponsorSegments.mapNotNull { segment ->
+                                if (duration <= 0L) null
+                                else Pair(
+                                    (segment.startTime * 1000f / duration.toFloat()).coerceIn(0f, 1f),
+                                    (segment.endTime * 1000f / duration.toFloat()).coerceIn(0f, 1f)
+                                )
+                            },
+                            onScrubChange = { scrubFraction = it },
+                            onSeekFinished = { fraction ->
+                                exoPlayer.seekTo((fraction * duration).toLong())
+                                scrubFraction = null
+                            }
                         )
                     }
                 }
@@ -1317,6 +1367,80 @@ fun NativeExoPlayer(
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         }
+    }
+
+    if (showQuickActions) {
+        AlertDialog(
+            onDismissRequest = { showQuickActions = false },
+            title = { Text("Video actions") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(
+                        onClick = {
+                            showQuickActions = false
+                            if (pipEnabled) onEnterPip()
+                        },
+                        enabled = pipEnabled,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PictureInPictureAlt, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Picture in Picture")
+                    }
+                    TextButton(
+                        onClick = {
+                            showQuickActions = false
+                            onAudioOnly()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Headphones, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Audio only")
+                    }
+                    onDownloadVideo?.let { download ->
+                        TextButton(
+                            onClick = {
+                                showQuickActions = false
+                                download()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Download, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Download video")
+                        }
+                    }
+                    onDownloadPlaylist?.let { downloadPlaylist ->
+                        TextButton(
+                            onClick = {
+                                showQuickActions = false
+                                downloadPlaylist()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.PlaylistAdd, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Download playlist")
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            showQuickActions = false
+                            showSettings = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Settings, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Player settings")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQuickActions = false }) { Text("Close") }
+            }
+        )
     }
 
     if (showSettings) {

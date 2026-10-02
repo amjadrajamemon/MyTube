@@ -75,4 +75,30 @@ class PlaybackBackCoordinatorTest {
             coordinator.onBack(5_000L, isInPip = false)
         )
     }
+    @Test
+    fun fullSlowBackPipReturnCycleAlwaysEndsAtChooser() {
+        val coordinator = PlaybackBackCoordinator(900L)
+
+        assertEquals(
+            PlaybackBackAction.WAIT_FOR_SECOND_PRESS,
+            coordinator.onBack(1_000L, isInPip = false)
+        )
+        assertEquals(
+            PlaybackBackAction.ENTER_PIP,
+            coordinator.onSinglePressTimeout(canEnterPip = true)
+        )
+
+        coordinator.onPipModeChanged(true)
+        coordinator.onPipModeChanged(false)
+
+        assertEquals(
+            PlaybackBackAction.SHOW_EXIT_CHOOSER,
+            coordinator.onBack(5_000L, isInPip = false)
+        )
+        assertEquals(
+            PlaybackBackAction.IGNORE,
+            coordinator.onBack(8_000L, isInPip = false)
+        )
+    }
+
 }

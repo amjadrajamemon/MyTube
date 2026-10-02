@@ -133,8 +133,8 @@ class MainActivity : ComponentActivity() {
                                 .onFailure {
                                     Toast.makeText(
                                         this@MainActivity,
-                                        it.message ?: "YouTube authorization failed",
-                                        Toast.LENGTH_LONG
+                                        "Google sign-in failed",
+                                        Toast.LENGTH_SHORT
                                     ).show()
                                 }
                         }
@@ -1016,7 +1016,6 @@ class MainActivity : ComponentActivity() {
         }
 
         fun startAt(positionMs: Long) {
-            Toast.makeText(this, "Switching to background audio…", Toast.LENGTH_SHORT).show()
             lifecycleScope.launch {
                 BackgroundAudioController.handoff(
                     context = this@MainActivity,

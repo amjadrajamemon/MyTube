@@ -3,62 +3,51 @@ package com.drivedeck.tubedeck.player
 internal enum class PlaybackBackAction {
     WAIT_FOR_SECOND_PRESS,
     ENTER_PIP,
-    EXPAND_PIP_FOR_EXIT_CHOOSER,
+    EXPAND_PIP,
     SHOW_EXIT_CHOOSER,
-    IGNORE,
-    EXIT_APP
+    IGNORE
 }
 
 /**
- * Single state machine for playback Back behavior used by both MainActivity and NativePlayerActivity.
+ * Deterministic playback Back behavior shared by both player hosts.
  *
- * Android does not guarantee Back delivery while the system PiP window itself owns focus. Therefore
- * the state machine remembers a Back-triggered PiP transition and, once that PiP is expanded again,
- * the next Back opens Close / Audio only instead of entering PiP again.
+ * Back never silently chooses a terminal playback mode. The user explicitly selects Close,
+ * Audio-only or PiP from the chooser.
  */
 internal class PlaybackBackCoordinator(
-    private val doublePressWindowMs: Long = DEFAULT_WINDOW_MS
+    private val consecutiveWindowMs: Long = DEFAULT_WINDOW_MS
 ) {
     companion object {
         const val DEFAULT_WINDOW_MS: Long = ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS
         const val PIP_ENTRY_DELAY_MS: Long = 180L
-        const val CHOOSER_SETTLE_MS: Long = 800L
     }
-    private val detector = ConsecutiveBackPressDetector(doublePressWindowMs)
+
+    private val detector = ConsecutiveBackPressDetector(consecutiveWindowMs)
     private var chooserVisible = false
     private var pipEnteredFromBack = false
     private var wasInPip = false
     private var expandedFromPip = false
-    private var chooserShownAtMs = 0L
 
     fun onBack(nowMs: Long, isInPip: Boolean): PlaybackBackAction {
-        if (chooserVisible) {
-            if (chooserShownAtMs > 0L && nowMs - chooserShownAtMs < CHOOSER_SETTLE_MS) {
-                return PlaybackBackAction.IGNORE
-            }
-            reset()
-            return PlaybackBackAction.EXIT_APP
-        }
+        if (chooserVisible) return PlaybackBackAction.IGNORE
 
         if (isInPip) {
             detector.clear()
-            pipEnteredFromBack = false
-            expandedFromPip = false
-            return PlaybackBackAction.EXPAND_PIP_FOR_EXIT_CHOOSER
+            return PlaybackBackAction.EXPAND_PIP
         }
 
-        if (pipEnteredFromBack || expandedFromPip) {
+        if (expandedFromPip || pipEnteredFromBack) {
             detector.clear()
             pipEnteredFromBack = false
             expandedFromPip = false
-            markChooserVisible(nowMs)
+            chooserVisible = true
             return PlaybackBackAction.SHOW_EXIT_CHOOSER
         }
 
         return if (detector.registerPress(nowMs)) {
             detector.clear()
-            markChooserVisible(nowMs)
-            PlaybackBackAction.SHOW_EXIT_CHOOSER
+            pipEnteredFromBack = true
+            PlaybackBackAction.ENTER_PIP
         } else {
             PlaybackBackAction.WAIT_FOR_SECOND_PRESS
         }
@@ -70,33 +59,25 @@ internal class PlaybackBackCoordinator(
             pipEnteredFromBack = true
             PlaybackBackAction.ENTER_PIP
         } else {
-            markChooserVisible(0L)
+            chooserVisible = true
             PlaybackBackAction.SHOW_EXIT_CHOOSER
         }
     }
 
-    fun forceChooserVisible(nowMs: Long) {
+    fun forceChooserVisible() {
         detector.clear()
         pipEnteredFromBack = false
         expandedFromPip = false
-        markChooserVisible(nowMs)
-    }
-
-    private fun markChooserVisible(nowMs: Long) {
         chooserVisible = true
-        chooserShownAtMs = nowMs
     }
 
     fun onPipModeChanged(isInPip: Boolean) {
-        if (wasInPip && !isInPip) {
-            expandedFromPip = true
-        }
+        if (wasInPip && !isInPip) expandedFromPip = true
         wasInPip = isInPip
     }
 
     fun onChooserDismissed() {
         chooserVisible = false
-        chooserShownAtMs = 0L
         pipEnteredFromBack = false
         expandedFromPip = false
         detector.clear()
@@ -105,13 +86,11 @@ internal class PlaybackBackCoordinator(
     fun onPipEnterFailed() {
         pipEnteredFromBack = false
         expandedFromPip = false
-        markChooserVisible(0L)
+        chooserVisible = true
         detector.clear()
     }
 
-    fun onNewMedia() {
-        reset()
-    }
+    fun onNewMedia() = reset()
 
     fun reset() {
         detector.clear()
@@ -119,6 +98,5 @@ internal class PlaybackBackCoordinator(
         pipEnteredFromBack = false
         wasInPip = false
         expandedFromPip = false
-        chooserShownAtMs = 0L
     }
 }

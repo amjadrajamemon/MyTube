@@ -77,6 +77,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var resumeGeneration by mutableStateOf(0)
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
+    private var pendingFreshResumeFromPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -509,6 +510,15 @@ class NativePlayerActivity : ComponentActivity() {
         if (!closingPlayer) foregroundPlaybackAllowed = true
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!closingPlayer && pendingFreshResumeFromPip) {
+            pendingFreshResumeFromPip = false
+            resumeGeneration += 1
+            foregroundPlaybackAllowed = true
+        }
+    }
+
     override fun onStop() {
         if (!isPipMode && !enteringPip && !closingPlayer) {
             // If Android dismisses PiP/task UI without an explicit Audio choice, never let the
@@ -560,9 +570,9 @@ class NativePlayerActivity : ComponentActivity() {
         enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
         if (!isInPictureInPictureMode && playerActive && !closingPlayer) {
-            // Returning from PiP gets a fresh signed stream while preserving position.
-            resumeGeneration += 1
-            foregroundPlaybackAllowed = true
+            // Do not resolve new signed media just because PiP was dismissed. Refresh only if
+            // the Activity genuinely resumes to the foreground.
+            pendingFreshResumeFromPip = true
         }
     }
 }

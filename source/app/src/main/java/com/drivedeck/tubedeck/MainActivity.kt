@@ -66,6 +66,8 @@ class MainActivity : ComponentActivity() {
     private var isPipMode by mutableStateOf(false)
     private var playerActive = false
     private var autoPipEnabled = true
+    private var webPlaybackActive by mutableStateOf(false)
+    private var webPlaybackPositionMs by mutableLongStateOf(0L)
     private var inboundUrl by mutableStateOf<String?>(null)
     private var openDownloadsQueueRequest by mutableStateOf(false)
     private var lastNativeLaunchVideoId: String? = null
@@ -316,7 +318,7 @@ class MainActivity : ComponentActivity() {
                 
                 SideEffect {
                     playerActive = currentScreen == ActiveScreen.PLAYER ||
-                        (currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null)
+                        (currentScreen == ActiveScreen.BROWSER && webPlaybackActive)
                     autoPipEnabled = settings.pipEnabled
 
                     // ComponentActivity bridges this dispatcher to the modern Android back
@@ -352,9 +354,10 @@ class MainActivity : ComponentActivity() {
                             activePlaybackTitle = media.title
                             activePlaybackArtwork = media.thumbnailUrl
                         }
-                        currentScreen == ActiveScreen.BROWSER && YoutubeUrls.videoId(currentUrl) != null -> {
+                        currentScreen == ActiveScreen.BROWSER && webPlaybackActive -> {
                             val videoId = YoutubeUrls.videoId(currentUrl).orEmpty()
                             activePlaybackUrl = currentUrl
+                            activePlaybackPositionMs = webPlaybackPositionMs
                             activePlaybackTitle = webViewInstance?.title?.takeIf { !it.isNullOrBlank() } ?: "YouTube audio"
                             activePlaybackArtwork = if (videoId.isNotBlank()) {
                                 repository.getVideoThumbnail(videoId)
@@ -550,6 +553,10 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onAdBlocked = { repository.incrementBlockedAds(it) },
                                     webViewRef = { webViewInstance = it },
+                                    onPlaybackStateChanged = { playing, positionMs ->
+                                        webPlaybackActive = playing
+                                        webPlaybackPositionMs = positionMs
+                                    },
                                     onFullscreenChanged = { isBrowserFullscreen = it }
                                 )
                             }

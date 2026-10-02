@@ -45,6 +45,7 @@ import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
+import com.drivedeck.tubedeck.player.PlaybackPipExitPolicy
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
@@ -602,28 +603,36 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        val wasInPip = isPipMode
         isPipMode = isInPictureInPictureMode
         enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
-        if (!isInPictureInPictureMode && playerActive && !closingPlayer) {
-            // Some Android builds consume Back while PiP owns focus and never dispatch it to
-            // OnBackPressedCallback. Treat leaving a Back-entered PiP as the second-stage event
-            // and restore the same Activity with the explicit Close / Audio / PiP decision panel.
-            if (pipChoicePending) {
-                pipChoicePending = false
-                playbackBackDecisionJob?.cancel()
-                playbackBackDecisionJob = null
-                playbackBackCoordinator.forceChooserVisible()
-                showPlaybackExitChoices = true
-                if (!hasWindowFocus()) {
-                    startActivity(
-                        Intent(this, NativePlayerActivity::class.java).apply {
-                            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
-                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        }
-                    )
-                }
+
+        if (
+            PlaybackPipExitPolicy.shouldRestoreChoices(
+                wasInPip = wasInPip,
+                isInPip = isInPictureInPictureMode,
+                choicePending = pipChoicePending,
+                playerActive = playerActive,
+                closing = closingPlayer
+            )
+        ) {
+            pipChoicePending = false
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            playbackBackCoordinator.forceChooserVisible()
+            showPlaybackExitChoices = true
+            if (!hasWindowFocus()) {
+                startActivity(
+                    Intent(this, NativePlayerActivity::class.java).apply {
+                        action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                )
             }
+        }
+
+        if (wasInPip && !isInPictureInPictureMode && playerActive && !closingPlayer) {
             // Refresh signed media only after the Activity genuinely resumes foreground.
             pendingFreshResumeFromPip = true
         }

@@ -30,6 +30,7 @@ import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
@@ -695,6 +696,10 @@ class MainActivity : ComponentActivity() {
         if (videoId.isNotBlank() && videoId == lastNativeLaunchVideoId && now - lastNativeLaunchAt < 1_800L) return
         lastNativeLaunchVideoId = videoId.takeIf { it.isNotBlank() }
         lastNativeLaunchAt = now
+
+        // Start extraction on the tap event. NativePlayerActivity/PlayerScreen joins this same
+        // in-flight resolution instead of starting a duplicate extractor request.
+        YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
 
         val intent = Intent(this, NativePlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

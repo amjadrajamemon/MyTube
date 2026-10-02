@@ -35,6 +35,7 @@ import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
+import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackHost
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings by repository.settings.collectAsStateWithLifecycle()
+            val nativePipSessionId by NativePipSessionBridge.activeSessionId.collectAsStateWithLifecycle()
             var previewAppearance by remember { mutableStateOf<TubeDeckSettings?>(null) }
             val activeAppearance = previewAppearance ?: settings
             TubeDeckTheme(
@@ -381,7 +383,7 @@ class MainActivity : ComponentActivity() {
 
                     // ComponentActivity bridges this dispatcher to the modern Android back
                     // dispatcher on API 33+, so one path handles gesture and 3-button navigation.
-                    legacyPlaybackBackCallback.isEnabled = playerActive
+                    legacyPlaybackBackCallback.isEnabled = playerActive || nativePipSessionId != null
 
                     closeActivePlaybackUi = {
                         when {
@@ -437,7 +439,7 @@ class MainActivity : ComponentActivity() {
                 // Playback Back is owned exclusively by legacyPlaybackBackCallback while
                 // media is active. Keeping this general navigation handler disabled in that state
                 // prevents two Compose/Activity callbacks from competing for the same system Back.
-                BackHandler(enabled = !playerActive && !isBrowserFullscreen) {
+                BackHandler(enabled = !playerActive && nativePipSessionId == null && !isBrowserFullscreen) {
                     when {
                         showAdBlockSheet -> showAdBlockSheet = false
                         showDownloadModal -> showDownloadModal = false
@@ -801,24 +803,42 @@ class MainActivity : ComponentActivity() {
                         }
 
                         if (showPlaybackExitChoices) {
+                            val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
                                 onCloseVideo = {
                                     showPlaybackExitChoices = false
-                                    closeActivePlaybackCompletely()
+                                    if (bridgedSession != null) {
+                                        NativePipSessionBridge.request(
+                                            bridgedSession,
+                                            NativePipSessionBridge.Action.CLOSE
+                                        )
+                                    } else {
+                                        closeActivePlaybackCompletely()
+                                    }
                                 },
                                 onAudioOnly = {
                                     showPlaybackExitChoices = false
-                                    handoffActivePlaybackToAudio()
+                                    if (bridgedSession != null) {
+                                        NativePipSessionBridge.request(
+                                            bridgedSession,
+                                            NativePipSessionBridge.Action.AUDIO_ONLY
+                                        )
+                                    } else {
+                                        handoffActivePlaybackToAudio()
+                                    }
                                 },
                                 onPictureInPicture = {
                                     showPlaybackExitChoices = false
                                     playbackBackCoordinator.onChooserDismissed()
-                                    triggerPip()
+                                    if (bridgedSession == null) {
+                                        triggerPip()
+                                    }
                                 },
                                 onTimeout = {
                                     showPlaybackExitChoices = false
                                     playbackBackCoordinator.onChooserDismissed()
                                 },
+                                pipLabel = if (bridgedSession != null) "Keep PiP" else "PiP",
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }
@@ -889,6 +909,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        legacyPlaybackBackCallback.isEnabled = playerActive || NativePipSessionBridge.isActive()
         if (playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -930,11 +951,19 @@ class MainActivity : ComponentActivity() {
             }
             PlaybackPipActions.ACTION_AUDIO_ONLY -> {
                 pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.AUDIO_ONLY)
+                    return
+                }
                 handoffActivePlaybackToAudio()
                 return
             }
             PlaybackPipActions.ACTION_CLOSE -> {
                 pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.CLOSE)
+                    return
+                }
                 closeActivePlaybackCompletely()
                 return
             }
@@ -946,6 +975,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlaybackBack() {
+        if (NativePipSessionBridge.isActive()) {
+            showPlaybackExitChoices = true
+            return
+        }
         if (!playerActive) return
         dispatchPlaybackBackAction(
             playbackBackCoordinator.onBack(

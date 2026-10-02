@@ -42,6 +42,7 @@ fun PlaybackBackChoiceOverlay(
     onAudioOnly: () -> Unit,
     onPictureInPicture: () -> Unit,
     onTimeout: () -> Unit,
+    pipLabel: String = "PiP",
     modifier: Modifier = Modifier
 ) {
     var visible by remember { mutableStateOf(true) }
@@ -92,9 +93,9 @@ fun PlaybackBackChoiceOverlay(
                 onClick = onPictureInPicture,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckAccentMint)
             ) {
-                Icon(Icons.Default.PictureInPictureAlt, contentDescription = "PiP")
+                Icon(Icons.Default.PictureInPictureAlt, contentDescription = pipLabel)
                 Spacer(Modifier.width(3.dp))
-                Text("PiP", fontSize = 10.5.sp)
+                Text(pipLabel, fontSize = 10.5.sp)
             }
         }
     }

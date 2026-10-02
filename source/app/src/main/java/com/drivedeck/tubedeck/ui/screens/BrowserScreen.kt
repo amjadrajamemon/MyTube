@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.ui.theme.*
@@ -100,6 +101,7 @@ fun BrowserScreen(
 ) {
     var isLoading by remember { mutableStateOf(true) }
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
     val currentOnUrlChanged by rememberUpdatedState(onUrlChanged)
     val currentOnNativeVideo by rememberUpdatedState(onNativeVideo)
@@ -324,10 +326,10 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(persistentWebView, activity) {
+    LaunchedEffect(persistentWebView, lifecycleOwner) {
         while (true) {
             delay(1500)
-            if (activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != true) {
+            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 continue
             }
             persistentWebView.evaluateJavascript("location.href") { result ->

@@ -89,6 +89,8 @@ fun SettingsScreen(
     var sponsorBlockEnabled by remember { mutableStateOf(currentSettings.sponsorBlockEnabled) }
     var blockShortsEnabled by remember { mutableStateOf(currentSettings.blockShortsEnabled) }
     var pipEnabled by remember { mutableStateOf(currentSettings.pipEnabled) }
+    var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
+    var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
 
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
 
@@ -223,6 +225,17 @@ fun SettingsScreen(
                 QualityGrid(selectedQuality = playlistQuality, onSelect = { playlistQuality = it }, qualities = qualities)
             }
 
+            SettingsCard(title = "Playback performance") {
+                Text(
+                    "Keep these off for the fastest video start and lowest background extraction. Enable only the shelves you want loaded automatically.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
+                ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
+            }
+
             // Blocking Toggle
             SettingsCard(title = "Protection & Blocking") {
                 ToggleRow("Request filtering", adBlockEnabled) { adBlockEnabled = it }
@@ -253,7 +266,9 @@ fun SettingsScreen(
                             blockTrackers = blockTrackers,
                             blockShortsEnabled = blockShortsEnabled,
                             sponsorBlockEnabled = sponsorBlockEnabled,
-                            pipEnabled = pipEnabled
+                            pipEnabled = pipEnabled,
+                            autoLoadEpisodes = autoLoadEpisodes,
+                            autoLoadUpNext = autoLoadUpNext
                         )
                     )
                     onClose()

@@ -96,6 +96,8 @@ internal class PlaybackBackCoordinator(
     fun onChooserDismissed() {
         chooserVisible = false
         chooserShownAtMs = 0L
+        pipEnteredFromBack = false
+        expandedFromPip = false
         detector.clear()
     }
 

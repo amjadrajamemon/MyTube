@@ -52,6 +52,7 @@ jobs:
           path: ~/.android/debug.keystore
           key: mytube-debug-signing-v1
 
+      # Signing identity pinned in .github/mytube-signing-sha1.txt
       - name: Ensure stable debug signing key
         shell: bash
         run: |

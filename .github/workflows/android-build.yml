@@ -245,6 +245,8 @@ jobs:
           - First Back enters PiP.
           - If Android delivers a second Back to MyTube, it expands the player with Close / Audio / PiP already visible.
           - If Android consumes Back inside system PiP, the PiP-to-normal transition itself restores MyTube with the same three choices already visible.
+          - PiP also exposes Options, Audio and Close remote actions so system PiP input quirks cannot trap playback control.
+          - Options returns to the explicit Close / Audio / PiP chooser; Audio and Close perform those actions directly.
           - A shared PiP exit policy prevents unrelated lifecycle changes from opening the chooser.
           - Extra Back callbacks while the chooser is visible are ignored rather than interpreted as a playback choice.
 

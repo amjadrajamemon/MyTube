@@ -690,9 +690,13 @@ class MainActivity : ComponentActivity() {
                                     PlayerScreen(
                                         media = media,
                                         playerMode = settings.playerMode,
+                                        sponsorSegments = sponsorSegments,
                                         pipEnabled = settings.pipEnabled,
-                    autoLoadEpisodes = settings.autoLoadEpisodes,
-                    autoLoadUpNext = settings.autoLoadUpNext,
+                                        autoLoadEpisodes = settings.autoLoadEpisodes,
+                                        autoLoadUpNext = settings.autoLoadUpNext,
+                                        preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
+                                        preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
+                                        seekIntervalSeconds = settings.seekIntervalSeconds,
                                         onClose = {
                                             playingMedia = null
                                             if (!navigateBack()) {
@@ -701,6 +705,17 @@ class MainActivity : ComponentActivity() {
                                         }
                                         },
                                         onEnterPip = { triggerPip() },
+                                        onAudioOnly = { handoffActivePlaybackToAudio() },
+                                        onPlaybackPreferenceChanged = { speed, qualityHeight, seekSeconds ->
+                                            val latest = repository.settings.value
+                                            repository.updateSettings(
+                                                latest.copy(
+                                                    preferredPlaybackSpeed = speed.coerceIn(0.25f, 2.0f),
+                                                    preferredPlaybackQualityHeight = qualityHeight.coerceAtLeast(0),
+                                                    seekIntervalSeconds = seekSeconds.coerceIn(5, 60)
+                                                )
+                                            )
+                                        },
                                         onDownloadVideo = if (repository.extractVideoId(media.mediaUri) != null) {
                                             { downloadModalTargetUrl = media.mediaUri; downloadPlaylistMode = false; showDownloadModal = true }
                                         } else null,

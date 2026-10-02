@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.webkit.WebView
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var pipChoicePending = false
+    private var pendingChooserAfterPipExit = false
     private var activePlaybackUrl: String = ""
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
@@ -371,6 +373,11 @@ class MainActivity : ComponentActivity() {
                     playerActive = currentScreen == ActiveScreen.PLAYER ||
                         (currentScreen == ActiveScreen.BROWSER && webPlaybackActive)
                     autoPipEnabled = settings.pipEnabled
+                    if (playerActive) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
 
                     // ComponentActivity bridges this dispatcher to the modern Android back
                     // dispatcher on API 33+, so one path handles gesture and 3-button navigation.
@@ -861,7 +868,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (playerActive) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (pendingChooserAfterPipExit && playerActive) {
+            pendingChooserAfterPipExit = false
+            playbackBackCoordinator.forceChooserVisible()
+            showPlaybackExitChoices = true
+        }
+    }
+
     override fun onStop() {
+        if (!isPipMode) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         if (!isPipMode && playerActive) {
             // Web playback must not silently survive task/background transitions. Only explicit
             // Audio-only is allowed to continue after the visible player leaves the foreground.
@@ -1065,6 +1087,10 @@ class MainActivity : ComponentActivity() {
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
 
+        if (isInPictureInPictureMode && playerActive) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+
         if (
             PlaybackPipExitPolicy.shouldRestoreChoices(
                 wasInPip = wasInPip,
@@ -1074,20 +1100,11 @@ class MainActivity : ComponentActivity() {
                 closing = false
             )
         ) {
-            // Device fallback for PiP implementations that consume Back inside the system PiP UI.
+            // Never relaunch the Activity while Android is finishing PiP exit. Wait for onResume.
             pipChoicePending = false
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
-            playbackBackCoordinator.forceChooserVisible()
-            showPlaybackExitChoices = true
-            if (!hasWindowFocus()) {
-                startActivity(
-                    Intent(this, MainActivity::class.java).apply {
-                        action = PlaybackPipActions.ACTION_EXPAND_PLAYER
-                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    }
-                )
-            }
+            pendingChooserAfterPipExit = true
         }
     }
 
@@ -1096,6 +1113,7 @@ class MainActivity : ComponentActivity() {
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
         closeActivePlaybackUi = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
 }

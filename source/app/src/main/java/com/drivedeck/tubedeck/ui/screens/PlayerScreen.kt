@@ -1069,6 +1069,9 @@ fun NativeExoPlayer(
                             }) { Icon(Icons.Default.PictureInPictureAlt, "Picture in picture", tint = Color.White) }
                         }
                         GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                        IconButton(onClick = { showQuickActions = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.MoreVert, "Video actions", tint = Color.White, modifier = Modifier.size(21.dp))
+                        }
                         IconButton(onClick = { showSettings = true }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Default.Settings, "Player settings", tint = Color.White, modifier = Modifier.size(21.dp))
                         }
@@ -1279,6 +1282,20 @@ fun NativeExoPlayer(
                                 )
                             }
                         }
+                        resolved?.chapters
+                            ?.lastOrNull { it.startTimeSeconds * 1_000L <= currentPosition }
+                            ?.title
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { chapterTitle ->
+                                Text(
+                                    chapterTitle,
+                                    color = Color.White.copy(alpha = .82f),
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
                         scrubFraction?.let { fraction ->
                             SeekPreviewThumbnail(
                                 fraction = fraction,

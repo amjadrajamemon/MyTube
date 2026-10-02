@@ -668,6 +668,8 @@ class MainActivity : ComponentActivity() {
                                 SettingsScreen(
                                     currentSettings = settings,
                                     blockedAdsCount = blockedAdsCount,
+                                    googleAccount = googleAccount,
+                                    onGoogleAccountClick = onGoogleAccountClick,
                                     onPreviewSettings = { previewAppearance = it },
                                     onSaveSettings = {
                                         repository.updateSettings(it)

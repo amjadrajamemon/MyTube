@@ -214,11 +214,10 @@ class NativePlayerActivity : ComponentActivity() {
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
-                    } else if (
-                        googleAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED
-                    ) {
-                        showGoogleAuthorizationProblem = true
                     } else {
+                        // A previous OAuth/configuration error must never turn this into a dead-end.
+                        // Every explicit tap performs a fresh Google/YouTube authorization attempt.
+                        showGoogleAuthorizationProblem = false
                         lifecycleScope.launch {
                             googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
                                 .onSuccess { outcome ->
@@ -232,6 +231,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                 }
                                 .onFailure {
+                                    showGoogleAuthorizationProblem = true
                                     Toast.makeText(
                                         this@NativePlayerActivity,
                                         it.message ?: "YouTube authorization failed",
@@ -290,6 +290,12 @@ class NativePlayerActivity : ComponentActivity() {
                 }
                 if (showGoogleAuthorizationProblem) {
                     GoogleAuthorizationProblemDialog(
+                        message = googleAuthStatus.message,
+                        registrationInfo = googleSession.oauthRegistrationInfo(),
+                        onRetry = {
+                            showGoogleAuthorizationProblem = false
+                            onGoogleAccountClick()
+                        },
                         onDismiss = { showGoogleAuthorizationProblem = false }
                     )
                 }

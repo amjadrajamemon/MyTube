@@ -591,6 +591,8 @@ class MainActivity : ComponentActivity() {
                                         media = media,
                                         playerMode = settings.playerMode,
                                         pipEnabled = settings.pipEnabled,
+                    autoLoadEpisodes = settings.autoLoadEpisodes,
+                    autoLoadUpNext = settings.autoLoadUpNext,
                                         onClose = {
                                             playingMedia = null
                                             if (!navigateBack()) {

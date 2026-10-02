@@ -229,51 +229,34 @@ jobs:
           TAG="v1.3.16-dual-arm64-universal-debug"
           NOTES="MyTube r6.5 LiveDub v1.3.16.
 
-          360-degree lifecycle / playback audit:
-          - Central PlaybackHostRouter is now authoritative for Web versus Native playback across home/history, browser interception, deep links, related videos and restored sessions.
-          - Saved Web mode can no longer be bypassed by a stale NativePlayerActivity session.
-          - Native playback pauses whenever it is neither foreground nor genuinely in PiP; dismissed PiP can no longer masquerade as unintended audio-only playback.
-          - WebView playback follows the same rule and pauses when the task leaves foreground outside PiP.
-          - PiP return refreshes YouTube signed stream URLs only after the Activity genuinely resumes, preserving position and avoiding background extractor work.
-          - Explicit audio-only keeps the original watch URL plus a live position snapshot; foreground replay invalidates the temporary CDN URL, resolves fresh media and resumes near the same position.
-          - Close remains a hard teardown of foreground playback plus background audio service/session.
-          - Playback session ownership blocks stale Android task/history restoration from resurrecting old videos.
+          Playback / PiP:
+          - Active video playback keeps the screen awake in foreground and PiP.
+          - PiP exit no longer relaunches an Activity while Android is restoring the existing one; the three-way chooser is deferred until normal onResume.
+          - Close / Audio / PiP choices fade after about 4.5 seconds without selecting any action.
+          - Extra Back callbacks never silently choose Close or Audio.
+          - PiP retains direct Options, Audio and Close actions as a device-level fallback.
+          - Foreground, PiP, audio-only and closed sessions remain explicitly separated.
+          - Web versus Native playback continues through the centralized PlaybackHostRouter.
 
-          Back / PiP:
-          - Back never selects Close or Audio on the user's behalf.
-          - The explicit Close / Audio / PiP chooser remains the only terminal playback decision surface.
-          - First Back enters PiP.
-          - If Android delivers a second Back to MyTube, it expands the player with Close / Audio / PiP already visible.
-          - If Android consumes Back inside system PiP, the PiP-to-normal transition itself restores MyTube with the same three choices already visible.
-          - PiP also exposes Options, Audio and Close remote actions so system PiP input quirks cannot trap playback control.
-          - Options returns to the explicit Close / Audio / PiP chooser; Audio and Close perform those actions directly.
-          - A shared PiP exit policy prevents unrelated lifecycle changes from opening the chooser.
-          - Extra Back callbacks while the chooser is visible are ignored rather than interpreted as a playback choice.
+          UI cleanup:
+          - Persistent guides, explanatory paragraphs and redundant narration are removed from Settings and player surfaces.
+          - Theme cards, playback settings, Google status, request shield and download confirmations are compact and action-oriented.
+          - Functional labels, concise status values and real error messages remain.
+          - Ten built-in themes, Custom RGB controls, font scaling and temporary Theme Preview remain available.
 
-          Performance / resource use:
-          - Auto-load Episodes and Auto-load Up Next remain independently configurable and default OFF.
-          - Companion shelves wait until after first frame before loading even when enabled.
-          - Browser URL polling is suspended while the app is not RESUMED.
-          - Recommendation extraction respects the Up Next setting.
-          - Download queue remains unrestricted while device-aware admission protects RAM, CPU, thermals and metered networks.
-          - Stale retained download ranges restart cleanly and deterministic media-format failures no longer retry forever.
+          Playback performance:
+          - Auto-load Episodes and Auto-load Up Next remain independent and default OFF.
+          - Enabled companion shelves still wait until after first frame.
+          - Adaptive download admission remains automatic with no user-facing parallel-download limit.
 
-          Appearance:
-          - Ten built-in themes: Glass Midnight, Glass Slate, Neon Cyan, Neon Purple, Neon Lime, Ocean Deep, Ocean Teal, HD Graphite, HD Crimson and AMOLED Black.
-          - Custom font scaling from 80% to 135%.
-          - Custom RGB adjusters for accent/controls, overall background/theme and primary text.
-          - Theme Preview is now interactive: it temporarily applies the selected font/colors across the app without saving.
-          - Leaving Settings reverts a temporary preview; Save and Apply Settings makes it permanent.
-          - Runtime theme colors now propagate across shared app UI instead of leaving major surfaces hard-coded white.
-
-          YouTube account authorization:
-          - Profile-only account selection is never treated as a YouTube session.
-          - The app exposes Signed out / Connecting / Connected / OAuth configuration required / Authorization error states.
-          - Connected state requires Google AuthorizationClient youtube.readonly consent plus a successful authenticated YouTube Data API request.
-          - Google rejection opens a full configuration-required dialog instead of leaving a misleading account chooser/profile state.
-          - Settings shows the live authorization status plus the exact package and signing SHA-1 expected by Google Cloud.
-          - The release includes MyTube-v1.3.16-OAuth-Registration.txt with the exact package/SHA-1 from the built APK signing key.
-          - Google Cloud must register that Android OAuth client and enable YouTube Data API v3; code cannot bypass Google's registration requirement.
+          Google / YouTube authorization:
+          - Profile selection alone is never treated as a connected YouTube account.
+          - When GOOGLE_WEB_CLIENT_ID is configured, explicit Google identity uses Credential Manager before YouTube authorization.
+          - Without a Web client ID, MyTube falls back to the genuine AuthorizationClient account selector instead of a cosmetic profile flow.
+          - Authorization requests youtube.readonly and is tied to the selected account when identity is known.
+          - Connected state is published only after an access token succeeds against both channels?mine=true and subscriptions?mine=true.
+          - The Android OAuth client is still mandatory: Google Cloud must register applicationId com.aistudio.tubedeck.kxmvd with the pinned signing SHA-1 and enable YouTube Data API v3.
+          - The release includes MyTube-v1.3.16-OAuth-Registration.txt with the exact built APK identity.
 
           Build gates:
           - ARM64 + Universal unit tests.

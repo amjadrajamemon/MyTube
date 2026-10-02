@@ -36,6 +36,7 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackPipActions
+import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
@@ -69,7 +70,6 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
-    private var pendingExitChooserAfterPip = false
     private var activePlaybackUrl: String = ""
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
@@ -168,6 +168,12 @@ class MainActivity : ComponentActivity() {
                 var appCanGoForward by remember { mutableStateOf(false) }
 
                 fun applyNavigationEntry(entry: NavigationEntry) {
+                    if (currentScreen == ActiveScreen.PLAYER && entry.screen != ActiveScreen.PLAYER) {
+                        // Navigation away from the in-UI ExoPlayer is a hard playback boundary.
+                        // Explicit PiP/audio continuation is handled separately by the playback controls.
+                        playingMedia = null
+                        activePlaybackPositionMs = 0L
+                    }
                     currentScreen = entry.screen
                     if (entry.screen == ActiveScreen.BROWSER) {
                         entry.browserUrl?.let { url ->
@@ -678,9 +684,10 @@ class MainActivity : ComponentActivity() {
                                     showPlaybackExitChoices = false
                                     handoffActivePlaybackToAudio()
                                 },
-                                onDismiss = {
+                                onPictureInPicture = {
                                     showPlaybackExitChoices = false
                                     playbackBackCoordinator.onChooserDismissed()
+                                    triggerPip()
                                 },
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
@@ -703,6 +710,9 @@ class MainActivity : ComponentActivity() {
         // NativePlayerActivity/PlayerScreen joins this same in-flight resolution instead of
         // starting a duplicate extractor request.
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
+        // A newly selected foreground video supersedes any prior explicit audio-only session.
+        BackgroundAudioController.stop(applicationContext)
+        val playbackSessionId = PlaybackSessionRegistry.open()
 
         val intent = Intent(this, NativePlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -713,6 +723,7 @@ class MainActivity : ComponentActivity() {
             putExtra(NativePlayerActivity.EXTRA_MEDIA_URI, media.mediaUri)
             putExtra(NativePlayerActivity.EXTRA_IS_AUDIO_ONLY, media.isAudioOnly)
             putExtra(NativePlayerActivity.EXTRA_QUALITY_LABEL, media.qualityLabel)
+            putExtra(NativePlayerActivity.EXTRA_SESSION_ID, playbackSessionId)
         }
         startActivity(intent)
     }
@@ -728,20 +739,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
-            PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER -> {
+            PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                pendingExitChooserAfterPip = false
-                playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
-                showPlaybackExitChoices = true
-                return
-            }
-            PlaybackPipActions.ACTION_CLOSE -> {
-                closeActivePlaybackCompletely()
-                return
-            }
-            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
-                handoffActivePlaybackToAudio()
+                showPlaybackExitChoices = false
                 return
             }
         }
@@ -785,10 +786,10 @@ class MainActivity : ComponentActivity() {
                 triggerPip()
             }
 
-            PlaybackBackAction.EXPAND_PIP_FOR_EXIT_CHOOSER -> {
+            PlaybackBackAction.EXPAND_PIP -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                requestExitChooserFromPip()
+                expandPlayerFromPip()
             }
 
             PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
@@ -798,30 +799,22 @@ class MainActivity : ComponentActivity() {
             }
 
             PlaybackBackAction.IGNORE -> Unit
-
-            PlaybackBackAction.EXIT_APP -> {
-                playbackBackDecisionJob?.cancel()
-                playbackBackDecisionJob = null
-                showPlaybackExitChoices = false
-                closeActivePlaybackCompletely()
-            }
         }
     }
 
-    private fun requestExitChooserFromPip() {
-        pendingExitChooserAfterPip = true
+    private fun expandPlayerFromPip() {
         val intent = Intent(this, MainActivity::class.java).apply {
-            action = PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER
+            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
     }
 
     private fun closeActivePlaybackCompletely() {
-        pendingExitChooserAfterPip = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
+        BackgroundAudioController.stop(applicationContext)
         webViewInstance?.runCatching {
             evaluateJavascript(
                 "(function(){var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}return true;})()",
@@ -854,7 +847,6 @@ class MainActivity : ComponentActivity() {
                     artworkUrl = activePlaybackArtwork,
                     positionMs = positionMs.coerceAtLeast(0L)
                 ).onSuccess {
-                    pendingExitChooserAfterPip = false
                     webViewInstance?.runCatching {
                         evaluateJavascript(
                             "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
@@ -911,22 +903,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playerActive && autoPipEnabled && !isPipMode) {
-            triggerPip()
-        }
-    }
-
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
-        if (!isInPictureInPictureMode && pendingExitChooserAfterPip) {
-            pendingExitChooserAfterPip = false
-            playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
-            showPlaybackExitChoices = true
-        }
     }
 
     override fun onDestroy() {

@@ -98,26 +98,34 @@ class MainActivity : ComponentActivity() {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
-                val googlePlayServicesSignInLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult()
+                val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
-                    googleSession.completeGooglePlayServicesSignIn(result.data)
-                        .onSuccess {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Signed in with Google",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                    if (result.resultCode == RESULT_OK) {
+                        lifecycleScope.launch {
+                            googleSession.completeYoutubeAuthorization(this@MainActivity, result.data)
+                                .onSuccess {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "YouTube account connected",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        it.message ?: "YouTube authorization failed",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                         }
-                        .onFailure {
-                            if (result.resultCode != RESULT_CANCELED) {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    it.message ?: "Google sign-in failed",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    // Restore only a real previously granted YouTube OAuth session. If Google
+                    // requires account selection/consent, remain signed out until the user taps.
+                    googleSession.restoreYoutubeAuthorization()
                 }
                 val downloadQueue by repository.downloadQueue.collectAsStateWithLifecycle()
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -224,28 +232,27 @@ class MainActivity : ComponentActivity() {
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
-                    } else if (GoogleAccountSession.credentialManagerConfigured(BuildConfig.GOOGLE_WEB_CLIENT_ID)) {
+                    } else {
                         lifecycleScope.launch {
-                            googleSession.signIn(this@MainActivity, BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                                .onSuccess {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Signed in with Google",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                            googleSession.beginYoutubeAuthorization(this@MainActivity)
+                                .onSuccess { outcome ->
+                                    outcome.profile?.let {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "YouTube account connected",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                 }
                                 .onFailure {
                                     Toast.makeText(
                                         this@MainActivity,
-                                        it.message ?: "Google sign-in failed",
+                                        it.message ?: "YouTube authorization failed",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
                         }
-                    } else {
-                        googlePlayServicesSignInLauncher.launch(
-                            googleSession.googlePlayServicesSignInIntent(this@MainActivity)
-                        )
                     }
                 }
 

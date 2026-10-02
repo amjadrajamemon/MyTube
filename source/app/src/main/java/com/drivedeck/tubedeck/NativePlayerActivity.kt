@@ -2,6 +2,7 @@ package com.drivedeck.tubedeck
 
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -27,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.screens.PlayerScreen
 import com.drivedeck.tubedeck.ui.components.DownloadModal
@@ -58,6 +60,7 @@ class NativePlayerActivity : ComponentActivity() {
         const val EXTRA_IS_AUDIO_ONLY = "native_player_audio_only"
         const val EXTRA_QUALITY_LABEL = "native_player_quality"
         const val EXTRA_SESSION_ID = "native_player_session_id"
+        const val EXTRA_START_POSITION_MS = "native_player_start_position_ms"
     }
 
     private lateinit var repository: TubeDeckRepository
@@ -67,7 +70,11 @@ class NativePlayerActivity : ComponentActivity() {
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
+    private var initialPlaybackPositionMs = 0L
     private var playbackSessionId: String = ""
+    private var resumeGeneration by mutableStateOf(0)
+    private var foregroundPlaybackAllowed by mutableStateOf(true)
+    private var enteringPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -84,6 +91,7 @@ class NativePlayerActivity : ComponentActivity() {
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
         playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
             finish()
             return
@@ -108,6 +116,13 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
+        if (
+            repository.settings.value.playerMode == PlayerMode.WEB &&
+            YoutubeUrls.videoId(currentMedia.mediaUri) != null
+        ) {
+            returnCurrentVideoToWeb()
+            return
+        }
 
         setContent {
             TubeDeckTheme {
@@ -146,6 +161,15 @@ class NativePlayerActivity : ComponentActivity() {
                     // requires account selection/consent, remain signed out until the user taps.
                     googleSession.restoreYoutubeAuthorization()
                 }
+                LaunchedEffect(settings.playerMode, media.mediaUri) {
+                    if (
+                        settings.playerMode == PlayerMode.WEB &&
+                        YoutubeUrls.videoId(media.mediaUri) != null &&
+                        !closingPlayer
+                    ) {
+                        returnCurrentVideoToWeb()
+                    }
+                }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
                 val onGoogleAccountClick: () -> Unit = {
@@ -183,6 +207,9 @@ class NativePlayerActivity : ComponentActivity() {
                     pipEnabled = settings.pipEnabled,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
+                    initialPositionMs = initialPlaybackPositionMs,
+                    resumeGeneration = resumeGeneration,
+                    foregroundPlaybackAllowed = foregroundPlaybackAllowed,
                     onClose = { finishPlayer() },
                     onEnterPip = { enterPlayerPip() },
                     onDownloadVideo = if (YoutubeUrls.videoId(media.mediaUri) != null) {
@@ -289,6 +316,7 @@ class NativePlayerActivity : ComponentActivity() {
             }
         }
         val incomingSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(incomingSessionId)) {
             closePlaybackCompletely()
             return
@@ -318,7 +346,7 @@ class NativePlayerActivity : ComponentActivity() {
         showPlaybackExitChoices = false
         closingPlayer = false
         playerActive = true
-        currentPlaybackPositionMs = 0L
+        currentPlaybackPositionMs = initialPlaybackPositionMs
         currentMedia = media
         if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
             repository.recordWatch(media)
@@ -446,6 +474,8 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            enteringPip = true
+            foregroundPlaybackAllowed = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
                 activityClass = NativePlayerActivity::class.java
@@ -453,6 +483,7 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
+                enteringPip = false
                 playbackBackCoordinator.onPipEnterFailed()
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
@@ -460,6 +491,45 @@ class NativePlayerActivity : ComponentActivity() {
         } else {
             showPlaybackExitChoices = true
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!closingPlayer) foregroundPlaybackAllowed = true
+    }
+
+    override fun onStop() {
+        if (!isPipMode && !enteringPip && !closingPlayer) {
+            // If Android dismisses PiP/task UI without an explicit Audio choice, never let the
+            // Activity's ExoPlayer silently continue as unintended audio-only playback.
+            foregroundPlaybackAllowed = false
+        }
+        super.onStop()
+    }
+
+    private fun returnCurrentVideoToWeb() {
+        if (closingPlayer) return
+        val media = currentMedia
+        val url = media.mediaUri
+        if (YoutubeUrls.videoId(url) == null) return
+
+        closingPlayer = true
+        playerActive = false
+        foregroundPlaybackAllowed = false
+        PlaybackSessionRegistry.close(playbackSessionId)
+        YoutubeStreamResolver.invalidate(url)
+
+        val seconds = (currentPlaybackPositionMs.coerceAtLeast(0L) / 1000L)
+        val separator = if (url.contains("?")) "&" else "?"
+        val resumeUrl = if (seconds > 0L) "$url${separator}t=${seconds}s" else url
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(resumeUrl)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+        )
+        finish()
     }
 
     override fun onDestroy() {
@@ -476,6 +546,12 @@ class NativePlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
+        enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode && playerActive && !closingPlayer) {
+            // Returning from PiP gets a fresh signed stream while preserving position.
+            resumeGeneration += 1
+            foregroundPlaybackAllowed = true
+        }
     }
 }

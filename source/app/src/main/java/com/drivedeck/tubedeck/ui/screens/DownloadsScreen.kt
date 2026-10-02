@@ -401,11 +401,6 @@ fun DownloadsScreen(
         AlertDialog(
             onDismissRequest = { confirmDeleteSelected = false },
             title = { Text("Delete selected queue items?") },
-            text = {
-                Text(
-                    "Selected tasks will be removed from the queue and unfinished partial files will be deleted. Completed offline media is kept."
-                )
-            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -425,11 +420,6 @@ fun DownloadsScreen(
         AlertDialog(
             onDismissRequest = { confirmDeleteAll = false },
             title = { Text("Delete the entire queue?") },
-            text = {
-                Text(
-                    "Every queued, paused, failed and currently downloading task will be removed. Unfinished partial files will also be deleted."
-                )
-            },
             confirmButton = {
                 TextButton(
                     onClick = {

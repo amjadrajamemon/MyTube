@@ -39,6 +39,7 @@ import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
+import com.drivedeck.tubedeck.player.PlaybackPipExitPolicy
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
@@ -1049,9 +1050,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        val wasInPip = isPipMode
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
-        if (!isInPictureInPictureMode && playerActive && pipChoicePending) {
+
+        if (
+            PlaybackPipExitPolicy.shouldRestoreChoices(
+                wasInPip = wasInPip,
+                isInPip = isInPictureInPictureMode,
+                choicePending = pipChoicePending,
+                playerActive = playerActive,
+                closing = false
+            )
+        ) {
             // Device fallback for PiP implementations that consume Back inside the system PiP UI.
             pipChoicePending = false
             playbackBackDecisionJob?.cancel()

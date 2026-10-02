@@ -356,7 +356,7 @@ object YoutubeStreamResolver {
                         listOfNotNull(
                             "Could not load YouTube comments",
                             cause?.let { "Extractor: " + it },
-                            fallbackCause?.let { "yt-dlp: " + it }
+                            fallbackCause?.let { "Download Engine: " + it }
                         ).joinToString(" • "),
                         ytError
                     )
@@ -375,7 +375,7 @@ object YoutubeStreamResolver {
 
         val response = YoutubeDL.execute(request)
         val root = JSONObject(response.out)
-        val comments = root.optJSONArray("comments") ?: throw IOException("yt-dlp returned no comments data")
+        val comments = root.optJSONArray("comments") ?: throw IOException("Download Engine returned no comments data")
         val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
             .withZone(ZoneId.systemDefault())
 

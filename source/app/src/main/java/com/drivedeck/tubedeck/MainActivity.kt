@@ -124,19 +124,73 @@ class MainActivity : ComponentActivity() {
                 val blockedAdsCount by repository.blockedAdsCount.collectAsStateWithLifecycle()
 
                 var currentScreen by rememberSaveable { mutableStateOf(ActiveScreen.HOME) }
-                var previousScreen by rememberSaveable { mutableStateOf(ActiveScreen.HOME) }
-                var playerReturnScreen by rememberSaveable { mutableStateOf(ActiveScreen.HOME) }
                 var downloadsInitialTab by rememberSaveable { mutableIntStateOf(0) }
                 var playingMedia by remember { mutableStateOf<OfflineMedia?>(null) }
                 var isBrowserFullscreen by rememberSaveable { mutableStateOf(false) }
 
                 var currentUrl by rememberSaveable { mutableStateOf("https://www.youtube.com/") }
-                // URL to restore when returning from the native player. This must remain the
-                // search/results page (or other browser page), never the video URL that launched playback.
+                // URL to restore underneath the native player. Native /watch URLs are never
+                // inserted into NavigationCoordinator history.
                 var browserReturnUrl by rememberSaveable { mutableStateOf("https://www.youtube.com/") }
                 var deckSearchQuery by rememberSaveable { mutableStateOf("") }
-                var canGoBack by remember { mutableStateOf(false) }
-                var canGoForward by remember { mutableStateOf(false) }
+                val navigation = remember {
+                    NavigationCoordinator(
+                        NavigationEntry(
+                            screen = ActiveScreen.HOME,
+                            browserUrl = null
+                        )
+                    )
+                }
+                var appCanGoBack by remember { mutableStateOf(false) }
+                var appCanGoForward by remember { mutableStateOf(false) }
+
+                fun applyNavigationEntry(entry: NavigationEntry) {
+                    currentScreen = entry.screen
+                    if (entry.screen == ActiveScreen.BROWSER) {
+                        entry.browserUrl?.let { url ->
+                            currentUrl = url
+                            if (repository.extractVideoId(url) == null) browserReturnUrl = url
+                        }
+                    }
+                    appCanGoBack = navigation.canGoBack()
+                    appCanGoForward = navigation.canGoForward()
+                }
+
+                fun navigateTo(screen: ActiveScreen, browserUrl: String? = null) {
+                    val entry = NavigationEntry(
+                        screen = screen,
+                        browserUrl = if (screen == ActiveScreen.BROWSER) {
+                            browserUrl ?: currentUrl
+                        } else {
+                            null
+                        }
+                    )
+                    applyNavigationEntry(navigation.navigate(entry))
+                }
+
+                fun replaceCurrentRoute(screen: ActiveScreen = currentScreen, browserUrl: String? = null) {
+                    val entry = NavigationEntry(
+                        screen = screen,
+                        browserUrl = if (screen == ActiveScreen.BROWSER) {
+                            browserUrl ?: currentUrl
+                        } else {
+                            null
+                        }
+                    )
+                    applyNavigationEntry(navigation.replace(entry))
+                }
+
+                fun navigateBack(): Boolean {
+                    val entry = navigation.back() ?: return false
+                    applyNavigationEntry(entry)
+                    return true
+                }
+
+                fun navigateForward(): Boolean {
+                    val entry = navigation.forward() ?: return false
+                    applyNavigationEntry(entry)
+                    return true
+                }
 
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
@@ -160,31 +214,41 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(openDownloadsQueueRequest) {
                     if (openDownloadsQueueRequest) {
-                        previousScreen = currentScreen
                         downloadsInitialTab = 1
-                        currentScreen = ActiveScreen.DOWNLOADS
+                        navigateTo(ActiveScreen.DOWNLOADS)
                         openDownloadsQueueRequest = false
                     }
                 }
 
                 LaunchedEffect(inboundUrl, settings.playerMode) {
                     inboundUrl?.let {
-                        currentScreen = ActiveScreen.BROWSER
                         val videoId = repository.extractVideoId(it)
                         if (videoId != null && settings.playerMode == PlayerMode.NATIVE) {
-                            launchNativePlayer(OfflineMedia(
-                                id = UUID.randomUUID().toString(), title = "Now Playing", videoId = videoId,
-                                thumbnailUrl = repository.getVideoThumbnail(videoId), mediaUri = it
-                            ))
+                            if (currentScreen != ActiveScreen.BROWSER) {
+                                navigateTo(ActiveScreen.BROWSER, browserReturnUrl)
+                            }
+                            launchNativePlayer(
+                                OfflineMedia(
+                                    id = UUID.randomUUID().toString(),
+                                    title = "Now Playing",
+                                    videoId = videoId,
+                                    thumbnailUrl = repository.getVideoThumbnail(videoId),
+                                    mediaUri = it
+                                )
+                            )
                         } else {
-                            currentUrl = it
-                            if (videoId == null) browserReturnUrl = it
+                            navigateTo(ActiveScreen.BROWSER, it)
                         }
                         inboundUrl = null
                     }
                 }
                 LaunchedEffect(currentScreen, playingMedia) {
-                    if (currentScreen == ActiveScreen.PLAYER && playingMedia == null) currentScreen = ActiveScreen.HOME
+                    if (currentScreen == ActiveScreen.PLAYER && playingMedia == null) {
+                        if (!navigateBack()) {
+                            navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                            applyNavigationEntry(navigation.current)
+                        }
+                    }
                 }
 
                 var showDownloadModal by remember { mutableStateOf(false) }
@@ -204,8 +268,11 @@ class MainActivity : ComponentActivity() {
                     closeActivePlaybackUi = {
                         when {
                             currentScreen == ActiveScreen.PLAYER -> {
-                                currentScreen = playerReturnScreen
                                 playingMedia = null
+                                if (!navigateBack()) {
+                                    navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                    applyNavigationEntry(navigation.current)
+                                }
                             }
                             currentScreen == ActiveScreen.BROWSER -> {
                                 val destination = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
@@ -252,15 +319,12 @@ class MainActivity : ComponentActivity() {
                 // prevents two Compose/Activity callbacks from competing for the same system Back.
                 BackHandler(enabled = !playerActive) {
                     when {
-                        showAdBlockSheet -> { showAdBlockSheet = false }
-                        showDownloadModal -> { showDownloadModal = false }
-                        webViewInstance?.canGoBack() == true && currentScreen == ActiveScreen.BROWSER -> {
-                            webViewInstance?.goBack()
-                        }
-                        currentScreen != ActiveScreen.HOME -> {
-                            currentScreen = ActiveScreen.HOME
-                        }
-                        else -> { finish() }
+                        showAdBlockSheet -> showAdBlockSheet = false
+                        showDownloadModal -> showDownloadModal = false
+                        showGoogleAccountDialog -> showGoogleAccountDialog = false
+                        isBrowserFullscreen -> Unit // BrowserScreen owns fullscreen Back first.
+                        navigateBack() -> Unit
+                        else -> finish()
                     }
                 }
 
@@ -273,23 +337,20 @@ class MainActivity : ComponentActivity() {
                             Column {
                                 TopNavBar(
                                     currentUrl = currentUrl,
-                                    canGoBack = canGoBack,
-                                    canGoForward = canGoForward,
+                                    canGoBack = appCanGoBack,
+                                    canGoForward = appCanGoForward,
                                     activeDownloadCount = activeDownloads.size,
                                     blockedAdsCount = blockedAdsCount,
                                     isAdBlockActive = settings.adBlockEnabled,
-                                    onBack = { 
-                                        if (webViewInstance?.canGoBack() == true) {
-                                            webViewInstance?.goBack()
-                                        } else {
-                                            previousScreen = currentScreen
-                                            currentScreen = ActiveScreen.HOME
+                                    onBack = {
+                                        if (!navigateBack()) {
+                                            navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                            applyNavigationEntry(navigation.current)
                                         }
                                     },
-                                    onForward = { webViewInstance?.goForward() },
-                                    onHome = { 
-                                        previousScreen = currentScreen
-                                        currentScreen = ActiveScreen.HOME 
+                                    onForward = { navigateForward() },
+                                    onHome = {
+                                        navigateTo(ActiveScreen.HOME)
                                     },
                                     onReload = { webViewInstance?.reload() },
                                     onNavigate = { input ->
@@ -298,23 +359,20 @@ class MainActivity : ComponentActivity() {
                                         } else {
                                             "https://www.youtube.com/results?search_query=" + URLEncoder.encode(input, "UTF-8")
                                         }
+                                        navigateTo(ActiveScreen.BROWSER, destination)
                                         webViewInstance?.loadUrl(destination)
-                                        currentUrl = destination
                                     },
                                     onOpenShield = { showAdBlockSheet = true },
                                     onOpenDownloads = {
-                                        previousScreen = currentScreen
                                         downloadsInitialTab = 1
-                                        currentScreen = ActiveScreen.DOWNLOADS
+                                        navigateTo(ActiveScreen.DOWNLOADS)
                                     },
                                     onOpenOffline = {
-                                        previousScreen = currentScreen
                                         downloadsInitialTab = 0
-                                        currentScreen = ActiveScreen.OFFLINE_VAULT
+                                        navigateTo(ActiveScreen.OFFLINE_VAULT)
                                     },
-                                    onOpenSettings = { 
-                                        previousScreen = currentScreen
-                                        currentScreen = ActiveScreen.SETTINGS 
+                                    onOpenSettings = {
+                                        navigateTo(ActiveScreen.SETTINGS)
                                     },
                                     googleAccount = googleAccount,
                                     onGoogleAccountClick = onGoogleAccountClick
@@ -330,13 +388,12 @@ class MainActivity : ComponentActivity() {
                                 activeDownloadCount = activeDownloads.size,
                                 blockedAdsCount = blockedAdsCount,
                                 onNavigate = { screen ->
-                                    previousScreen = currentScreen
                                     if (screen == ActiveScreen.MIXES && deckSearchQuery.isEmpty()) {
                                         deckSearchQuery = "Playlist"
                                     }
                                     if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
                                     else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
-                                    currentScreen = screen
+                                    navigateTo(screen)
                                 }
                             )
                         }
@@ -356,19 +413,17 @@ class MainActivity : ComponentActivity() {
                                     onSearchQueryChange = { deckSearchQuery = it },
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
-                                            previousScreen = currentScreen
-                                            currentUrl = if (currentScreen == ActiveScreen.MIXES) {
+                                            val destination = if (currentScreen == ActiveScreen.MIXES) {
                                                 "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8") + "&sp=EgIQAw%253D%253D"
                                             } else {
                                                 "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8")
                                             }
-                                            currentScreen = ActiveScreen.BROWSER
+                                            navigateTo(ActiveScreen.BROWSER, destination)
                                         }
                                     },
                                     onOpenDownloads = {
-                                        previousScreen = currentScreen
                                         downloadsInitialTab = 1
-                                        currentScreen = ActiveScreen.DOWNLOADS
+                                        navigateTo(ActiveScreen.DOWNLOADS)
                                     },
                                     googleAccount = googleAccount,
                                     onGoogleAccountClick = onGoogleAccountClick,
@@ -393,7 +448,12 @@ class MainActivity : ComponentActivity() {
                                     currentUrl = currentUrl,
                                     onUrlChanged = {
                                         currentUrl = it
-                                        if (repository.extractVideoId(it) == null) browserReturnUrl = it
+                                        if (repository.extractVideoId(it) == null) {
+                                            browserReturnUrl = it
+                                            if (currentScreen == ActiveScreen.BROWSER) {
+                                                replaceCurrentRoute(ActiveScreen.BROWSER, it)
+                                            }
+                                        }
                                     },
                                     onNativeVideo = { url ->
                                         val id = repository.extractVideoId(url)
@@ -410,8 +470,8 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     },
-                                    onCanGoBackChanged = { canGoBack = it },
-                                    onCanGoForwardChanged = { canGoForward = it },
+                                    onCanGoBackChanged = { /* Logical history owns app Back. */ },
+                                    onCanGoForwardChanged = { /* Logical history owns app Forward. */ },
                                     onQuickDownload = { targetUrl ->
                                         downloadModalTargetUrl = targetUrl
                                         downloadPlaylistMode = false
@@ -456,18 +516,17 @@ class MainActivity : ComponentActivity() {
                                     onClearHistory = { repository.clearHistory() },
                                     onDeleteOfflineMedia = { repository.deleteOfflineMedia(it) },
                                     onPlayMedia = { media ->
-                                        // Keep a dedicated player return target so ordinary Back navigation
-                                        // does not become self-referential after returning from playback.
-                                        playerReturnScreen = currentScreen
                                         playingMedia = media
-                                        currentScreen = ActiveScreen.PLAYER
+                                        navigateTo(ActiveScreen.PLAYER)
                                     },
                                     onCustomDownload = { targetUrl ->
                                         downloadModalTargetUrl = targetUrl
                                         downloadPlaylistMode = false
                                         showDownloadModal = true
                                     },
-                                    onClose = { currentScreen = previousScreen }
+                                    onClose = {
+                                        if (!navigateBack()) navigateTo(ActiveScreen.HOME)
+                                    }
                                 ) }
                             }
 
@@ -477,7 +536,9 @@ class MainActivity : ComponentActivity() {
                                     blockedAdsCount = blockedAdsCount,
                                     onSaveSettings = { repository.updateSettings(it) },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
-                                    onClose = { currentScreen = previousScreen }
+                                    onClose = {
+                                        if (!navigateBack()) navigateTo(ActiveScreen.HOME)
+                                    }
                                 )
                             }
 
@@ -488,8 +549,8 @@ class MainActivity : ComponentActivity() {
                                         playerMode = settings.playerMode,
                                         pipEnabled = settings.pipEnabled,
                                         onClose = {
-                                            currentScreen = playerReturnScreen
                                             playingMedia = null
+                                            if (!navigateBack()) navigateTo(ActiveScreen.HOME)
                                         },
                                         onEnterPip = { triggerPip() },
                                         onDownloadVideo = if (repository.extractVideoId(media.mediaUri) != null) {
@@ -502,7 +563,7 @@ class MainActivity : ComponentActivity() {
                                             repository.recordWatch(related)
                                             repository.fetchSponsorSegments(related.videoId)
                                             playingMedia = related
-                                            currentScreen = ActiveScreen.PLAYER
+                                            replaceCurrentRoute(ActiveScreen.PLAYER)
                                         },
                                         googleAccount = googleAccount,
                                         onGoogleAccountClick = onGoogleAccountClick,

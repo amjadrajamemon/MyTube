@@ -25,7 +25,7 @@ data class YtDlpUpdateState(
     val updating: Boolean = false,
     val version: String? = null,
     val lastCheckedAt: Long = 0L,
-    val message: String = "yt-dlp not initialized"
+    val message: String = "Download Engine not initialized"
 ) {
     val lastCheckedLabel: String
         get() = if (lastCheckedAt <= 0L) "Never"
@@ -64,7 +64,7 @@ object YtDlpUpdateManager {
         _state.value = _state.value.copy(
             version = version ?: _state.value.version,
             lastCheckedAt = prefs.getLong(KEY_LAST_CHECK, 0L),
-            message = if (version.isNullOrBlank()) _state.value.message else "yt-dlp " + version + " ready"
+            message = if (version.isNullOrBlank()) _state.value.message else "Download Engine " + version + " ready"
         )
     }
 
@@ -77,7 +77,7 @@ object YtDlpUpdateManager {
             _state.value = _state.value.copy(
                 initialized = true,
                 version = version,
-                message = if (version.isNullOrBlank()) "yt-dlp ready" else "yt-dlp " + version + " ready"
+                message = if (version.isNullOrBlank()) "Download Engine ready" else "Download Engine " + version + " ready"
             )
         }
     }
@@ -88,7 +88,7 @@ object YtDlpUpdateManager {
             runCatching {
                 updateMutex.withLock {
                     ensureInitialized(app)
-                    _state.value = _state.value.copy(updating = true, message = "Checking yt-dlp stable channel…")
+                    _state.value = _state.value.copy(updating = true, message = "Checking Download Engine stable channel…")
                     try {
                         val result = YoutubeDL.updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
                         val checkedAt = System.currentTimeMillis()
@@ -98,9 +98,9 @@ object YtDlpUpdateManager {
                             .apply()
                         val version = YoutubeDL.versionName(app) ?: YoutubeDL.version(app)
                         val message = when (result) {
-                            YoutubeDL.UpdateStatus.DONE -> "yt-dlp updated to " + (version ?: "latest stable")
-                            YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "yt-dlp is already up to date"
-                            null -> "yt-dlp update check completed"
+                            YoutubeDL.UpdateStatus.DONE -> "Download Engine updated to " + (version ?: "latest stable")
+                            YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "Download Engine is already up to date"
+                            null -> "Download Engine update check completed"
                         }
                         _state.value = YtDlpUpdateState(
                             initialized = true,
@@ -113,7 +113,7 @@ object YtDlpUpdateManager {
                     } catch (t: Throwable) {
                         _state.value = _state.value.copy(
                             updating = false,
-                            message = "yt-dlp update failed: " + (t.message ?: t.javaClass.simpleName)
+                            message = "Download Engine update failed: " + (t.message ?: t.javaClass.simpleName)
                         )
                         throw t
                     }

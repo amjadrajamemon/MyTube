@@ -58,18 +58,15 @@ jobs:
           grep -Fq 'Retry sign-in' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/GoogleAccountUi.kt
           echo "Release-critical Google OAuth and Back/PiP source checks passed."
 
-      - name: Check optional Google identity configuration
+      - name: Verify Google sign-in configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
-            echo "::warning::GOOGLE_WEB_CLIENT_ID is not configured. Credential Manager identity enrichment will be skipped; Android AuthorizationClient remains available and still requires the registered package + signing SHA-1 in Google Cloud."
-          else
-            case "$GOOGLE_WEB_CLIENT_ID" in
-              *.apps.googleusercontent.com) echo "Google Web OAuth client ID is configured for Credential Manager." ;;
-              *) echo "::warning::GOOGLE_WEB_CLIENT_ID is present but malformed; the app will fall back to Android AuthorizationClient." ;;
-            esac
-          fi
+          test -n "${GOOGLE_WEB_CLIENT_ID:-}" || { echo "::error::GOOGLE_WEB_CLIENT_ID is required for the v1.4.0 Google sign-in build."; exit 1; }
+          case "$GOOGLE_WEB_CLIENT_ID" in
+            *.apps.googleusercontent.com) echo "Google OAuth client ID configured." ;;
+            *) echo "::error::GOOGLE_WEB_CLIENT_ID is malformed."; exit 1 ;;
+          esac
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5

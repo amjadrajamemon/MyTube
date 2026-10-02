@@ -62,11 +62,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun updateSettings(value: TubeDeckSettings) {
-        val next = value.copy(maxConcurrent = value.maxConcurrent.coerceAtLeast(1))
+        val next = value
         _settings.value = next
         prefs.edit().apply {
             putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
-            putInt("maxConcurrent", next.maxConcurrent)
+            remove("maxConcurrent")
             putString("instantMode", next.instantMode.name); putString("instantQuality", next.instantQuality)
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
@@ -85,7 +85,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private fun loadSettings() = TubeDeckSettings(
         downloadDir = prefs.getString("downloadDir", "MyTube")?.takeIf { it.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) } ?: "MyTube",
         downloadTreeUri = prefs.getString("downloadTreeUri", null),
-        maxConcurrent = prefs.getInt("maxConcurrent", 2).coerceAtLeast(1),
         instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
         instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
         customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),
@@ -281,16 +280,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
             DownloadForegroundService.ensureRunning(context)
         }
 
-        // Start very large user-selected concurrency levels in short scheduling batches. This is
-        // not a concurrency cap: further batches are queued immediately, but we avoid holding the
-        // repository lock for thousands of job creations in one pass.
+        // No app-imposed parallel-download ceiling. We create jobs in short batches only to
+        // avoid monopolizing the repository lock when a very large playlist is queued. Every
+        // remaining queued task is scheduled immediately on subsequent yields.
         val toStart = mutableListOf<Job>()
         var scheduleAnotherBatch = false
         synchronized(lock) {
-            while (
-                activeJobs.size < _settings.value.maxConcurrent &&
-                toStart.size < 64
-            ) {
+            while (toStart.size < 64) {
                 val next = _downloadQueue.value.firstOrNull {
                     it.status == TaskStatus.QUEUED && it.id !in activeJobs
                 } ?: break
@@ -298,14 +294,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 val job = scope.launch(start = CoroutineStart.LAZY) { runTask(next.id) }
                 activeJobs[next.id] = job
                 job.invokeOnCompletion {
-                    synchronized(lock) { if (activeJobs[next.id] === job) activeJobs.remove(next.id) }
+                    synchronized(lock) {
+                        if (activeJobs[next.id] === job) activeJobs.remove(next.id)
+                    }
                     processQueue()
                 }
                 toStart.add(job)
             }
             scheduleAnotherBatch =
-                activeJobs.size < _settings.value.maxConcurrent &&
-                    _downloadQueue.value.any { it.status == TaskStatus.QUEUED && it.id !in activeJobs }
+                _downloadQueue.value.any {
+                    it.status == TaskStatus.QUEUED && it.id !in activeJobs
+                }
         }
         toStart.forEach { it.start() }
         if (scheduleAnotherBatch) {

@@ -96,6 +96,27 @@ class MainActivity : ComponentActivity() {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
+                val googlePlayServicesSignInLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    googleSession.completeGooglePlayServicesSignIn(result.data)
+                        .onSuccess {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Signed in with Google",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .onFailure {
+                            if (result.resultCode != RESULT_CANCELED) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    it.message ?: "Google sign-in failed",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                }
                 val downloadQueue by repository.downloadQueue.collectAsStateWithLifecycle()
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
@@ -195,11 +216,15 @@ class MainActivity : ComponentActivity() {
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
-                    } else {
+                    } else if (GoogleAccountSession.credentialManagerConfigured(BuildConfig.GOOGLE_WEB_CLIENT_ID)) {
                         lifecycleScope.launch {
                             googleSession.signIn(this@MainActivity, BuildConfig.GOOGLE_WEB_CLIENT_ID)
                                 .onSuccess {
-                                    Toast.makeText(this@MainActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Signed in with Google",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                                 .onFailure {
                                     Toast.makeText(
@@ -209,6 +234,10 @@ class MainActivity : ComponentActivity() {
                                     ).show()
                                 }
                         }
+                    } else {
+                        googlePlayServicesSignInLauncher.launch(
+                            googleSession.googlePlayServicesSignInIntent(this@MainActivity)
+                        )
                     }
                 }
 

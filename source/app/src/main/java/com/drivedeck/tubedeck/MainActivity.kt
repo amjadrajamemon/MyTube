@@ -882,8 +882,19 @@ class MainActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
+                pipChoicePending = false
                 playbackBackCoordinator.forceChooserVisible()
                 showPlaybackExitChoices = true
+                return
+            }
+            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
+                pipChoicePending = false
+                handoffActivePlaybackToAudio()
+                return
+            }
+            PlaybackPipActions.ACTION_CLOSE -> {
+                pipChoicePending = false
+                closeActivePlaybackCompletely()
                 return
             }
         }

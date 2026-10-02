@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.data.model.DownloadMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
@@ -46,6 +47,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val ytDlpState by YtDlpUpdateManager.state.collectAsState()
+    val youtubeOauthRegistration = remember {
+        GoogleAccountSession.get(context).oauthRegistrationInfo()
+    }
     LaunchedEffect(Unit) {
         YtDlpUpdateManager.scheduleWeekly(context)
         YtDlpUpdateManager.refreshState(context)
@@ -312,6 +316,26 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            SettingsCard(title = "YouTube Account Connection") {
+                Text(
+                    "MyTube only reports an account as connected after Google grants YouTube OAuth access and the YouTube Data API verifies it.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    youtubeOauthRegistration,
+                    color = TubeDeckTextPrimary,
+                    fontSize = 10.5.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Google Cloud must register this exact Android package/signing SHA-1 and enable YouTube Data API v3. ARM64 and Universal use the same identity.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 10.sp
+                )
             }
 
             SettingsCard(title = "Download Engine") {

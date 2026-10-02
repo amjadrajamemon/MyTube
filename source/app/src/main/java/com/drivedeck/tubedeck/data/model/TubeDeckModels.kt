@@ -10,6 +10,25 @@ enum class PlayerMode(val label: String) {
     NATIVE("Native ExoPlayer")
 }
 
+enum class ThemePreset(
+    val label: String,
+    val accentArgb: Long,
+    val backgroundArgb: Long,
+    val textArgb: Long
+) {
+    GLASS_CYAN("Glass Cyan", 0xFF63E6FFL, 0xFF0A1018L, 0xFFF7FBFFL),
+    NEON_PULSE("Neon Pulse", 0xFF00FFB7L, 0xFF05060AL, 0xFFFFFFFFL),
+    HD_BLACK("HD Black", 0xFF00D2FFL, 0xFF080B11L, 0xFFFFFFFFL),
+    OCEAN_DEEP("Ocean Deep", 0xFF40C4FFL, 0xFF061A2BL, 0xFFEAF7FFL),
+    AMOLED("AMOLED", 0xFF00E5FFL, 0xFF000000L, 0xFFFFFFFFL),
+    AURORA("Aurora", 0xFF7CFFB2L, 0xFF0B1020L, 0xFFF3FFF8L),
+    SUNSET("Sunset", 0xFFFF8A65L, 0xFF20100FL, 0xFFFFF4EEL),
+    ROYAL_PURPLE("Royal Purple", 0xFFB388FFL, 0xFF140D22L, 0xFFF9F4FFL),
+    FOREST("Forest", 0xFF69F0AEL, 0xFF081A13L, 0xFFF0FFF7L),
+    ICE_BLUE("Ice Blue", 0xFF90CAF9L, 0xFF0B1520L, 0xFFF5FAFFL),
+    CUSTOM("Custom", 0xFF00D2FFL, 0xFF080B11L, 0xFFFFFFFFL)
+}
+
 enum class TaskStatus {
     QUEUED,
     DOWNLOADING,

@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
         onBackPressedDispatcher.addCallback(this, legacyPlaybackBackCallback)
+        YoutubeStreamResolver.prewarm()
         YtDlpUpdateManager.scheduleWeekly(applicationContext)
         inboundUrl = intent?.dataString?.takeIf { YoutubeUrls.videoId(it) != null || YoutubeUrls.playlist(it) }
         openDownloadsQueueRequest = intent?.getBooleanExtra("open_downloads_queue", false) == true

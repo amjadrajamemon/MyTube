@@ -2459,7 +2459,8 @@ private fun HoldSeekButton(
     contentDescription: String,
     direction: Int,
     exoPlayer: ExoPlayer,
-    duration: Long
+    duration: Long,
+    seekIntervalSeconds: Int
 ) {
     var holding by remember { mutableStateOf(false) }
     LaunchedEffect(holding) {
@@ -2471,10 +2472,10 @@ private fun HoldSeekButton(
     }
     IconButton(
         onClick = {
-            val target = exoPlayer.currentPosition + direction * 10_000L
+            val target = exoPlayer.currentPosition + direction * seekIntervalSeconds.coerceIn(5, 60) * 1_000L
             exoPlayer.seekTo(target.coerceIn(0L, duration.coerceAtLeast(0L)))
         },
-        modifier = Modifier.size(44.dp).pointerInput(direction, duration) {
+        modifier = Modifier.size(44.dp).pointerInput(direction, duration, seekIntervalSeconds) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val releasedQuickly = withTimeoutOrNull(450L) { waitForUpOrCancellation() } != null
@@ -2495,19 +2496,120 @@ private fun HoldSeekButton(
 }
 
 @Composable
+private fun SeekPreviewThumbnail(
+    fraction: Float,
+    durationMs: Long,
+    storyboard: YoutubeStreamResolver.PreviewStoryboard?,
+    chapters: List<YoutubeStreamResolver.Chapter>,
+    fallbackThumbnailUrl: String
+) {
+    val normalized = fraction.coerceIn(0f, 1f)
+    val positionMs = (normalized * durationMs.coerceAtLeast(0L)).toLong()
+    val previewWidth = 160.dp
+    val storyboardHeight = storyboard?.let {
+        (160f * it.frameHeight.toFloat() / it.frameWidth.coerceAtLeast(1).toFloat()).dp
+    } ?: 90.dp
+    val previewHeight = storyboardHeight.coerceIn(76.dp, 110.dp)
+    val chapter = chapters.lastOrNull { it.startTimeSeconds * 1_000L <= positionMs }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            color = Color.Black.copy(alpha = .92f),
+            shape = RoundedCornerShape(10.dp),
+            tonalElevation = 4.dp
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(previewWidth, previewHeight)
+                        .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                        .background(Color.Black)
+                ) {
+                    if (storyboard != null && storyboard.urls.isNotEmpty()) {
+                        val frameDuration = storyboard.durationPerFrameMs.coerceAtLeast(1)
+                        val frameNumber = (positionMs / frameDuration)
+                            .toInt()
+                            .coerceIn(0, (storyboard.totalCount - 1).coerceAtLeast(0))
+                        val framesPerPage = (storyboard.framesPerPageX * storyboard.framesPerPageY).coerceAtLeast(1)
+                        val page = (frameNumber / framesPerPage).coerceIn(0, storyboard.urls.lastIndex)
+                        val relative = frameNumber % framesPerPage
+                        val column = relative % storyboard.framesPerPageX.coerceAtLeast(1)
+                        val row = relative / storyboard.framesPerPageX.coerceAtLeast(1)
+                        val sheetWidth = previewWidth * storyboard.framesPerPageX.toFloat()
+                        val sheetHeight = previewHeight * storyboard.framesPerPageY.toFloat()
+
+                        AsyncImage(
+                            model = storyboard.urls[page],
+                            contentDescription = "Seek preview",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier
+                                .requiredSize(sheetWidth, sheetHeight)
+                                .offset(
+                                    x = (-previewWidth.value * column).dp,
+                                    y = (-previewHeight.value * row).dp
+                                )
+                        )
+                    } else if (fallbackThumbnailUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = fallbackThumbnailUrl,
+                            contentDescription = "Seek preview",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.width(previewWidth).padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        formatDuration(positionMs),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
+                    chapter?.title?.takeIf { it.isNotBlank() }?.let { title ->
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            title,
+                            color = Color.White.copy(alpha = .82f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 9.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+    }
+}
+
+@Composable
 private fun CompactSeekBar(
     progress: Float,
-    onSeek: (Float) -> Unit
+    chapterFractions: List<Float> = emptyList(),
+    sponsorRanges: List<Pair<Float, Float>> = emptyList(),
+    onScrubChange: (Float?) -> Unit,
+    onSeekFinished: (Float) -> Unit
 ) {
     val normalized = progress.coerceIn(0f, 1f)
     Canvas(
         modifier = Modifier.fillMaxWidth()
-            .height(16.dp)
-            .pointerInput(Unit) {
+            .height(20.dp)
+            .pointerInput(chapterFractions, sponsorRanges) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    var latest = 0f
                     fun update(x: Float) {
-                        if (size.width > 0) onSeek((x / size.width.toFloat()).coerceIn(0f, 1f))
+                        if (size.width > 0) {
+                            latest = (x / size.width.toFloat()).coerceIn(0f, 1f)
+                            onScrubChange(latest)
+                        }
                     }
                     update(down.position.x)
                     down.consume()
@@ -2518,6 +2620,8 @@ private fun CompactSeekBar(
                         change.consume()
                         if (!change.pressed) break
                     }
+                    onSeekFinished(latest)
+                    onScrubChange(null)
                 }
             }
     ) {
@@ -2530,6 +2634,28 @@ private fun CompactSeekBar(
             strokeWidth = 3.dp.toPx(),
             cap = StrokeCap.Round
         )
+        sponsorRanges.forEach { range ->
+            val startX = size.width * range.first.coerceIn(0f, 1f)
+            val endX = size.width * range.second.coerceIn(0f, 1f)
+            if (endX > startX) {
+                drawLine(
+                    color = TubeDeckAccentMint,
+                    start = Offset(startX, y),
+                    end = Offset(endX, y),
+                    strokeWidth = 5.dp.toPx(),
+                    cap = StrokeCap.Butt
+                )
+            }
+        }
+        chapterFractions.forEach { fraction ->
+            val x = size.width * fraction.coerceIn(0f, 1f)
+            drawLine(
+                color = Color.White.copy(alpha = .82f),
+                start = Offset(x, y - 5.dp.toPx()),
+                end = Offset(x, y + 5.dp.toPx()),
+                strokeWidth = 1.5.dp.toPx()
+            )
+        }
         drawLine(
             color = TubeDeckAccentCyan,
             start = Offset(0f, y),

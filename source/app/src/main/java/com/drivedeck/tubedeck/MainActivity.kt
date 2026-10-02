@@ -397,15 +397,16 @@ class MainActivity : ComponentActivity() {
                                     onNativeVideo = { url ->
                                         val id = repository.extractVideoId(url)
                                         if (id != null && currentScreen == ActiveScreen.BROWSER) {
-                                            val stableReturnUrl = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
-                                            currentUrl = stableReturnUrl
                                             webViewInstance?.stopLoading()
-                                            if (webViewInstance?.url != stableReturnUrl) webViewInstance?.loadUrl(stableReturnUrl)
-                                            launchNativePlayer(OfflineMedia(
-                                                id = UUID.randomUUID().toString(), title = "Now Playing",
-                                                videoId = id, thumbnailUrl = repository.getVideoThumbnail(id),
-                                                mediaUri = url
-                                            ))
+                                            launchNativePlayer(
+                                                OfflineMedia(
+                                                    id = UUID.randomUUID().toString(),
+                                                    title = "Now Playing",
+                                                    videoId = id,
+                                                    thumbnailUrl = repository.getVideoThumbnail(id),
+                                                    mediaUri = url
+                                                )
+                                            )
                                         }
                                     },
                                     onCanGoBackChanged = { canGoBack = it },
@@ -593,6 +594,7 @@ class MainActivity : ComponentActivity() {
         lastNativeLaunchAt = now
 
         val intent = Intent(this, NativePlayerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(NativePlayerActivity.EXTRA_MEDIA_ID, media.id)
             putExtra(NativePlayerActivity.EXTRA_TITLE, media.title)
             putExtra(NativePlayerActivity.EXTRA_VIDEO_ID, media.videoId)

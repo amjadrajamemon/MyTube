@@ -147,7 +147,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "yt-dlp engine") {
+            SettingsCard(title = "Download Engine") {
                 Text(
                     "Version: " + (ytDlpState.version ?: "Bundled / not initialized"),
                     color = Color.White,
@@ -187,37 +187,21 @@ fun SettingsScreen(
                     } else {
                         Icon(Icons.Default.SystemUpdate, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Check/update yt-dlp now")
+                        Text("Check/update Download Engine")
                     }
                 }
             }
 
             SettingsCard(title = "Download folder") {
-                Text("Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "App storage / $downloadDir"}", color = Color.White, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { folderPicker.launch(null) }) { Text("Choose folder") }
-                    if (downloadTreeUri != null) {
-                        TextButton(onClick = { downloadTreeUri = null; folderError = null }) { Text("Use app storage") }
-                    }
+                Text(
+                    "Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "No folder selected"}",
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+                OutlinedButton(onClick = { folderPicker.launch(null) }) {
+                    Text(if (downloadTreeUri == null) "Choose folder" else "Change folder")
                 }
                 folderError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                Text("App storage folder name", color = Color.LightGray, fontSize = 12.sp)
-                OutlinedTextField(
-                    value = downloadDir,
-                    onValueChange = { downloadDir = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = TubeDeckAccentCyan,
-                        unfocusedBorderColor = Color.DarkGray
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
-                if (!downloadDir.matches(Regex("[a-zA-Z0-9 _-]{1,40}"))) {
-                    Text("Use 1–40 letters, numbers, spaces, _ or -.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Parallel downloads", Modifier.weight(1f), color = Color.White)
                     OutlinedTextField(
@@ -287,7 +271,7 @@ fun SettingsScreen(
                     )
                     onClose()
                 },
-                enabled = downloadDir.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) && parallelCount != null && parallelCount >= 1 && folderError == null,
+                enabled = downloadTreeUri != null && parallelCount != null && parallelCount >= 1 && folderError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(54.dp)

@@ -73,7 +73,11 @@ fun TopNavBar(
                 // Only Nav controls on the right.
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                    GoogleAccountButton(
+                        account = googleAccount,
+                        onClick = onGoogleAccountClick,
+                        showLabelWhenSignedOut = true
+                    )
                     IconButton(onClick = onBack, enabled = canGoBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
                     }

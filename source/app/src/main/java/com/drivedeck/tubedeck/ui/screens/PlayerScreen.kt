@@ -396,6 +396,8 @@ fun NativeExoPlayer(
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
+    var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
+    var autoStableSamples by remember(media.id) { mutableIntStateOf(0) }
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
@@ -420,12 +422,15 @@ fun NativeExoPlayer(
                     .build()
             }
         }
+        // Fast first frame, but keep a deep reservoir once playback is running. The small
+        // playback/rebuffer thresholds avoid long blank waits on weak links; the 90 s ceiling
+        // gives unstable networks room to download ahead whenever bandwidth is temporarily good.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                15_000,
-                60_000,
-                650,
-                1_750
+                18_000,
+                90_000,
+                500,
+                1_250
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -682,6 +687,42 @@ fun NativeExoPlayer(
             throw cancel
         } catch (t: Throwable) {
             resolveError = "Could not refresh video after returning to MyTube: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+
+    LaunchedEffect(firstFrameRendered, autoQuality, resolved) {
+        if (!firstFrameRendered || !autoQuality || !youtubeVideo) return@LaunchedEffect
+        // SmartTube-style resilience for extracted progressive/DASH URLs: continuously reassess
+        // the sustainable representation. Downshifts are fast; upgrades require repeated stable
+        // samples so fluctuating mobile links do not bounce between qualities.
+        while (isActive && autoQuality) {
+            delay(3_000)
+            val source = resolved ?: continue
+            val heights = source.options.map { it.height }.filter { it > 0 }
+            if (heights.isEmpty()) continue
+
+            val recommended = chooseAutoHeight(context, heights, bandwidthMeter.bitrateEstimate)
+            val current = selectedHeight.takeIf { it > 0 } ?: recommended
+            val now = android.os.SystemClock.elapsedRealtime()
+            val bufferedAheadMs = (exoPlayer.bufferedPosition - exoPlayer.currentPosition).coerceAtLeast(0L)
+
+            val urgentDownshift = recommended < current &&
+                (bufferedAheadMs < 8_000L || exoPlayer.playbackState == Player.STATE_BUFFERING)
+            val stableUpgrade = recommended > current && bufferedAheadMs >= 20_000L
+
+            if (stableUpgrade) autoStableSamples += 1 else autoStableSamples = 0
+
+            val canSwitch = now - lastAutoSwitchMs >= 12_000L
+            if (canSwitch && (urgentDownshift || autoStableSamples >= 3)) {
+                loadResolvedStream(
+                    sourceMedia = source,
+                    requestedHeight = recommended,
+                    autoSelected = true,
+                    preservePosition = true
+                )
+                lastAutoSwitchMs = now
+                autoStableSamples = 0
+            }
         }
     }
 

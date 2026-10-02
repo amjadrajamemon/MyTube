@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -106,16 +108,41 @@ class NativePlayerActivity : ComponentActivity() {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
+                val googlePlayServicesSignInLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    googleSession.completeGooglePlayServicesSignIn(result.data)
+                        .onSuccess {
+                            Toast.makeText(
+                                this@NativePlayerActivity,
+                                "Signed in with Google",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .onFailure {
+                            if (result.resultCode != RESULT_CANCELED) {
+                                Toast.makeText(
+                                    this@NativePlayerActivity,
+                                    it.message ?: "Google sign-in failed",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
-                    } else {
+                    } else if (GoogleAccountSession.credentialManagerConfigured(BuildConfig.GOOGLE_WEB_CLIENT_ID)) {
                         lifecycleScope.launch {
                             googleSession.signIn(this@NativePlayerActivity, BuildConfig.GOOGLE_WEB_CLIENT_ID)
                                 .onSuccess {
-                                    Toast.makeText(this@NativePlayerActivity, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        this@NativePlayerActivity,
+                                        "Signed in with Google",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                                 .onFailure {
                                     Toast.makeText(
@@ -125,6 +152,10 @@ class NativePlayerActivity : ComponentActivity() {
                                     ).show()
                                 }
                         }
+                    } else {
+                        googlePlayServicesSignInLauncher.launch(
+                            googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
+                        )
                     }
                 }
 

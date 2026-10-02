@@ -42,6 +42,12 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             }
             ContextCompat.startForegroundService(context, intent)
         }
+
+        fun stop(context: Context) {
+            context.applicationContext.stopService(
+                Intent(context.applicationContext, BackgroundAudioPlaybackService::class.java)
+            )
+        }
     }
 
     private lateinit var player: ExoPlayer
@@ -111,6 +117,10 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 }
 
 object BackgroundAudioController {
+    fun stop(context: Context) {
+        BackgroundAudioPlaybackService.stop(context)
+    }
+
     suspend fun handoff(
         context: Context,
         sourceUrl: String,

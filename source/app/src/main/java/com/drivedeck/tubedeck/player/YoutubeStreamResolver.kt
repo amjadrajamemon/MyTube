@@ -56,6 +56,12 @@ object YoutubeStreamResolver {
     private const val RESOLUTION_CACHE_TTL_MS = 5 * 60 * 1000L
     private const val MAX_RESOLUTION_CACHE_ENTRIES = 12
 
+    fun prewarm() {
+        resolutionScope.launch {
+            ensureInitialized()
+        }
+    }
+
     @Synchronized
     private fun ensureInitialized() {
         if (!initialized.get()) {

@@ -26,17 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.3.11 dual-APK source
+      - name: Verify v1.3.12 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.3.11"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.3.12"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.3.11 ARM64 + Universal source tree."
+          echo "Building MyTube v1.3.12 ARM64 + Universal source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -126,10 +126,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.11-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.11-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.11-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -139,114 +139,61 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.3.11-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.11-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.3.11-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.11-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.11-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.11-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.3.11 dual APK release
+      - name: Publish v1.3.12 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.3.11-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.3.11.
+          TAG="v1.3.12-dual-arm64-universal-debug"
+          NOTES="MyTube r6.5 LiveDub v1.3.12.
 
-          Two APK editions are published for every release:
-          - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and Download Engine.
-          - Universal: includes arm64-v8a, armeabi-v7a, x86 and x86_64 native support from compatible bundled components, intended for broader/older/rooted-device compatibility.
-          - On non-ARM64 devices the current Whisper native AAR is not available, so MyTube disables native Whisper safely and retains caption-based dubbing instead of crashing.
-          - Minimum Android API is 24 (Android 7.0), matching the maintained Download Engine runtime requirement.
-          - No root-detection or root-blocking logic is used.
-          - System Back prioritizes PiP for active video playback in both native and web modes.
-          - The ExoPlayer quality control opens its own Auto/all-quality chooser, not Player Settings.
-          - Comments use NewPipe pagination with updated Download Engine fallback.
-          - Google account state is only set after a real Google credential succeeds; Credential Manager is used when GOOGLE_WEB_CLIENT_ID is supplied, with a real Google Play Services account-sign-in fallback when that build secret is absent.
-          - Weekly automatic and manual Download Engine updates remain enabled.
-          - The auxiliary speed/quality/Zoom/fullscreen/CC/Dub row is moved down beside the seek bar and away from the center transport controls.
-          - Playlist discovery is now YouTube-context-first, modeled on the Watch Next architecture used by clients such as SmartTube.
-          - MyTube reads YouTube's current InnerTube key/client version from the watch page and calls /youtubei/v1/next for the active video.
-          - Exact server playlist IDs/panels are offered first and downloaded through the canonical playlist URL with full NewPipe pagination.
-          - YouTube Watch Next related items are the primary source for adjacent/related episodes.
-          - Strict same-channel/title episode matching is only a fallback/expansion source.
-          - Generic playlist search is last priority and rejects weak/random/trending matches.
-          - Duplicate uploads of the same episode number collapse to the strongest contextual match.
-          - If YouTube context and strict matching cannot verify a collection, MyTube shows none rather than substituting a random Mix.
-          - Download Queue now supports Select all/none, Pause all, Resume/retry all, Delete all, Pause selected, Resume/retry selected and Delete selected.
-          - Recoverable network/CDN/extractor interruptions auto-retry indefinitely with bounded 3/5/10/20/30/60-second backoff until success or explicit user pause/delete.
-          - Partial files are retained and HTTP Range resume is used when supported; each retry re-resolves fresh YouTube stream URLs.
-          - Interrupted/failed legacy queue entries are re-queued automatically after app/process restart.
-          - A live Android notification reports queued/active/finished/paused/failed/retrying counts, retry totals, aggregate progress, elapsed time and ETA when calculable.
-          - The parallel-download setting, prompt and numeric ceiling have been removed completely; queued items are scheduled without an app-imposed simultaneous-download limit.
-          - Android system Back is intercepted at Activity level before WebView/history navigation while video is active.
-          - One Back starts PiP promptly after a 180 ms entry delay; PiP timing is no longer tied to the longer consecutive-Back window.
-          - A second Back is recognized naturally within a 900 ms consecutive-Back window and leads to the Close / Audio-only flow without forcing the first PiP transition to wait that long.
-          - Audio-only hands the current video/position to a MediaSession foreground service so playback can continue after the app task is removed.
-          - Portrait playback now shows a separate More episodes shelf alongside the existing Up next feed.
-          - The episode shelf reuses the downloader's strict YouTube Watch Next/playlist discovery and expands canonical playlists with full pagination when available.
-          - Episode cards use a compact horizontal carousel while Up next rows use smaller thumbnails/fonts so both sections remain visible and readable in portrait.
-          - Fixed Android system Back regression by removing nested player handlers that paused/closed playback before the Activity PiP/double-Back controller could run.
-          - Normal playback Back is now owned by the Activity state machine; transient player UI Back still closes Settings, Comments, Description or fullscreen first.
-          - Added a compact Description control beside Comments in portrait playback, showing channel, views/date metadata and the full extracted video description.
-          - Description rendering now preserves YouTube HTML links, makes URLs/emails tappable and selectable/copyable, and restores real #hashtag presentation with clickable hashtag links.
-          - NativePlayerActivity now uses one AndroidX Back dispatcher path across gesture, 3-button and legacy navigation so system Back cannot pop the player before the PiP/double-Back state machine runs.
-          - Native PiP remains a dedicated Activity above the preserved search/browser Activity, allowing search results to remain underneath the PiP window instead of being destroyed.
-          - Removed redundant Google-account/settings helper paragraphs and other unnecessary explanatory copy while keeping actionable status and validation text.
-          - Removed the stale 32-download Settings validation cap so Save accepts any positive concurrency value, matching the downloader engine.
-          - Consecutive Back detection now uses a shared tested 900 ms recognition window while PiP itself begins after only 180 ms.
-          - MainActivity now has one exclusive Back owner while media is active, eliminating competing Compose/Activity callbacks around PiP.
-          - Native related-video relaunch, resolved-title propagation, watch-history/sponsor request duplication, and episode discovery title matching were tightened.
-          - Download resume/finalization, permanent-vs-recoverable failure handling, retry persistence, stale partial cleanup, Android data-sync timeout recovery, and foreground-service startup were hardened.
-          - Download notification navigation, paused-state dismissal, queue batching, and notification permission timing were corrected without reintroducing a concurrency ceiling.
-          - WebView popup behavior, polling, HTTPS/mixed-content policy, Safe Browsing, and local app-data backup exposure were hardened.
-          - Background audio no longer restarts as an idle zombie service after process recreation.
-          - CI now runs both ABI unit-test suites plus Android lint before assembling and ABI-verifying both APKs.
-          - Portrait Download and Playlist/Episodes actions now remain permanently in the same horizontal action row as Comments and Description.
-          - Close / Audio-only chooser now respects Android navigation-bar and IME safe-area insets, preventing overlap with 3-button or gesture navigation.
-          - Playback Back sequence is now: single Back to PiP, consecutive Back to the Close/Audio-only chooser, and another Back while the chooser is visible exits the MyTube task.
-          - Close exits MyTube completely; Audio-only exits the UI task only after handing playback to the foreground MediaSession service.
-          - Download destinations are now user-selected folders only; the app-storage destination option and folder-name field have been removed from Settings.
-          - All user-facing Download Engine wording has been renamed to Download Engine.
-          - NativePlayerActivity is now single-task and replaces media in-place, preventing a previous PiP video from continuing alongside a newly selected video.
-          - Browser native-video interception now removes consumed /watch navigation from the Back path instead of reloading search/watch pages in a loop.
-          - After Back enters PiP and the PiP is expanded again, the next Back shows Close / Audio-only directly; rapid double-Back remains supported.
-          - Navigation is now coordinated by a logical MyTube route history rather than WebView history, with deterministic Back/Forward restoration across Home, Search/Browser, Downloads, Settings and Player.
-          - Native /watch URLs are excluded from logical history, preventing video -> search -> same video navigation loops.
-          - New navigation after going Back clears obsolete Forward history, matching normal browser behavior.
-          - MainActivity and NativePlayerActivity now share one unit-tested playback Back state machine for single Back, rapid double Back, PiP expansion, exit chooser and final app exit.
-          - Any PiP session that is expanded back to full player arms the next Back to show Close / Audio-only directly.
-          - Android system PiP now also exposes explicit Close and Audio-only actions so users are not dependent on Back delivery while the PiP window owns focus.
-          - Fullscreen WebView owns Back exclusively while fullscreen is active; normal app Back resumes only after fullscreen closes.
-          - Fixed the PiP second-Back regression: Back while actually in system PiP now requests foreground expansion before the Close / Audio-only chooser is marked visible.
-          - The exit chooser is never considered visible only inside the tiny PiP surface; it is shown after the existing player Activity is brought forward.
-          - The Close / Audio-only chooser now has an 800 ms settle guard so duplicated/resumed Back callbacks cannot immediately advance to app exit.
-          - Added a PiP Options action that expands the current player and opens Close / Audio-only as a fallback on devices that consume Back while PiP owns focus.
-          - Third Back exits only after the chooser has genuinely appeared and the settle guard has elapsed; Close and Audio-only buttons remain explicit alternatives.
-          - Back timing is decoupled: PiP starts after 180 ms, consecutive Back recognition remains open for 900 ms, and the exit chooser is protected for 800 ms before a later Back may exit.
-          - Removed the Parallel downloads setting, validation prompt, persisted maxConcurrent value and scheduler ceiling; the queue now schedules all pending items without an app-imposed concurrency limit.
-          - Google sign-in no longer reports the build unsupported when GOOGLE_WEB_CLIENT_ID is absent; it falls back to a genuine Google Play Services account chooser/profile result.
-          - Credential Manager remains the primary Google Identity path whenever a Web OAuth client ID is injected at build time.
-          - Native playback startup is prewarmed on app launch and stream extraction begins at video tap time instead of waiting for the player screen to finish opening.
-          - Concurrent requests for the same video now share one in-flight extractor result, with a short-lived LRU resolution cache to avoid duplicate StreamInfo.getInfo work.
-          - Media3 recovery bypasses the resolver cache and forces fresh signed stream URLs after network/CDN playback failures.
-          - Initial Auto playback prefers a suitable progressive audio+video stream for a faster first frame while all extracted higher resolutions remain available in the quality chooser.
-          - ExoPlayer startup buffering is reduced to 650 ms with a larger 1.75 s rebuffer threshold for a faster start without making resumed playback equally aggressive.
-          - Playback now records tap-to-resolve, resolve-to-prepare and prepare-to-first-frame timing in the MyTubeStartup diagnostic log so startup optimization is measured rather than guessed.
-          - After the first frame is rendered, MyTube quietly prefetches only the top two related-video candidates so likely next-video taps can reuse the short-lived resolver cache without competing with current startup.
-          - The download queue remains unrestricted and has no user-facing parallel-download setting, while an invisible adaptive governor chooses safe active-transfer concurrency from RAM, CPU, power saver, thermal pressure and metered-network state.
-          - Adaptive download admission is covered by unit tests and never cancels already-running transfers when device conditions change; it simply admits fewer new heavy jobs until resources recover.
-          - Unit tests, both APK builds and ABI verification must pass before release publication."
+          Lifecycle / navigation corrections:
+          - Playback Back is deterministic and never silently decides the final playback mode.
+          - First Back enters PiP; returning from PiP arms the explicit Close / Audio / PiP chooser.
+          - The chooser does not auto-dismiss, and later Back callbacks cannot silently close the app or switch to audio-only.
+          - PiP now exposes an Options action that returns to the existing player instead of invoking Close/Audio directly.
+          - Leaving the in-app Player route is a hard ExoPlayer boundary: the player state is cleared instead of remaining attached behind the previous page.
+          - Explicit Close stops the foreground player plus any prior background-audio MediaSession before removing the task.
+          - Audio-only is the only action allowed to intentionally keep playback alive after the UI task closes.
+          - Native playback sessions carry a process-lifetime ownership ID so Android task/history restoration cannot resurrect an old recent-video Intent after a real close.
+          - Manual onUserLeaveHint auto-PiP has been removed so task dismissal cannot be mistaken for an intentional PiP transition.
+
+          Performance controls:
+          - Main Settings adds Auto-load Episodes and Auto-load Up Next.
+          - Both switches default OFF for faster startup and lower extractor/network/CPU contention.
+          - With Auto-load Episodes off, episode/playlist discovery is not started.
+          - With Auto-load Up Next off, related-video presentation and post-first-frame related prefetch are suppressed.
+          - Existing playback resolver prewarm, in-flight sharing, short-lived cache and fast progressive startup remain enabled.
+          - Download queue remains unrestricted while adaptive resource admission protects RAM/CPU/thermal/network resources.
+
+          YouTube account authorization:
+          - Removed the old profile-only Google fallback that could look signed in without YouTube authorization.
+          - Account state is now set only after Google AuthorizationClient grants youtube.readonly and an authenticated YouTube Data API request succeeds.
+          - Prior authorization is restored silently when Google can do so without user interaction.
+          - If OAuth/YouTube API configuration is missing, MyTube reports the real configuration error instead of showing a dummy signed-in state.
+          - Google Cloud must contain an Android OAuth client matching this app package/signing SHA-1 and have YouTube Data API enabled.
+
+          Build gates:
+          - Unit tests for ARM64 and Universal editions.
+          - Android lint for both editions.
+          - ARM64 and Universal APK assembly.
+          - ABI verification before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.3.11-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.3.11-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.3.11-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.3.11-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.3.11-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.3.11-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -254,7 +201,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.3.11 ARM64 + Universal Debug" \
+              --title "MyTube v1.3.12 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

@@ -118,27 +118,17 @@ class GoogleAccountSession private constructor(context: Context) {
     fun isIdentityConfigured(): Boolean = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
-        if (!isIdentityConfigured()) {
-            setConfigurationRequired("Google client ID missing")
-            return Result.success(false)
-        }
-
         val identity = loadPersistedIdentity()
-        if (identity == null || identity.email.isBlank()) {
-            clearRuntimeSession()
-            return Result.success(false)
-        }
-
         _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
         pendingIdentity = identity
         return runCatching {
+            val builder = AuthorizationRequest.builder()
+                .setRequestedScopes(YOUTUBE_SCOPES)
+            if (!identity?.email.isNullOrBlank()) {
+                builder.setAccount(Account(identity!!.email, "com.google"))
+            }
             val result = Identity.getAuthorizationClient(appContext)
-                .authorize(
-                    AuthorizationRequest.builder()
-                        .setRequestedScopes(YOUTUBE_SCOPES)
-                        .setAccount(Account(identity.email, "com.google"))
-                        .build()
-                )
+                .authorize(builder.build())
                 .await()
 
             if (result.hasResolution()) {
@@ -155,24 +145,23 @@ class GoogleAccountSession private constructor(context: Context) {
     suspend fun beginYoutubeAuthorization(
         activity: Activity
     ): Result<YoutubeAuthorizationOutcome> {
-        if (!isIdentityConfigured()) {
-            val error = configurationError("Google client ID missing")
-            recordAuthorizationFailure(error)
-            return Result.failure(error)
-        }
-
         _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
         return runCatching {
-            val identity = signInGoogleIdentity(activity)
-            pendingIdentity = identity
+            val builder = AuthorizationRequest.builder()
+                .setRequestedScopes(YOUTUBE_SCOPES)
+
+            if (isIdentityConfigured()) {
+                val identity = signInGoogleIdentity(activity)
+                pendingIdentity = identity
+                builder.setAccount(Account(identity.email, "com.google"))
+            } else {
+                // AuthorizationClient remains a genuine Google/YouTube account connection on
+                // Android. The Android OAuth client (package + signing SHA-1) is authoritative.
+                builder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
+            }
 
             val result = Identity.getAuthorizationClient(activity)
-                .authorize(
-                    AuthorizationRequest.builder()
-                        .setRequestedScopes(YOUTUBE_SCOPES)
-                        .setAccount(Account(identity.email, "com.google"))
-                        .build()
-                )
+                .authorize(builder.build())
                 .await()
 
             if (result.hasResolution()) {
@@ -376,25 +365,7 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     private fun initialStatus(): YoutubeAuthorizationStatus =
-        if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-            YoutubeAuthorizationStatus(
-                YoutubeAuthorizationState.CONFIGURATION_REQUIRED,
-                "Google client ID missing"
-            )
-        } else {
-            YoutubeAuthorizationStatus()
-        }
-
-    private fun setConfigurationRequired(message: String) {
-        clearRuntimeSession()
-        _status.value = YoutubeAuthorizationStatus(
-            YoutubeAuthorizationState.CONFIGURATION_REQUIRED,
-            message
-        )
-    }
-
-    private fun configurationError(message: String): IllegalStateException =
-        IllegalStateException("$message • ${oauthRegistrationInfo()}")
+        YoutubeAuthorizationStatus()
 
     private fun recordAuthorizationFailure(error: Throwable) {
         val decorated = decorateAuthorizationError(error)

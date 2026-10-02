@@ -82,6 +82,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
+            putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
+            putLong("themeAccentArgb", next.themeAccentArgb)
+            putLong("themeBackgroundArgb", next.themeBackgroundArgb)
+            putLong("themeTextArgb", next.themeTextArgb)
             apply()
         }
         if (previous.autoLoadUpNext && !next.autoLoadUpNext) {
@@ -113,7 +117,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
         blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
         pipEnabled = prefs.getBoolean("pipEnabled", true),
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
-        autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false)
+        autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
+        fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
+        themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
+        themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),
+        themeTextArgb = prefs.getLong("themeTextArgb", 0xFFFFFFFFL)
     )
 
     private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T): T =

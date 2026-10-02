@@ -26,17 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.3.12 dual-APK source
+      - name: Verify v1.3.13 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.3.12"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.3.13"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.3.12 ARM64 + Universal source tree."
+          echo "Building MyTube v1.3.13 ARM64 + Universal source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -118,6 +118,26 @@ jobs:
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86_64/'
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86/'
 
+      - name: Report OAuth registration identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          KEYSTORE="$HOME/.android/debug.keystore"
+          test -s "$KEYSTORE"
+          SHA1="$(keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android | awk -F': ' '/SHA1:/{print $2; exit}')"
+          test -n "$SHA1"
+          {
+            echo "MyTube Google / YouTube OAuth registration identity"
+            echo "Application ID: com.aistudio.tubedeck.kxmvd"
+            echo "Signing SHA-1: $SHA1"
+            echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
+            echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.3.13-OAuth-Registration.txt"
+          echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: `com.aistudio.tubedeck.kxmvd`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-1: `$SHA1`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage both APKs and complete source
         shell: bash
         run: |
@@ -126,10 +146,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.13-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.13-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.13-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -139,61 +159,75 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.3.13-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.13-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.3.13-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.13-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.13-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.13-Complete-AndroidStudio-Source.zip.sha256
+          test -s dist/MyTube-v1.3.13-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.3.12 dual APK release
+      - name: Publish v1.3.13 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.3.12-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.3.12.
+          TAG="v1.3.13-dual-arm64-universal-debug"
+          NOTES="MyTube r6.5 LiveDub v1.3.13.
 
-          Lifecycle / navigation corrections:
-          - Playback Back is deterministic and never silently decides the final playback mode.
-          - First Back enters PiP; returning from PiP arms the explicit Close / Audio / PiP chooser.
-          - The chooser does not auto-dismiss, and later Back callbacks cannot silently close the app or switch to audio-only.
-          - PiP now exposes an Options action that returns to the existing player instead of invoking Close/Audio directly.
-          - Leaving the in-app Player route is a hard ExoPlayer boundary: the player state is cleared instead of remaining attached behind the previous page.
-          - Explicit Close stops the foreground player plus any prior background-audio MediaSession before removing the task.
-          - Audio-only is the only action allowed to intentionally keep playback alive after the UI task closes.
-          - Native playback sessions carry a process-lifetime ownership ID so Android task/history restoration cannot resurrect an old recent-video Intent after a real close.
-          - Manual onUserLeaveHint auto-PiP has been removed so task dismissal cannot be mistaken for an intentional PiP transition.
+          360-degree lifecycle / playback audit:
+          - Central PlaybackHostRouter is now authoritative for Web versus Native playback across home/history, browser interception, deep links, related videos and restored sessions.
+          - Saved Web mode can no longer be bypassed by a stale NativePlayerActivity session.
+          - Native playback pauses whenever it is neither foreground nor genuinely in PiP; dismissed PiP can no longer masquerade as unintended audio-only playback.
+          - WebView playback follows the same rule and pauses when the task leaves foreground outside PiP.
+          - PiP return refreshes YouTube signed stream URLs only after the Activity genuinely resumes, preserving position and avoiding background extractor work.
+          - Explicit audio-only keeps the original watch URL plus a live position snapshot; foreground replay invalidates the temporary CDN URL, resolves fresh media and resumes near the same position.
+          - Close remains a hard teardown of foreground playback plus background audio service/session.
+          - Playback session ownership blocks stale Android task/history restoration from resurrecting old videos.
 
-          Performance controls:
-          - Main Settings adds Auto-load Episodes and Auto-load Up Next.
-          - Both switches default OFF for faster startup and lower extractor/network/CPU contention.
-          - With Auto-load Episodes off, episode/playlist discovery is not started.
-          - With Auto-load Up Next off, related-video presentation and post-first-frame related prefetch are suppressed.
-          - Existing playback resolver prewarm, in-flight sharing, short-lived cache and fast progressive startup remain enabled.
-          - Download queue remains unrestricted while adaptive resource admission protects RAM/CPU/thermal/network resources.
+          Back / PiP:
+          - Back never selects Close or Audio on the user's behalf.
+          - The explicit Close / Audio / PiP chooser remains the only terminal playback decision surface.
+          - PiP Options returns to the existing player; subsequent foreground Back reaches the chooser.
+          - Extra Back callbacks while the chooser is visible are ignored rather than interpreted as a playback choice.
+
+          Performance / resource use:
+          - Auto-load Episodes and Auto-load Up Next remain independently configurable and default OFF.
+          - Companion shelves wait until after first frame before loading even when enabled.
+          - Browser URL polling is suspended while the app is not RESUMED.
+          - Recommendation extraction respects the Up Next setting.
+          - Download queue remains unrestricted while device-aware admission protects RAM, CPU, thermals and metered networks.
+          - Stale retained download ranges restart cleanly and deterministic media-format failures no longer retry forever.
+
+          Appearance:
+          - Ten built-in themes: Glass Midnight, Glass Slate, Neon Cyan, Neon Purple, Neon Lime, Ocean Deep, Ocean Teal, HD Graphite, HD Crimson and AMOLED Black.
+          - Custom font scaling from 80% to 135%.
+          - Custom RGB adjusters for accent/controls, overall background/theme and primary text.
+          - Runtime theme colors now propagate across shared app UI instead of leaving major surfaces hard-coded white.
 
           YouTube account authorization:
-          - Removed the old profile-only Google fallback that could look signed in without YouTube authorization.
-          - Account state is now set only after Google AuthorizationClient grants youtube.readonly and an authenticated YouTube Data API request succeeds.
-          - Prior authorization is restored silently when Google can do so without user interaction.
-          - If OAuth/YouTube API configuration is missing, MyTube reports the real configuration error instead of showing a dummy signed-in state.
-          - Google Cloud must contain an Android OAuth client matching this app package/signing SHA-1 and have YouTube Data API enabled.
+          - Profile-only fake sign-in is not treated as a YouTube session.
+          - Connected state requires Google AuthorizationClient youtube.readonly consent plus a successful authenticated YouTube Data API request.
+          - OAuth errors show the exact package and signing SHA-1 expected by Google Cloud.
+          - The release includes MyTube-v1.3.13-OAuth-Registration.txt with the exact package/SHA-1 from the built APK signing key.
+          - Google Cloud must register that Android OAuth client and enable YouTube Data API v3; code cannot bypass Google's registration requirement.
 
           Build gates:
-          - Unit tests for ARM64 and Universal editions.
+          - ARM64 + Universal unit tests.
           - Android lint for both editions.
-          - ARM64 and Universal APK assembly.
-          - ABI verification before release publication."
+          - ARM64 + Universal APK assembly.
+          - ABI verification.
+          - OAuth signing identity verification before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.3.12-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.3.12-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.3.12-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.13-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.3.13-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.3.13-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.3.13-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.3.13-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.3.13-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.13-OAuth-Registration.txt
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -201,7 +235,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.3.12 ARM64 + Universal Debug" \
+              --title "MyTube v1.3.13 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

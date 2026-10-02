@@ -34,7 +34,8 @@ import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
-import com.drivedeck.tubedeck.player.ConsecutiveBackPressDetector
+import com.drivedeck.tubedeck.player.PlaybackBackAction
+import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
@@ -73,7 +74,7 @@ class MainActivity : ComponentActivity() {
     private var activePlaybackArtwork: String = ""
     private var activePlaybackPositionMs: Long = 0L
     private var closeActivePlaybackUi: (() -> Unit)? = null
-    private val playbackBackDetector = ConsecutiveBackPressDetector()
+    private val playbackBackCoordinator = PlaybackBackCoordinator()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
             handlePlaybackBack()
@@ -576,7 +577,10 @@ class MainActivity : ComponentActivity() {
                                     showPlaybackExitChoices = false
                                     handoffActivePlaybackToAudio()
                                 },
-                                onDismiss = { showPlaybackExitChoices = false },
+                                onDismiss = {
+                                    showPlaybackExitChoices = false
+                                    playbackBackCoordinator.onChooserDismissed()
+                                },
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }
@@ -624,44 +628,49 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePlaybackBack() {
         if (!playerActive) return
+        dispatchPlaybackBackAction(
+            playbackBackCoordinator.onBack(
+                nowMs = SystemClock.elapsedRealtime(),
+                isInPip = isPipMode
+            )
+        )
+    }
 
-        if (showPlaybackExitChoices) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = false
-            closeActivePlaybackCompletely()
-            return
-        }
+    private fun dispatchPlaybackBackAction(action: PlaybackBackAction) {
+        when (action) {
+            PlaybackBackAction.WAIT_FOR_SECOND_PRESS -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = lifecycleScope.launch {
+                    delay(PlaybackBackCoordinator.DEFAULT_WINDOW_MS)
+                    if (!playerActive) return@launch
+                    playbackBackDecisionJob = null
+                    dispatchPlaybackBackAction(
+                        playbackBackCoordinator.onSinglePressTimeout(
+                            canEnterPip =
+                                autoPipEnabled &&
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        )
+                    )
+                }
+            }
 
-        if (isPipMode) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = true
-            return
-        }
-
-        val secondPress = playbackBackDetector.registerPress(SystemClock.elapsedRealtime())
-
-        if (secondPress) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            playbackBackDetector.clear()
-            showPlaybackExitChoices = true
-            return
-        }
-
-        playbackBackDecisionJob?.cancel()
-        playbackBackDecisionJob = lifecycleScope.launch {
-            delay(ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS)
-            if (!playerActive) return@launch
-            playbackBackDetector.clear()
-            playbackBackDecisionJob = null
-            if (autoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PlaybackBackAction.ENTER_PIP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
                 triggerPip()
-            } else {
+            }
+
+            PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
                 showPlaybackExitChoices = true
+            }
+
+            PlaybackBackAction.EXIT_APP -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                showPlaybackExitChoices = false
+                closeActivePlaybackCompletely()
             }
         }
     }
@@ -669,7 +678,7 @@ class MainActivity : ComponentActivity() {
     private fun closeActivePlaybackCompletely() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
-        playbackBackDetector.clear()
+        playbackBackCoordinator.reset()
         webViewInstance?.runCatching {
             evaluateJavascript(
                 "(function(){var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}return true;})()",
@@ -747,6 +756,8 @@ class MainActivity : ComponentActivity() {
             val params = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
+                playbackBackCoordinator.onPipEnterFailed()
+                showPlaybackExitChoices = true
                 Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
             }
         }
@@ -767,6 +778,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        playbackBackCoordinator.reset()
         closeActivePlaybackUi = null
         super.onDestroy()
     }

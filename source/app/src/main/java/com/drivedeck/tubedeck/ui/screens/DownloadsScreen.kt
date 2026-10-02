@@ -459,7 +459,7 @@ fun OfflineMediaCard(media: OfflineMedia, onPlay: () -> Unit, onDelete: () -> Un
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(media.qualityLabel, fontSize = 10.sp, color = TubeDeckTextSecondary)
                 IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.DeleteOutline, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(16.dp)) }
@@ -500,21 +500,21 @@ fun QueueTaskCard(
                 )
                 AsyncImage(model = task.thumbnailUrl, contentDescription = null, modifier = Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TubeDeckTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${task.quality} · ${task.speed}", fontSize = 10.sp, color = TubeDeckAccentCyan)
                 }
                 when (task.status) {
                     TaskStatus.DOWNLOADING, TaskStatus.QUEUED ->
                         IconButton(onClick = onPause, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Pause, "Pause", tint = Color.White)
+                            Icon(Icons.Default.Pause, "Pause", tint = TubeDeckTextPrimary)
                         }
                     TaskStatus.PAUSED ->
                         IconButton(onClick = onResume, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.PlayArrow, "Resume", tint = Color.White)
+                            Icon(Icons.Default.PlayArrow, "Resume", tint = TubeDeckTextPrimary)
                         }
                     TaskStatus.FAILED ->
                         IconButton(onClick = onRetry, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Refresh, "Retry", tint = Color.White)
+                            Icon(Icons.Default.Refresh, "Retry", tint = TubeDeckTextPrimary)
                         }
                     TaskStatus.COMPLETED -> Unit
                 }
@@ -577,7 +577,7 @@ fun HistoryItemCard(item: DownloadTask) {
     Surface(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(10.dp)), color = TubeDeckSurfaceVariant) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             AsyncImage(model = item.thumbnailUrl, contentDescription = null, modifier = Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
-            Text(item.title, fontSize = 12.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(item.title, fontSize = 12.sp, color = TubeDeckTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text("Done", fontSize = 10.sp, color = TubeDeckSuccess, fontWeight = FontWeight.Bold)
         }
     }

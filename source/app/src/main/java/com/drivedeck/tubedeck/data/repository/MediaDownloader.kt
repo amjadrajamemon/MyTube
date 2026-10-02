@@ -106,15 +106,18 @@ internal object MediaDownloader {
         } else partial
         currentCoroutineContext().ensureActive()
         val finalSize = completedStage.length()
-        val mediaUri = if (settings.downloadTreeUri != null) {
-            val uri = copyToChosenFolder(context, settings.downloadTreeUri, target.name, extension, task.mode == DownloadMode.AUDIO, completedStage)
-            completedStage.delete()
-            uri
-        } else {
-            if (target.exists() && !target.delete()) error("Cannot replace previous output")
-            if (!completedStage.renameTo(target)) error("Cannot finalize downloaded file")
-            Uri.fromFile(target).toString()
-        }
+        val treeUri = settings.downloadTreeUri
+            ?.takeIf { it.isNotBlank() }
+            ?: error("Choose a download folder in Settings first")
+        val mediaUri = copyToChosenFolder(
+            context,
+            treeUri,
+            target.name,
+            extension,
+            task.mode == DownloadMode.AUDIO,
+            completedStage
+        )
+        completedStage.delete()
         if (selectedAudioUrl != null) { partial.delete(); audioPartial.delete() }
         OfflineMedia(
                 id = task.id,

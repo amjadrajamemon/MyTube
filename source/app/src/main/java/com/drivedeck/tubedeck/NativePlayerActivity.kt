@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck
 
 import android.app.PictureInPictureParams
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -60,7 +61,16 @@ class NativePlayerActivity : ComponentActivity() {
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
-    private lateinit var currentMedia: OfflineMedia
+    private var currentMedia by mutableStateOf(
+        OfflineMedia(
+            id = "pending",
+            title = "Now Playing",
+            videoId = "",
+            thumbnailUrl = "",
+            mediaUri = ""
+        )
+    )
+    private var pipEnteredByBack = false
     private val playbackBackDetector = ConsecutiveBackPressDetector()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,23 +97,11 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(pipBuilder.build())
         }
 
-        val media = OfflineMedia(
-            id = intent.getStringExtra(EXTRA_MEDIA_ID) ?: UUID.randomUUID().toString(),
-            title = intent.getStringExtra(EXTRA_TITLE) ?: "Now Playing",
-            videoId = intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty(),
-            thumbnailUrl = intent.getStringExtra(EXTRA_THUMBNAIL).orEmpty(),
-            mediaUri = intent.getStringExtra(EXTRA_MEDIA_URI).orEmpty(),
-            isAudioOnly = intent.getBooleanExtra(EXTRA_IS_AUDIO_ONLY, false),
-            qualityLabel = intent.getStringExtra(EXTRA_QUALITY_LABEL) ?: "Auto"
-        )
-
-        currentMedia = media
-        if (!media.title.equals("Now Playing", ignoreCase = true)) {
-            repository.recordWatch(media)
-        }
+        replaceMedia(mediaFromIntent(intent), recordWatch = true)
 
         setContent {
             TubeDeckTheme {
+                val media = currentMedia
                 val settings by repository.settings.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
@@ -217,25 +215,47 @@ class NativePlayerActivity : ComponentActivity() {
             }
         }
 
-        if (media.videoId.isNotBlank()) {
-            repository.fetchSponsorSegments(media.videoId)
-        }
     }
 
 
     private fun launchRelatedPlayer(media: OfflineMedia) {
         if (closingPlayer) return
-        val next = android.content.Intent(this, NativePlayerActivity::class.java).apply {
-            putExtra(EXTRA_MEDIA_ID, media.id)
-            putExtra(EXTRA_TITLE, media.title)
-            putExtra(EXTRA_VIDEO_ID, media.videoId)
-            putExtra(EXTRA_THUMBNAIL, media.thumbnailUrl)
-            putExtra(EXTRA_MEDIA_URI, media.mediaUri)
-            putExtra(EXTRA_IS_AUDIO_ONLY, media.isAudioOnly)
-            putExtra(EXTRA_QUALITY_LABEL, media.qualityLabel)
+        replaceMedia(media, recordWatch = true)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        replaceMedia(mediaFromIntent(intent), recordWatch = true)
+    }
+
+    private fun mediaFromIntent(intent: Intent): OfflineMedia =
+        OfflineMedia(
+            id = intent.getStringExtra(EXTRA_MEDIA_ID) ?: UUID.randomUUID().toString(),
+            title = intent.getStringExtra(EXTRA_TITLE) ?: "Now Playing",
+            videoId = intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty(),
+            thumbnailUrl = intent.getStringExtra(EXTRA_THUMBNAIL).orEmpty(),
+            mediaUri = intent.getStringExtra(EXTRA_MEDIA_URI).orEmpty(),
+            isAudioOnly = intent.getBooleanExtra(EXTRA_IS_AUDIO_ONLY, false),
+            qualityLabel = intent.getStringExtra(EXTRA_QUALITY_LABEL) ?: "Auto"
+        )
+
+    private fun replaceMedia(media: OfflineMedia, recordWatch: Boolean) {
+        playbackBackDecisionJob?.cancel()
+        playbackBackDecisionJob = null
+        playbackBackDetector.clear()
+        showPlaybackExitChoices = false
+        closingPlayer = false
+        playerActive = true
+        pipEnteredByBack = false
+        currentPlaybackPositionMs = 0L
+        currentMedia = media
+        if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
+            repository.recordWatch(media)
         }
-        startActivity(next)
-        finishPlayer()
+        if (media.videoId.isNotBlank()) {
+            repository.fetchSponsorSegments(media.videoId)
+        }
     }
 
 
@@ -255,6 +275,15 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         if (isPipMode) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            playbackBackDetector.clear()
+            showPlaybackExitChoices = true
+            return
+        }
+
+        if (pipEnteredByBack) {
+            pipEnteredByBack = false
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             playbackBackDetector.clear()
@@ -282,7 +311,7 @@ class NativePlayerActivity : ComponentActivity() {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 repository.settings.value.pipEnabled
             ) {
-                enterPlayerPip()
+                enterPlayerPip(fromBack = true)
             } else {
                 showPlaybackExitChoices = true
             }
@@ -338,7 +367,8 @@ class NativePlayerActivity : ComponentActivity() {
         finish()
     }
 
-    private fun enterPlayerPip() {
+    private fun enterPlayerPip(fromBack: Boolean = false) {
+        if (fromBack) pipEnteredByBack = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
@@ -350,6 +380,7 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
+                pipEnteredByBack = false
                 // Do not fall through to Activity finish: preserving playback is preferable.
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()

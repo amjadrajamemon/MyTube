@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
+    private var pipChoicePending = false
     private var activePlaybackUrl: String = ""
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
@@ -925,6 +926,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun closeActivePlaybackCompletely() {
+        pipChoicePending = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
@@ -945,6 +947,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handoffActivePlaybackToAudio() {
+        pipChoicePending = false
         val sourceUrl = activePlaybackUrl
         if (sourceUrl.isBlank()) {
             Toast.makeText(this, "No active video is available for audio-only playback", Toast.LENGTH_SHORT).show()
@@ -1003,6 +1006,7 @@ class MainActivity : ComponentActivity() {
 
     private fun triggerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            pipChoicePending = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
                 activityClass = MainActivity::class.java
@@ -1010,6 +1014,7 @@ class MainActivity : ComponentActivity() {
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
+                pipChoicePending = false
                 playbackBackCoordinator.onPipEnterFailed()
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
@@ -1021,6 +1026,22 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode && playerActive && pipChoicePending) {
+            // Device fallback for PiP implementations that consume Back inside the system PiP UI.
+            pipChoicePending = false
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            playbackBackCoordinator.forceChooserVisible()
+            showPlaybackExitChoices = true
+            if (!hasWindowFocus()) {
+                startActivity(
+                    Intent(this, MainActivity::class.java).apply {
+                        action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                )
+            }
+        }
     }
 
     override fun onDestroy() {

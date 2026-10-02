@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.ui.theme.*
@@ -323,9 +324,12 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(persistentWebView) {
+    LaunchedEffect(persistentWebView, activity) {
         while (true) {
             delay(1500)
+            if (activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != true) {
+                continue
+            }
             persistentWebView.evaluateJavascript("location.href") { result ->
                 val url = runCatching { JSONArray("[$result]").optString(0) }.getOrNull()
                 if (url?.startsWith("https://") == true && url != latestUrl) observeUrl(persistentWebView, url)

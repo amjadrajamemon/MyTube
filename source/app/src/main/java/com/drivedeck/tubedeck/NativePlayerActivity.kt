@@ -60,6 +60,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var closingPlayer = false
     private var playbackBackDecisionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
+    private var pendingExitChooserAfterPip = false
     private var currentPlaybackPositionMs = 0L
     private var currentMedia by mutableStateOf(
         OfflineMedia(
@@ -231,6 +232,7 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
+                pendingExitChooserAfterPip = false
                 playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
                 showPlaybackExitChoices = true
                 return
@@ -338,6 +340,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     private fun requestExitChooserFromPip() {
+        pendingExitChooserAfterPip = true
         val intent = Intent(this, NativePlayerActivity::class.java).apply {
             action = PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -432,5 +435,10 @@ class NativePlayerActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode = isInPictureInPictureMode
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode && pendingExitChooserAfterPip) {
+            pendingExitChooserAfterPip = false
+            playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
+            showPlaybackExitChoices = true
+        }
     }
 }

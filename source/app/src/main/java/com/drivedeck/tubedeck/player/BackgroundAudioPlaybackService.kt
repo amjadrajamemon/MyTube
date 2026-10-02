@@ -6,21 +6,30 @@ import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Foreground MediaSession playback used when the user chooses "Audio only" from the Back menu.
- * The service receives a direct playable audio/media URL so playback can start immediately and
- * remain alive after the Activity/task is removed.
+ * Foreground MediaSession playback used only after the user explicitly chooses Audio-only.
+ *
+ * The service keeps both the original YouTube watch URL and the temporary direct audio URL.
+ * If a signed CDN URL expires, the original watch URL is re-resolved and playback resumes from
+ * the current position instead of leaving a broken/zombie MediaSession behind.
  */
 class BackgroundAudioPlaybackService : MediaSessionService() {
 
     companion object {
         private const val ACTION_PLAY = "com.drivedeck.tubedeck.action.PLAY_BACKGROUND_AUDIO"
+        private const val EXTRA_SOURCE_URL = "source_url"
         private const val EXTRA_PLAY_URL = "play_url"
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_ARTWORK = "artwork"
@@ -28,6 +37,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
         fun start(
             context: Context,
+            sourceUrl: String,
             playUrl: String,
             title: String,
             artworkUrl: String?,
@@ -35,6 +45,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         ) {
             val intent = Intent(context, BackgroundAudioPlaybackService::class.java).apply {
                 action = ACTION_PLAY
+                putExtra(EXTRA_SOURCE_URL, sourceUrl)
                 putExtra(EXTRA_PLAY_URL, playUrl)
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_ARTWORK, artworkUrl)
@@ -52,11 +63,22 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaSession? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var sourceUrl: String = ""
+    private var currentTitle: String = "MyTube audio"
+    private var currentArtwork: String? = null
+    private var recovering = false
 
     override fun onCreate() {
         super.onCreate()
         player = ExoPlayer.Builder(this).build().apply {
             playWhenReady = false
+            addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    refreshExpiredYoutubeAudio()
+                }
+            })
         }
         mediaSession = MediaSession.Builder(this, player).build()
     }
@@ -68,40 +90,74 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_PLAY) {
-            val url = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
-            if (url.isNotBlank()) {
-                val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "MyTube audio" }
-                val artwork = intent.getStringExtra(EXTRA_ARTWORK)
+            val directUrl = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
+            if (directUrl.isNotBlank()) {
+                sourceUrl = intent.getStringExtra(EXTRA_SOURCE_URL).orEmpty()
+                currentTitle = intent.getStringExtra(EXTRA_TITLE)
+                    .orEmpty()
+                    .ifBlank { "MyTube audio" }
+                currentArtwork = intent.getStringExtra(EXTRA_ARTWORK)
                 val position = intent.getLongExtra(EXTRA_POSITION_MS, 0L).coerceAtLeast(0L)
-
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(title)
-                    .apply {
-                        artwork?.takeIf { it.isNotBlank() }?.let {
-                            setArtworkUri(Uri.parse(it))
-                        }
-                    }
-                    .build()
-
-                val item = MediaItem.Builder()
-                    .setUri(url)
-                    .setMediaMetadata(metadata)
-                    .build()
-
-                player.setMediaItem(item)
-                player.prepare()
-                if (position > 0L) player.seekTo(position)
-                player.playWhenReady = true
+                BackgroundAudioController.markStarted(sourceUrl)
+                loadPlayableUrl(directUrl, position)
             }
         }
-        // The playable URL is intentionally supplied by the handoff action. If Android kills
-        // this process there is no safe media state to reconstruct from a null restart intent, so
-        // avoid creating an idle/zombie playback service.
         return START_NOT_STICKY
     }
 
+    private fun loadPlayableUrl(playUrl: String, positionMs: Long) {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(currentTitle)
+            .apply {
+                currentArtwork?.takeIf { it.isNotBlank() }?.let {
+                    setArtworkUri(Uri.parse(it))
+                }
+            }
+            .build()
+
+        val item = MediaItem.Builder()
+            .setUri(playUrl)
+            .setMediaId(sourceUrl)
+            .setMediaMetadata(metadata)
+            .build()
+
+        player.setMediaItem(item)
+        player.prepare()
+        if (positionMs > 0L) player.seekTo(positionMs)
+        player.playWhenReady = true
+    }
+
+    private fun refreshExpiredYoutubeAudio() {
+        val originalUrl = sourceUrl
+        if (recovering || YoutubeUrls.videoId(originalUrl) == null) return
+
+        val resumePosition = player.currentPosition.coerceAtLeast(0L)
+        recovering = true
+        serviceScope.launch {
+            val freshUrl = runCatching {
+                withContext(Dispatchers.IO) {
+                    YoutubeStreamResolver.invalidate(originalUrl)
+                    val resolved = YoutubeStreamResolver.resolve(
+                        applicationContext,
+                        originalUrl,
+                        forceRefresh = true
+                    )
+                    resolved.audioOptions.firstOrNull()?.url
+                        ?: resolved.progressiveUrl
+                        ?: error("No refreshed audio stream is available.")
+                }
+            }
+
+            freshUrl.onSuccess { loadPlayableUrl(it, resumePosition) }
+                .onFailure {
+                    player.pause()
+                    stopSelf()
+                }
+            recovering = false
+        }
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Deliberately keep the service/player alive while playback is active.
         if (!player.isPlaying && !player.playWhenReady) {
             stopSelf()
         }
@@ -109,6 +165,8 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        BackgroundAudioController.markStopped(sourceUrl)
+        serviceScope.cancel()
         mediaSession?.release()
         mediaSession = null
         player.release()
@@ -117,8 +175,26 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 }
 
 object BackgroundAudioController {
-    fun stop(context: Context) {
+    @Volatile
+    private var activeSourceUrl: String? = null
+
+    internal fun markStarted(sourceUrl: String) {
+        activeSourceUrl = sourceUrl.takeIf { it.isNotBlank() }
+    }
+
+    internal fun markStopped(sourceUrl: String) {
+        if (activeSourceUrl == sourceUrl || sourceUrl.isBlank()) {
+            activeSourceUrl = null
+        }
+    }
+
+    fun currentSourceUrl(): String? = activeSourceUrl
+
+    fun stop(context: Context): String? {
+        val previous = activeSourceUrl
+        activeSourceUrl = null
         BackgroundAudioPlaybackService.stop(context)
+        return previous
     }
 
     suspend fun handoff(
@@ -130,7 +206,12 @@ object BackgroundAudioController {
     ): Result<Unit> = runCatching {
         val playUrl = withContext(Dispatchers.IO) {
             if (YoutubeUrls.videoId(sourceUrl) != null) {
-                val resolved = YoutubeStreamResolver.resolve(context.applicationContext, sourceUrl)
+                YoutubeStreamResolver.invalidate(sourceUrl)
+                val resolved = YoutubeStreamResolver.resolve(
+                    context.applicationContext,
+                    sourceUrl,
+                    forceRefresh = true
+                )
                 resolved.audioOptions.firstOrNull()?.url
                     ?: resolved.progressiveUrl
                     ?: error("No playable audio stream is available for this video.")
@@ -139,8 +220,10 @@ object BackgroundAudioController {
             }
         }
 
+        activeSourceUrl = sourceUrl
         BackgroundAudioPlaybackService.start(
             context = context.applicationContext,
+            sourceUrl = sourceUrl,
             playUrl = playUrl,
             title = title,
             artworkUrl = artworkUrl,

@@ -229,6 +229,11 @@ jobs:
           - Removed the Parallel downloads setting, validation prompt, persisted maxConcurrent value and scheduler ceiling; the queue now schedules all pending items without an app-imposed concurrency limit.
           - Google sign-in no longer reports the build unsupported when GOOGLE_WEB_CLIENT_ID is absent; it falls back to a genuine Google Play Services account chooser/profile result.
           - Credential Manager remains the primary Google Identity path whenever a Web OAuth client ID is injected at build time.
+          - Native playback startup is prewarmed on app launch and stream extraction begins at video tap time instead of waiting for the player screen to finish opening.
+          - Concurrent requests for the same video now share one in-flight extractor result, with a short-lived LRU resolution cache to avoid duplicate StreamInfo.getInfo work.
+          - Media3 recovery bypasses the resolver cache and forces fresh signed stream URLs after network/CDN playback failures.
+          - Initial Auto playback prefers a suitable progressive audio+video stream for a faster first frame while all extracted higher resolutions remain available in the quality chooser.
+          - ExoPlayer startup buffering is reduced to 650 ms with a larger 1.75 s rebuffer threshold for a faster start without making resumed playback equally aggressive.
           - Unit tests, both APK builds and ABI verification must pass before release publication."
 
           ASSETS=(

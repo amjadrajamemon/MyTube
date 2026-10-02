@@ -12,6 +12,8 @@ import androidx.annotation.RequiresApi
 
 internal object PlaybackPipActions {
     const val ACTION_EXPAND_PLAYER = "com.drivedeck.tubedeck.action.PIP_EXPAND_PLAYER"
+    const val ACTION_AUDIO_ONLY = "com.drivedeck.tubedeck.action.PIP_AUDIO_ONLY"
+    const val ACTION_CLOSE = "com.drivedeck.tubedeck.action.PIP_CLOSE"
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun buildParams(
@@ -26,8 +28,20 @@ internal object PlaybackPipActions {
                     RemoteAction(
                         Icon.createWithResource(context, android.R.drawable.ic_menu_more),
                         "Options",
-                        "Return to playback options",
+                        "Close, audio only, or keep picture-in-picture",
                         actionIntent(context, activityClass, ACTION_EXPAND_PLAYER, 7100)
+                    ),
+                    RemoteAction(
+                        Icon.createWithResource(context, android.R.drawable.ic_lock_silent_mode_off),
+                        "Audio",
+                        "Continue in audio-only mode",
+                        actionIntent(context, activityClass, ACTION_AUDIO_ONLY, 7101)
+                    ),
+                    RemoteAction(
+                        Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
+                        "Close",
+                        "Stop playback",
+                        actionIntent(context, activityClass, ACTION_CLOSE, 7102)
                     )
                 )
             )

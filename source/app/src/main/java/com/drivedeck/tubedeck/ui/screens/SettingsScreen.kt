@@ -50,9 +50,6 @@ fun SettingsScreen(
     val updateScope = rememberCoroutineScope()
     val ytDlpState by YtDlpUpdateManager.state.collectAsState()
     val googleAccountSession = remember { GoogleAccountSession.get(context) }
-    val youtubeOauthRegistration = remember {
-        googleAccountSession.oauthRegistrationInfo()
-    }
     val youtubeAuthStatus by googleAccountSession.status.collectAsState()
     LaunchedEffect(Unit) {
         YtDlpUpdateManager.scheduleWeekly(context)
@@ -154,14 +151,11 @@ fun SettingsScreen(
         ) {
             SettingsCard(title = "Appearance & Customization") {
                 Text(
-                    "Preset: " + appearancePreset,
+                    appearancePreset,
                     color = TubeDeckTextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(8.dp))
-
-                Text("Top 10 built-in themes", color = TubeDeckTextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 appearancePresets.chunked(2).forEach { row ->
                     Row(
@@ -173,7 +167,7 @@ fun SettingsScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(70.dp)
+                                    .height(54.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable {
                                         appearancePreset = preset.name
@@ -200,18 +194,11 @@ fun SettingsScreen(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        Box(
-                                            Modifier.size(13.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(Color(preset.accentArgb.toInt()))
-                                        )
-                                        Text(
-                                            preset.subtitle,
-                                            color = Color(preset.textArgb.toInt()).copy(alpha = 0.72f),
-                                            fontSize = 9.sp
-                                        )
-                                    }
+                                    Box(
+                                        Modifier.size(13.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(preset.accentArgb.toInt()))
+                                    )
                                 }
                             }
                         }
@@ -238,12 +225,6 @@ fun SettingsScreen(
                     },
                     valueRange = 0.80f..1.35f
                 )
-                Text(
-                    "Adjusts text throughout MyTube. Range is limited to keep controls usable.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 10.sp
-                )
-
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Custom color adjusters",
@@ -326,15 +307,6 @@ fun SettingsScreen(
                         )
                     }
                 }
-                Text(
-                    if (previewApplied) {
-                        "Temporary preview is active. Save to keep it, or leave Settings to revert."
-                    } else {
-                        "Preview applies the selected appearance temporarily without saving it."
-                    },
-                    color = TubeDeckTextSecondary,
-                    fontSize = 9.5.sp
-                )
             }
 
             // Player Mode
@@ -356,13 +328,13 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "YouTube Account Connection") {
+            SettingsCard(title = "Google / YouTube") {
                 val statusLabel = when (youtubeAuthStatus.state) {
                     YoutubeAuthorizationState.SIGNED_OUT -> "Signed out"
                     YoutubeAuthorizationState.CONNECTING -> "Connecting…"
-                    YoutubeAuthorizationState.CONNECTED -> "Verified YouTube OAuth session"
-                    YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "OAuth configuration required"
-                    YoutubeAuthorizationState.ERROR -> "Authorization error"
+                    YoutubeAuthorizationState.CONNECTED -> "Connected"
+                    YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "Setup required"
+                    YoutubeAuthorizationState.ERROR -> "Error"
                 }
                 Text(
                     statusLabel,
@@ -379,51 +351,9 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "MyTube only reports an account as connected after Google grants YouTube OAuth access and the YouTube Data API verifies it.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
-                if (youtubeAuthStatus.message.isNotBlank()) {
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        youtubeAuthStatus.message,
-                        color = TubeDeckTextSecondary,
-                        fontSize = 9.5.sp
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    youtubeOauthRegistration,
-                    color = TubeDeckTextPrimary,
-                    fontSize = 10.5.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Google Cloud must register this exact Android package/signing SHA-1 and enable YouTube Data API v3. ARM64 and Universal use the same identity.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 10.sp
-                )
             }
 
             SettingsCard(title = "Download Engine") {
-                Text(
-                    "Version: " + (ytDlpState.version ?: "Bundled / not initialized"),
-                    color = Color.White,
-                    fontSize = 12.sp
-                )
-                Text(
-                    "Last update check: " + ytDlpState.lastCheckedLabel,
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
-                Text(
-                    ytDlpState.message,
-                    color = if (ytDlpState.message.contains("failed", ignoreCase = true)) MaterialTheme.colorScheme.error else TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
-                Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
                         updateScope.launch {
@@ -447,7 +377,7 @@ fun SettingsScreen(
                     } else {
                         Icon(Icons.Default.SystemUpdate, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Check/update Download Engine")
+                        Text("Update")
                     }
                 }
             }
@@ -485,13 +415,7 @@ fun SettingsScreen(
                 QualityGrid(selectedQuality = playlistQuality, onSelect = { playlistQuality = it }, qualities = qualities)
             }
 
-            SettingsCard(title = "Playback performance") {
-                Text(
-                    "Keep these off for the fastest video start and lowest background extraction. Enable only the shelves you want loaded automatically.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
-                Spacer(Modifier.height(6.dp))
+            SettingsCard(title = "Playback") {
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
             }
@@ -561,7 +485,6 @@ fun SettingsScreen(
 
 private data class AppearancePreset(
     val name: String,
-    val subtitle: String,
     val accentArgb: Long,
     val backgroundArgb: Long,
     val textArgb: Long = 0xFFFFFFFFL,
@@ -569,16 +492,16 @@ private data class AppearancePreset(
 )
 
 private val appearancePresets = listOf(
-    AppearancePreset("Glass Midnight", "Glass • balanced", 0xFF00D2FFL, 0xFF080B11L),
-    AppearancePreset("Glass Slate", "Glass • soft blue", 0xFF7DD3FCL, 0xFF10151DL),
-    AppearancePreset("Neon Cyan", "Neon • electric", 0xFF00F5FFL, 0xFF02070AL),
-    AppearancePreset("Neon Purple", "Neon • violet", 0xFFD946EFL, 0xFF0A0614L),
-    AppearancePreset("Neon Lime", "Neon • vivid green", 0xFF39FF14L, 0xFF050806L),
-    AppearancePreset("Ocean Deep", "Ocean • deep blue", 0xFF00B4D8L, 0xFF03111DL),
-    AppearancePreset("Ocean Teal", "Ocean • teal glass", 0xFF2DD4BFL, 0xFF041716L),
-    AppearancePreset("HD Graphite", "HD • neutral", 0xFF60A5FAL, 0xFF0B0D10L),
-    AppearancePreset("HD Crimson", "HD • cinematic", 0xFFFF4D6DL, 0xFF12070AL),
-    AppearancePreset("AMOLED Black", "Pure black • OLED", 0xFF00E5FFL, 0xFF000000L)
+    AppearancePreset("Glass Midnight", 0xFF00D2FFL, 0xFF080B11L),
+    AppearancePreset("Glass Slate", 0xFF7DD3FCL, 0xFF10151DL),
+    AppearancePreset("Neon Cyan", 0xFF00F5FFL, 0xFF02070AL),
+    AppearancePreset("Neon Purple", 0xFFD946EFL, 0xFF0A0614L),
+    AppearancePreset("Neon Lime", 0xFF39FF14L, 0xFF050806L),
+    AppearancePreset("Ocean Deep", 0xFF00B4D8L, 0xFF03111DL),
+    AppearancePreset("Ocean Teal", 0xFF2DD4BFL, 0xFF041716L),
+    AppearancePreset("HD Graphite", 0xFF60A5FAL, 0xFF0B0D10L),
+    AppearancePreset("HD Crimson", 0xFFFF4D6DL, 0xFF12070AL),
+    AppearancePreset("AMOLED Black", 0xFF00E5FFL, 0xFF000000L)
 )
 
 @Composable

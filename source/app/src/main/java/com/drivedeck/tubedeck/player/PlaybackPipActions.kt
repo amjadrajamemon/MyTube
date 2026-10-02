@@ -11,9 +11,7 @@ import android.util.Rational
 import androidx.annotation.RequiresApi
 
 internal object PlaybackPipActions {
-    const val ACTION_CLOSE = "com.drivedeck.tubedeck.action.PIP_CLOSE"
-    const val ACTION_AUDIO_ONLY = "com.drivedeck.tubedeck.action.PIP_AUDIO_ONLY"
-    const val ACTION_SHOW_EXIT_CHOOSER = "com.drivedeck.tubedeck.action.PIP_EXIT_CHOOSER"
+    const val ACTION_EXPAND_PLAYER = "com.drivedeck.tubedeck.action.PIP_EXPAND_PLAYER"
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun buildParams(
@@ -23,37 +21,21 @@ internal object PlaybackPipActions {
     ): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(aspectRatio)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder.setActions(
+            .setActions(
                 listOf(
-                    RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
-                        "Close",
-                        "Close video",
-                        actionIntent(context, activityClass, ACTION_CLOSE, 7101)
-                    ),
-                    RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_media_play),
-                        "Audio only",
-                        "Continue audio only",
-                        actionIntent(context, activityClass, ACTION_AUDIO_ONLY, 7102)
-                    ),
                     RemoteAction(
                         Icon.createWithResource(context, android.R.drawable.ic_menu_more),
                         "Options",
-                        "Open playback exit options",
-                        actionIntent(context, activityClass, ACTION_SHOW_EXIT_CHOOSER, 7100)
+                        "Return to playback options",
+                        actionIntent(context, activityClass, ACTION_EXPAND_PLAYER, 7100)
                     )
                 )
             )
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(false)
             builder.setSeamlessResizeEnabled(true)
         }
-
         return builder.build()
     }
 

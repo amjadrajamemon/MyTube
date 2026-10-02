@@ -242,7 +242,8 @@ jobs:
           Back / PiP:
           - Back never selects Close or Audio on the user's behalf.
           - The explicit Close / Audio / PiP chooser remains the only terminal playback decision surface.
-          - PiP Options returns to the existing player; subsequent foreground Back reaches the chooser.
+          - First Back enters PiP; the second playback Back expands the existing player with Close / Audio / PiP already visible. No third Back is required.
+          - PiP Options follows the same return-with-chooser behavior.
           - Extra Back callbacks while the chooser is visible are ignored rather than interpreted as a playback choice.
 
           Performance / resource use:
@@ -257,6 +258,8 @@ jobs:
           - Ten built-in themes: Glass Midnight, Glass Slate, Neon Cyan, Neon Purple, Neon Lime, Ocean Deep, Ocean Teal, HD Graphite, HD Crimson and AMOLED Black.
           - Custom font scaling from 80% to 135%.
           - Custom RGB adjusters for accent/controls, overall background/theme and primary text.
+          - Theme Preview is now interactive: it temporarily applies the selected font/colors across the app without saving.
+          - Leaving Settings reverts a temporary preview; Save and Apply Settings makes it permanent.
           - Runtime theme colors now propagate across shared app UI instead of leaving major surfaces hard-coded white.
 
           YouTube account authorization:

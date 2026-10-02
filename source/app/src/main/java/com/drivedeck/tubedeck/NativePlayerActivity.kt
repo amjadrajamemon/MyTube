@@ -78,6 +78,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var resumeGeneration by mutableStateOf(0)
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
+    private var pipChoicePending = false
     private var pendingFreshResumeFromPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
@@ -437,6 +438,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun closePlaybackCompletely() {
         if (closingPlayer) return
+        pipChoicePending = false
         closingPlayer = true
         playerActive = false
         playbackBackDecisionJob?.cancel()
@@ -452,6 +454,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     private fun handoffToBackgroundAudio() {
+        pipChoicePending = false
         val media = currentMedia
         Toast.makeText(this, "Switching to background audio…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
@@ -482,6 +485,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun finishPlayer() {
         if (closingPlayer) return
+        pipChoicePending = false
         closingPlayer = true
         playerActive = false
         PlaybackSessionRegistry.close(playbackSessionId)
@@ -491,6 +495,7 @@ class NativePlayerActivity : ComponentActivity() {
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
+            pipChoicePending = true
             foregroundPlaybackAllowed = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
@@ -500,6 +505,7 @@ class NativePlayerActivity : ComponentActivity() {
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
                 enteringPip = false
+                pipChoicePending = false
                 playbackBackCoordinator.onPipEnterFailed()
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
@@ -575,8 +581,25 @@ class NativePlayerActivity : ComponentActivity() {
         enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
         if (!isInPictureInPictureMode && playerActive && !closingPlayer) {
-            // Do not resolve new signed media just because PiP was dismissed. Refresh only if
-            // the Activity genuinely resumes to the foreground.
+            // Some Android builds consume Back while PiP owns focus and never dispatch it to
+            // OnBackPressedCallback. Treat leaving a Back-entered PiP as the second-stage event
+            // and restore the same Activity with the explicit Close / Audio / PiP decision panel.
+            if (pipChoicePending) {
+                pipChoicePending = false
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
+                if (!hasWindowFocus()) {
+                    startActivity(
+                        Intent(this, NativePlayerActivity::class.java).apply {
+                            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        }
+                    )
+                }
+            }
+            // Refresh signed media only after the Activity genuinely resumes foreground.
             pendingFreshResumeFromPip = true
         }
     }

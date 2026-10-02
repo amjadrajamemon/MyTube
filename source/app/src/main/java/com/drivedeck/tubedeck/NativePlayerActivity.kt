@@ -47,7 +47,6 @@ import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
-import com.drivedeck.tubedeck.player.PlaybackPipExitPolicy
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
@@ -464,7 +463,8 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackBackAction.EXPAND_PIP -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                expandPlayerFromPip()
+                NativePipSessionBridge.activate(playbackSessionId)
+                showParentPipChooser()
             }
 
             PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
@@ -475,14 +475,6 @@ class NativePlayerActivity : ComponentActivity() {
 
             PlaybackBackAction.IGNORE -> Unit
         }
-    }
-
-    private fun expandPlayerFromPip() {
-        val intent = Intent(this, NativePlayerActivity::class.java).apply {
-            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
-            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        startActivity(intent)
     }
 
     private fun closePlaybackCompletely() {

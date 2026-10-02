@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
+import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.DownloadMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
@@ -48,9 +49,11 @@ fun SettingsScreen(
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val ytDlpState by YtDlpUpdateManager.state.collectAsState()
+    val googleAccountSession = remember { GoogleAccountSession.get(context) }
     val youtubeOauthRegistration = remember {
-        GoogleAccountSession.get(context).oauthRegistrationInfo()
+        googleAccountSession.oauthRegistrationInfo()
     }
+    val youtubeAuthStatus by googleAccountSession.status.collectAsState()
     LaunchedEffect(Unit) {
         YtDlpUpdateManager.scheduleWeekly(context)
         YtDlpUpdateManager.refreshState(context)
@@ -354,11 +357,42 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "YouTube Account Connection") {
+                val statusLabel = when (youtubeAuthStatus.state) {
+                    YoutubeAuthorizationState.SIGNED_OUT -> "Signed out"
+                    YoutubeAuthorizationState.CONNECTING -> "Connecting…"
+                    YoutubeAuthorizationState.CONNECTED -> "Verified YouTube OAuth session"
+                    YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "OAuth configuration required"
+                    YoutubeAuthorizationState.ERROR -> "Authorization error"
+                }
+                Text(
+                    statusLabel,
+                    color = if (youtubeAuthStatus.state == YoutubeAuthorizationState.CONNECTED) {
+                        TubeDeckAccentMint
+                    } else if (
+                        youtubeAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED ||
+                        youtubeAuthStatus.state == YoutubeAuthorizationState.ERROR
+                    ) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        TubeDeckTextPrimary
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.5.sp
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     "MyTube only reports an account as connected after Google grants YouTube OAuth access and the YouTube Data API verifies it.",
                     color = TubeDeckTextSecondary,
                     fontSize = 11.sp
                 )
+                if (youtubeAuthStatus.message.isNotBlank()) {
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        youtubeAuthStatus.message,
+                        color = TubeDeckTextSecondary,
+                        fontSize = 9.5.sp
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     youtubeOauthRegistration,

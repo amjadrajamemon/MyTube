@@ -33,6 +33,11 @@ internal class PlaybackBackCoordinator(
 
         if (isInPip) {
             detector.clear()
+            pipEnteredFromBack = false
+            expandedFromPip = false
+            // This is the user's second playback Back. Arm the explicit decision surface now;
+            // the Activity expansion intent will render Close / Audio / PiP immediately.
+            chooserVisible = true
             return PlaybackBackAction.EXPAND_PIP
         }
 

@@ -1649,44 +1649,21 @@ private fun PortraitCompanionPanel(
 
                 else -> {
                     if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
-                        Column(
-                            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
-                            Text("Starting video…", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text(
-                                "Companion shelves will wait until the first frame so they cannot delay playback.",
-                                color = TubeDeckTextSecondary,
-                                fontSize = 11.sp
-                            )
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else if (!autoLoadEpisodes && !autoLoadUpNext) {
-                        Column(
-                            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
-                            Text("Fast playback mode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text(
-                                "Episodes and Up Next auto-loading are off in Settings to reduce background extraction and prefetch work.",
-                                color = TubeDeckTextSecondary,
-                                fontSize = 11.sp
-                            )
-                        }
+                        Box(Modifier.fillMaxSize())
                     } else if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !episodesLoading) {
-                        Column(
+                        Box(
                             Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                            contentAlignment = Alignment.TopStart
                         ) {
                             Text(
                                 if (autoLoadUpNext) "Up next" else "Episodes",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
-                            )
-                            Text(
-                                if (autoLoadUpNext) "No related videos were returned." else "No episode collection was found.",
-                                color = TubeDeckTextSecondary,
-                                fontSize = 11.sp
                             )
                         }
                     } else {
@@ -1703,19 +1680,12 @@ private fun PortraitCompanionPanel(
                                     ) {
                                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                         Spacer(Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                "Episodes / playlist",
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
-                                            Text(
-                                                "Finding the rest of this serial…",
-                                                color = TubeDeckTextSecondary,
-                                                fontSize = 10.sp
-                                            )
-                                        }
+                                        Text(
+                                            "Episodes",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
                                     }
                                 }
                             }
@@ -1727,29 +1697,13 @@ private fun PortraitCompanionPanel(
                                             Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Column(Modifier.weight(1f)) {
-                                                Text(
-                                                    "More episodes",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.sp
-                                                )
-                                                Text(
-                                                    buildString {
-                                                        val shelfTitle = episodeShelf?.title.orEmpty()
-                                                        if (shelfTitle.isNotBlank()) append(shelfTitle)
-                                                        val count = episodeShelf?.itemCount ?: (episodeItems.size + 1).toLong()
-                                                        if (count > 0) {
-                                                            if (isNotEmpty()) append(" • ")
-                                                            append(count).append(" videos")
-                                                        }
-                                                    },
-                                                    color = TubeDeckTextSecondary,
-                                                    fontSize = 9.5.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
+                                            Text(
+                                                "More episodes",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
                                             Icon(
                                                 Icons.Default.PlaylistPlay,
                                                 contentDescription = null,
@@ -1800,26 +1754,11 @@ private fun PortraitCompanionPanel(
                                         fontSize = 14.sp,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    if (relatedVideos.isNotEmpty()) {
-                                        Text(
-                                            "${relatedVideos.size} related",
-                                            color = TubeDeckTextSecondary,
-                                            fontSize = 9.5.sp
-                                        )
-                                    }
+
                                 }
                             }
 
-                            if (autoLoadUpNext && relatedVideos.isEmpty()) {
-                                item(key = "up-next-empty") {
-                                    Text(
-                                        "No additional related videos were returned for this item.",
-                                        color = TubeDeckTextSecondary,
-                                        fontSize = 10.5.sp,
-                                        modifier = Modifier.padding(bottom = 6.dp)
-                                    )
-                                }
-                            } else if (autoLoadUpNext) {
+                            if (autoLoadUpNext && relatedVideos.isNotEmpty()) {
                                 items(relatedVideos, key = { "related-${it.videoId}" }) { related ->
                                     RelatedVideoRow(related) {
                                         onPlayRelated?.invoke(
@@ -2209,13 +2148,9 @@ private fun PlayerSettingsDialog(
 
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Live Dub", fontWeight = FontWeight.Bold)
-                        Text("Choose stable caption dubbing or native Whisper audio recognition", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Live Dub", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Switch(liveDubEnabled, onLiveDub)
                 }
-                Text(dubStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 var dubMethodMenuExpanded by remember { mutableStateOf(false) }
                 Text("Dubbing method", fontWeight = FontWeight.SemiBold)

@@ -608,6 +608,7 @@ class MainActivity : ComponentActivity() {
 
                             ActiveScreen.PLAYER -> {
                                 playingMedia?.let { media ->
+                                    key(media.id) {
                                     PlayerScreen(
                                         media = media,
                                         playerMode = settings.playerMode,
@@ -638,6 +639,7 @@ class MainActivity : ComponentActivity() {
                                         onGoogleAccountClick = onGoogleAccountClick,
                                         onPlaybackPositionChanged = { activePlaybackPositionMs = it }
                                     )
+                                    }
                                 }
                             }
                         }

@@ -82,6 +82,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
+            putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
             putLong("themeBackgroundArgb", next.themeBackgroundArgb)
@@ -118,6 +119,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         pipEnabled = prefs.getBoolean("pipEnabled", true),
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
+        appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
         themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),

@@ -242,11 +242,25 @@ class NativePlayerActivity : ComponentActivity() {
                     pipEnabled = settings.pipEnabled,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
+                    preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
+                    preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
+                    seekIntervalSeconds = settings.seekIntervalSeconds,
                     initialPositionMs = initialPlaybackPositionMs,
                     resumeGeneration = resumeGeneration,
                     foregroundPlaybackAllowed = foregroundPlaybackAllowed,
                     onClose = { finishPlayer() },
                     onEnterPip = { enterPlayerPip() },
+                    onAudioOnly = { handoffToBackgroundAudio() },
+                    onPlaybackPreferenceChanged = { speed, qualityHeight, seekSeconds ->
+                        val latest = repository.settings.value
+                        repository.updateSettings(
+                            latest.copy(
+                                preferredPlaybackSpeed = speed.coerceIn(0.25f, 2.0f),
+                                preferredPlaybackQualityHeight = qualityHeight.coerceAtLeast(0),
+                                seekIntervalSeconds = seekSeconds.coerceIn(5, 60)
+                            )
+                        )
+                    },
                     onDownloadVideo = if (YoutubeUrls.videoId(media.mediaUri) != null) {
                         { playlistMode = false; showDownload = true }
                     } else null,

@@ -41,6 +41,7 @@ import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.BackgroundAudioController
+import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackHost
@@ -83,7 +84,6 @@ class NativePlayerActivity : ComponentActivity() {
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
     private var pipChoicePending = false
-    private var pendingChooserAfterPipExit = false
     private var pendingFreshResumeFromPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
@@ -107,6 +107,16 @@ class NativePlayerActivity : ComponentActivity() {
             return
         }
 
+        lifecycleScope.launch {
+            NativePipSessionBridge.commands.collect { command ->
+                if (command.sessionId != playbackSessionId || closingPlayer) return@collect
+                when (command.action) {
+                    NativePipSessionBridge.Action.AUDIO_ONLY -> handoffToBackgroundAudio()
+                    NativePipSessionBridge.Action.CLOSE -> closePlaybackCompletely()
+                }
+            }
+        }
+
         // One Back pipeline for gesture navigation, 3-button navigation and legacy devices.
         // ComponentActivity bridges this dispatcher to Android's modern back dispatcher on API 33+,
         // so the system cannot pop this Activity before our PiP/double-Back state machine runs.
@@ -120,7 +130,7 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(
                 PlaybackPipActions.buildParams(
                     context = this,
-                    activityClass = NativePlayerActivity::class.java
+                    activityClass = MainActivity::class.java
                 )
             )
         }
@@ -372,8 +382,8 @@ class NativePlayerActivity : ComponentActivity() {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
                 pipChoicePending = false
-                playbackBackCoordinator.forceChooserVisible()
-                showPlaybackExitChoices = true
+                NativePipSessionBridge.activate(playbackSessionId)
+                showParentPipChooser()
                 return
             }
             PlaybackPipActions.ACTION_AUDIO_ONLY -> {
@@ -483,13 +493,10 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
+        NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
         BackgroundAudioController.stop(applicationContext)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask()
-        } else {
-            finishAffinity()
-        }
+        finish()
     }
 
     private fun handoffToBackgroundAudio() {
@@ -505,12 +512,9 @@ class NativePlayerActivity : ComponentActivity() {
             ).onSuccess {
                 closingPlayer = true
                 playerActive = false
+                NativePipSessionBridge.clear(playbackSessionId)
                 PlaybackSessionRegistry.close(playbackSessionId)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    finishAndRemoveTask()
-                } else {
-                    finishAffinity()
-                }
+                finish()
             }.onFailure {
                 Toast.makeText(
                     this@NativePlayerActivity,
@@ -526,9 +530,20 @@ class NativePlayerActivity : ComponentActivity() {
         pipChoicePending = false
         closingPlayer = true
         playerActive = false
+        NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
         finish()
     }
+
+    private fun showParentBehindPip(showChooser: Boolean = false) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            if (showChooser) action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(intent)
+    }
+
+    private fun showParentPipChooser() = showParentBehindPip(showChooser = true)
 
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -537,7 +552,7 @@ class NativePlayerActivity : ComponentActivity() {
             foregroundPlaybackAllowed = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
-                activityClass = NativePlayerActivity::class.java
+                activityClass = MainActivity::class.java
             )
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
@@ -573,11 +588,6 @@ class NativePlayerActivity : ComponentActivity() {
             resumeGeneration += 1
             foregroundPlaybackAllowed = true
         }
-        if (!closingPlayer && pendingChooserAfterPipExit && playerActive) {
-            pendingChooserAfterPipExit = false
-            playbackBackCoordinator.forceChooserVisible()
-            showPlaybackExitChoices = true
-        }
     }
 
     override fun onStop() {
@@ -601,6 +611,7 @@ class NativePlayerActivity : ComponentActivity() {
         closingPlayer = true
         playerActive = false
         foregroundPlaybackAllowed = false
+        NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
         YoutubeStreamResolver.invalidate(url)
 
@@ -625,6 +636,7 @@ class NativePlayerActivity : ComponentActivity() {
         playerActive = false
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (isFinishing && !isChangingConfigurations) {
+            NativePipSessionBridge.clear(playbackSessionId)
             PlaybackSessionRegistry.close(playbackSessionId)
         }
         super.onDestroy()
@@ -639,21 +651,13 @@ class NativePlayerActivity : ComponentActivity() {
 
         if (isInPictureInPictureMode && playerActive && !closingPlayer) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-
-        if (
-            PlaybackPipExitPolicy.shouldRestoreChoices(
-                wasInPip = wasInPip,
-                isInPip = isInPictureInPictureMode,
-                choicePending = pipChoicePending,
-                playerActive = playerActive,
-                closing = closingPlayer
-            )
-        ) {
+            NativePipSessionBridge.activate(playbackSessionId)
+            // SmartTube-style ownership: ExoPlayer stays in this PiP activity while MyTube's
+            // parent UI becomes the foreground surface that owns the next Back press.
+            showParentBehindPip()
+        } else if (wasInPip && !isInPictureInPictureMode) {
+            NativePipSessionBridge.clear(playbackSessionId)
             pipChoicePending = false
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            pendingChooserAfterPipExit = true
         }
 
         if (wasInPip && !isInPictureInPictureMode && playerActive && !closingPlayer) {

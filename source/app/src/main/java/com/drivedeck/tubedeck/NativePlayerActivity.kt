@@ -445,22 +445,6 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun dispatchPlaybackBackAction(action: PlaybackBackAction) {
         when (action) {
-            PlaybackBackAction.WAIT_FOR_SECOND_PRESS -> {
-                playbackBackDecisionJob?.cancel()
-                playbackBackDecisionJob = lifecycleScope.launch {
-                    delay(PlaybackBackCoordinator.PIP_ENTRY_DELAY_MS)
-                    if (!playerActive || closingPlayer) return@launch
-                    playbackBackDecisionJob = null
-                    dispatchPlaybackBackAction(
-                        playbackBackCoordinator.onSinglePressTimeout(
-                            canEnterPip =
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                    repository.settings.value.pipEnabled
-                        )
-                    )
-                }
-            }
-
             PlaybackBackAction.ENTER_PIP -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null

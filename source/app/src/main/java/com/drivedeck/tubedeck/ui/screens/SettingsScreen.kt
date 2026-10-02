@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     currentSettings: TubeDeckSettings,
     blockedAdsCount: Int,
+    onPreviewSettings: (TubeDeckSettings) -> Unit,
     onSaveSettings: (TubeDeckSettings) -> Unit,
     onResetAdBlockStats: () -> Unit,
     onClose: () -> Unit,
@@ -101,6 +102,16 @@ fun SettingsScreen(
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
     var themeTextArgb by remember { mutableLongStateOf(currentSettings.themeTextArgb) }
+    var previewApplied by remember { mutableStateOf(false) }
+
+    fun appearanceOnlySettings(): TubeDeckSettings =
+        currentSettings.copy(
+            appearancePreset = appearancePreset,
+            fontScale = fontScale.coerceIn(0.80f, 1.35f),
+            themeAccentArgb = themeAccentArgb,
+            themeBackgroundArgb = themeBackgroundArgb,
+            themeTextArgb = themeTextArgb
+        )
 
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
 
@@ -167,6 +178,7 @@ fun SettingsScreen(
                                         themeAccentArgb = preset.accentArgb
                                         themeBackgroundArgb = preset.backgroundArgb
                                         themeTextArgb = preset.textArgb
+                                        previewApplied = false
                                     }
                                     .border(
                                         width = if (selected) 2.dp else 1.dp,
@@ -219,6 +231,7 @@ fun SettingsScreen(
                     onValueChange = {
                         fontScale = it.coerceIn(0.80f, 1.35f)
                         appearancePreset = "Custom"
+                        previewApplied = false
                     },
                     valueRange = 0.80f..1.35f
                 )
@@ -243,6 +256,7 @@ fun SettingsScreen(
                     onChange = {
                         themeAccentArgb = it
                         appearancePreset = "Custom"
+                        previewApplied = false
                     }
                 )
                 RgbColorAdjuster(
@@ -251,6 +265,7 @@ fun SettingsScreen(
                     onChange = {
                         themeBackgroundArgb = it
                         appearancePreset = "Custom"
+                        previewApplied = false
                     }
                 )
                 RgbColorAdjuster(
@@ -259,6 +274,7 @@ fun SettingsScreen(
                     onChange = {
                         themeTextArgb = it
                         appearancePreset = "Custom"
+                        previewApplied = false
                     }
                 )
 
@@ -273,30 +289,49 @@ fun SettingsScreen(
                             themeAccentArgb = 0xFF00D2FFL
                             themeBackgroundArgb = 0xFF080B11L
                             themeTextArgb = 0xFFFFFFFFL
+                            previewApplied = false
                         },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Reset appearance")
                     }
-                    Surface(
+                    OutlinedButton(
+                        onClick = {
+                            onPreviewSettings(appearanceOnlySettings())
+                            previewApplied = true
+                        },
                         modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(themeBackgroundArgb.toInt()),
                         border = androidx.compose.foundation.BorderStroke(
                             2.dp,
                             Color(themeAccentArgb.toInt())
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(themeBackgroundArgb.toInt()),
+                            contentColor = Color(themeTextArgb.toInt())
                         )
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                "Preview",
-                                color = Color(themeTextArgb.toInt()),
-                                fontSize = (12f * fontScale).sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Visibility,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            if (previewApplied) "Preview active" else "Preview theme",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
+                Text(
+                    if (previewApplied) {
+                        "Temporary preview is active. Save to keep it, or leave Settings to revert."
+                    } else {
+                        "Preview applies the selected appearance temporarily without saving it."
+                    },
+                    color = TubeDeckTextSecondary,
+                    fontSize = 9.5.sp
+                )
             }
 
             // Player Mode

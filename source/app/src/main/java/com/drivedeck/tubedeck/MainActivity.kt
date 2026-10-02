@@ -183,6 +183,8 @@ class MainActivity : ComponentActivity() {
                 }
                 var appCanGoBack by remember { mutableStateOf(false) }
                 var appCanGoForward by remember { mutableStateOf(false) }
+                var webCanGoBack by remember { mutableStateOf(false) }
+                var webCanGoForward by remember { mutableStateOf(false) }
 
                 fun applyNavigationEntry(entry: NavigationEntry) {
                     if (currentScreen == ActiveScreen.PLAYER && entry.screen != ActiveScreen.PLAYER) {
@@ -236,6 +238,22 @@ class MainActivity : ComponentActivity() {
                     val entry = navigation.forward() ?: return false
                     applyNavigationEntry(entry)
                     return true
+                }
+
+                fun navigateBrowserBackOrApp(): Boolean {
+                    if (currentScreen == ActiveScreen.BROWSER && webCanGoBack) {
+                        webViewInstance?.goBack()
+                        return true
+                    }
+                    return navigateBack()
+                }
+
+                fun navigateBrowserForwardOrApp(): Boolean {
+                    if (currentScreen == ActiveScreen.BROWSER && webCanGoForward) {
+                        webViewInstance?.goForward()
+                        return true
+                    }
+                    return navigateForward()
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
@@ -391,7 +409,7 @@ class MainActivity : ComponentActivity() {
                         showAdBlockSheet -> showAdBlockSheet = false
                         showDownloadModal -> showDownloadModal = false
                         showGoogleAccountDialog -> showGoogleAccountDialog = false
-                        navigateBack() -> Unit
+                        navigateBrowserBackOrApp() -> Unit
                         else -> finish()
                     }
                 }
@@ -405,18 +423,18 @@ class MainActivity : ComponentActivity() {
                             Column {
                                 TopNavBar(
                                     currentUrl = currentUrl,
-                                    canGoBack = appCanGoBack,
-                                    canGoForward = appCanGoForward,
+                                    canGoBack = webCanGoBack || appCanGoBack,
+                                    canGoForward = webCanGoForward || appCanGoForward,
                                     activeDownloadCount = activeDownloads.size,
                                     blockedAdsCount = blockedAdsCount,
                                     isAdBlockActive = settings.adBlockEnabled,
                                     onBack = {
-                                        if (!navigateBack()) {
+                                        if (!navigateBrowserBackOrApp()) {
                                             navigation.reset(NavigationEntry(ActiveScreen.HOME))
                                             applyNavigationEntry(navigation.current)
                                         }
                                     },
-                                    onForward = { navigateForward() },
+                                    onForward = { navigateBrowserForwardOrApp() },
                                     onHome = {
                                         navigateTo(ActiveScreen.HOME)
                                     },
@@ -538,8 +556,8 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     },
-                                    onCanGoBackChanged = { /* Logical history owns app Back. */ },
-                                    onCanGoForwardChanged = { /* Logical history owns app Forward. */ },
+                                    onCanGoBackChanged = { webCanGoBack = it },
+                                    onCanGoForwardChanged = { webCanGoForward = it },
                                     onQuickDownload = { targetUrl ->
                                         downloadModalTargetUrl = targetUrl
                                         downloadPlaylistMode = false
@@ -559,7 +577,15 @@ class MainActivity : ComponentActivity() {
                                         repository.updateSettings(settings.copy(fabInstantX = iX, fabInstantY = iY, fabCustomX = cX, fabCustomY = cY))
                                     },
                                     onAdBlocked = { repository.incrementBlockedAds(it) },
-                                    webViewRef = { webViewInstance = it },
+                                    webViewRef = {
+                                        webViewInstance = it
+                                        if (it == null) {
+                                            webCanGoBack = false
+                                            webCanGoForward = false
+                                            webPlaybackActive = false
+                                            webPlaybackPositionMs = 0L
+                                        }
+                                    },
                                     onPlaybackStateChanged = { playing, positionMs ->
                                         webPlaybackActive = playing
                                         webPlaybackPositionMs = positionMs

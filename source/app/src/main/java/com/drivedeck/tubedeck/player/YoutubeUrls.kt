@@ -41,6 +41,36 @@ object YoutubeUrls {
             host in setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com")
     }
 
+    fun withStartPosition(value: String, positionMs: Long): String {
+        if (videoId(value) == null || positionMs <= 0L) return value
+        val seconds = positionMs / 1_000L
+        if (seconds <= 0L) return value
+
+        val fragment = value.substringAfter('#', "").takeIf { '#' in value }
+        val withoutFragment = value.substringBefore('#')
+        val base = withoutFragment.substringBefore('?')
+        val rawQuery = withoutFragment.substringAfter('?', "")
+        val retained = rawQuery
+            .split('&')
+            .filter { it.isNotBlank() }
+            .filterNot {
+                val key = it.substringBefore('=').lowercase()
+                key == "t" || key == "start"
+            }
+            .toMutableList()
+        retained += "t=${seconds}s"
+
+        return buildString {
+            append(base)
+            append('?')
+            append(retained.joinToString("&"))
+            fragment?.let {
+                append('#')
+                append(it)
+            }
+        }
+    }
+
     private fun queryParameter(uri: URI, name: String): String? =
         uri.rawQuery?.split('&')?.firstOrNull { it.substringBefore('=') == name }
             ?.substringAfter('=', "")

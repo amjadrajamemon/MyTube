@@ -5,14 +5,7 @@ import org.junit.Test
 
 class PlaybackBackCoordinatorTest {
     @Test
-    fun pipEntryDelayIsShorterThanSecondBackWindow() {
-        assertEquals(180L, PlaybackBackCoordinator.PIP_ENTRY_DELAY_MS)
-        assertEquals(900L, PlaybackBackCoordinator.DEFAULT_WINDOW_MS)
-        assertEquals(800L, PlaybackBackCoordinator.CHOOSER_SETTLE_MS)
-    }
-
-    @Test
-    fun singleBackThenTimeoutEntersPip() {
+    fun firstBackThenTimeoutEntersPip() {
         val coordinator = PlaybackBackCoordinator(900L)
         assertEquals(
             PlaybackBackAction.WAIT_FOR_SECOND_PRESS,
@@ -25,39 +18,27 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
-    fun naturalSecondBackWithinNineHundredMsShowsChooser() {
+    fun veryFastSecondBackStillMeansPipNotAPlaybackDecision() {
         val coordinator = PlaybackBackCoordinator(900L)
         coordinator.onBack(1_000L, isInPip = false)
         assertEquals(
-            PlaybackBackAction.SHOW_EXIT_CHOOSER,
-            coordinator.onBack(1_700L, isInPip = false)
+            PlaybackBackAction.ENTER_PIP,
+            coordinator.onBack(1_100L, isInPip = false)
         )
     }
 
     @Test
-    fun nextBackAfterBackTriggeredPipShowsChooser() {
+    fun backWhileSystemPipOwnsFocusOnlyRequestsExpansion() {
         val coordinator = PlaybackBackCoordinator(900L)
-        coordinator.onBack(1_000L, isInPip = false)
-        coordinator.onSinglePressTimeout(canEnterPip = true)
-
+        coordinator.onPipModeChanged(true)
         assertEquals(
-            PlaybackBackAction.SHOW_EXIT_CHOOSER,
-            coordinator.onBack(2_000L, isInPip = false)
-        )
-    }
-
-    @Test
-    fun backWhileActuallyInPipRequestsForegroundExpansion() {
-        val coordinator = PlaybackBackCoordinator(900L)
-
-        assertEquals(
-            PlaybackBackAction.EXPAND_PIP_FOR_EXIT_CHOOSER,
+            PlaybackBackAction.EXPAND_PIP,
             coordinator.onBack(2_000L, isInPip = true)
         )
     }
 
     @Test
-    fun expandedManualPipMakesNextBackShowChooser() {
+    fun backAfterPipWasExpandedShowsExplicitChooser() {
         val coordinator = PlaybackBackCoordinator(900L)
         coordinator.onPipModeChanged(true)
         coordinator.onPipModeChanged(false)
@@ -69,33 +50,29 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
-    fun chooserIgnoresImmediateReplayThenLaterBackExits() {
+    fun chooserNeverTurnsLaterBackIntoCloseOrAudio() {
         val coordinator = PlaybackBackCoordinator(900L)
-        coordinator.onBack(1_000L, isInPip = false)
-        coordinator.onBack(1_200L, isInPip = false)
+        coordinator.forceChooserVisible()
 
         assertEquals(
             PlaybackBackAction.IGNORE,
-            coordinator.onBack(1_300L, isInPip = false)
+            coordinator.onBack(2_100L, isInPip = false)
         )
         assertEquals(
-            PlaybackBackAction.EXIT_APP,
-            coordinator.onBack(2_100L, isInPip = false)
+            PlaybackBackAction.IGNORE,
+            coordinator.onBack(60_000L, isInPip = false)
         )
     }
 
     @Test
-    fun forcedChooserFromPipHasTheSameSettleGuard() {
+    fun explicitPipChoiceCanDismissChooserAndStartFreshCycle() {
         val coordinator = PlaybackBackCoordinator(900L)
-        coordinator.forceChooserVisible(2_000L)
+        coordinator.forceChooserVisible()
+        coordinator.onChooserDismissed()
 
         assertEquals(
-            PlaybackBackAction.IGNORE,
-            coordinator.onBack(2_100L, isInPip = false)
-        )
-        assertEquals(
-            PlaybackBackAction.EXIT_APP,
-            coordinator.onBack(2_900L, isInPip = false)
+            PlaybackBackAction.WAIT_FOR_SECOND_PRESS,
+            coordinator.onBack(5_000L, isInPip = false)
         )
     }
 }

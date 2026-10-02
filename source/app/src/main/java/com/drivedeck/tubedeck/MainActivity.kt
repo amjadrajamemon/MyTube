@@ -276,6 +276,7 @@ class MainActivity : ComponentActivity() {
                             currentScreen == ActiveScreen.BROWSER -> {
                                 val destination = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
                                 currentUrl = destination
+                                replaceCurrentRoute(ActiveScreen.BROWSER, destination)
                                 webViewInstance?.stopLoading()
                                 if (webViewInstance?.url != destination) {
                                     webViewInstance?.loadUrl(destination)
@@ -316,12 +317,11 @@ class MainActivity : ComponentActivity() {
                 // Playback Back is owned exclusively by legacyPlaybackBackCallback while
                 // media is active. Keeping this general navigation handler disabled in that state
                 // prevents two Compose/Activity callbacks from competing for the same system Back.
-                BackHandler(enabled = !playerActive) {
+                BackHandler(enabled = !playerActive && !isBrowserFullscreen) {
                     when {
                         showAdBlockSheet -> showAdBlockSheet = false
                         showDownloadModal -> showDownloadModal = false
                         showGoogleAccountDialog -> showGoogleAccountDialog = false
-                        isBrowserFullscreen -> Unit // BrowserScreen owns fullscreen Back first.
                         navigateBack() -> Unit
                         else -> finish()
                     }

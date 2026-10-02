@@ -10,7 +10,7 @@ internal class ConsecutiveBackPressDetector(
     private val windowMs: Long = DEFAULT_WINDOW_MS
 ) {
     companion object {
-        const val DEFAULT_WINDOW_MS = 500L
+        const val DEFAULT_WINDOW_MS = 900L
     }
 
     private var firstPressAtMs: Long = 0L

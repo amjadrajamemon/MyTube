@@ -113,19 +113,38 @@ fun BrowserScreen(
         val videoId = YoutubeUrls.videoId(url)
         if (currentSettings.playerMode == PlayerMode.NATIVE && videoId != null) {
             val now = SystemClock.elapsedRealtime()
-            if (lastObservedVideoId != videoId || (explicitNavigation && now - lastNativeRequestAt > 1_500L)) {
+
+            // Main-frame clicks are explicit user choices and may intentionally reopen the same
+            // video. Passive WebView callbacks/polling for the same consumed watch URL must never
+            // relaunch the player; that was the source of the search/video/back loop.
+            val shouldLaunch =
+                explicitNavigation ||
+                    lastObservedVideoId != videoId ||
+                    now - lastNativeRequestAt > 10_000L
+
+            if (shouldLaunch) {
                 lastObservedVideoId = videoId
                 lastNativeRequestAt = now
                 currentOnNativeVideo(url)
             }
+
             if (!explicitNavigation) {
-                val stableUrl = latestUrl.takeIf { YoutubeUrls.videoId(it) == null && it.startsWith("https://") }
-                    ?: "https://www.youtube.com/"
-                if (view?.url != stableUrl) view?.loadUrl(stableUrl)
+                // YouTube SPA navigation may already have pushed /watch into WebView history.
+                // Go back to the preserved results page instead of loadUrl(), which would create
+                // another history entry and cause Back to bounce into /watch again.
+                if (view?.canGoBack() == true) {
+                    view.goBack()
+                } else {
+                    val stableUrl = latestUrl
+                        .takeIf { YoutubeUrls.videoId(it) == null && it.startsWith("https://") }
+                        ?: "https://www.youtube.com/"
+                    if (view?.url != stableUrl) view?.loadUrl(stableUrl)
+                }
             }
-        } else {
-            currentOnUrlChanged(url)
+            return
         }
+
+        currentOnUrlChanged(url)
     }
 
     var customView by remember { mutableStateOf<View?>(null) }

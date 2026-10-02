@@ -1,12 +1,10 @@
 package com.drivedeck.tubedeck
 
-import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Rational
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -35,6 +33,7 @@ import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackPipActions
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -88,13 +87,12 @@ class NativePlayerActivity : ComponentActivity() {
         })
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val pipBuilder = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                pipBuilder.setAutoEnterEnabled(false)
-                pipBuilder.setSeamlessResizeEnabled(true)
-            }
-            setPictureInPictureParams(pipBuilder.build())
+            setPictureInPictureParams(
+                PlaybackPipActions.buildParams(
+                    context = this,
+                    activityClass = NativePlayerActivity::class.java
+                )
+            )
         }
 
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
@@ -229,6 +227,16 @@ class NativePlayerActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        when (intent.action) {
+            PlaybackPipActions.ACTION_CLOSE -> {
+                closePlaybackCompletely()
+                return
+            }
+            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
+                handoffToBackgroundAudio()
+                return
+            }
+        }
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
     }
 
@@ -365,18 +373,14 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val builder = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(false)
-                builder.setSeamlessResizeEnabled(true)
-            }
-            val params = builder.build()
+            val params = PlaybackPipActions.buildParams(
+                context = this,
+                activityClass = NativePlayerActivity::class.java
+            )
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
             if (!entered) {
                 playbackBackCoordinator.onPipEnterFailed()
-                // Do not fall through to Activity finish: preserving playback is preferable.
                 showPlaybackExitChoices = true
                 Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
             }

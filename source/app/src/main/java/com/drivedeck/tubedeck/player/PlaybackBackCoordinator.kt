@@ -23,6 +23,8 @@ internal class PlaybackBackCoordinator(
     private val detector = ConsecutiveBackPressDetector(doublePressWindowMs)
     private var chooserVisible = false
     private var pipEnteredFromBack = false
+    private var wasInPip = false
+    private var expandedFromPip = false
 
     fun onBack(nowMs: Long, isInPip: Boolean): PlaybackBackAction {
         if (chooserVisible) {
@@ -30,9 +32,10 @@ internal class PlaybackBackCoordinator(
             return PlaybackBackAction.EXIT_APP
         }
 
-        if (isInPip || pipEnteredFromBack) {
+        if (isInPip || pipEnteredFromBack || expandedFromPip) {
             detector.clear()
             pipEnteredFromBack = false
+            expandedFromPip = false
             chooserVisible = true
             return PlaybackBackAction.SHOW_EXIT_CHOOSER
         }
@@ -57,6 +60,13 @@ internal class PlaybackBackCoordinator(
         }
     }
 
+    fun onPipModeChanged(isInPip: Boolean) {
+        if (wasInPip && !isInPip) {
+            expandedFromPip = true
+        }
+        wasInPip = isInPip
+    }
+
     fun onChooserDismissed() {
         chooserVisible = false
         detector.clear()
@@ -64,6 +74,7 @@ internal class PlaybackBackCoordinator(
 
     fun onPipEnterFailed() {
         pipEnteredFromBack = false
+        expandedFromPip = false
         chooserVisible = true
         detector.clear()
     }
@@ -76,5 +87,7 @@ internal class PlaybackBackCoordinator(
         detector.clear()
         chooserVisible = false
         pipEnteredFromBack = false
+        wasInPip = false
+        expandedFromPip = false
     }
 }

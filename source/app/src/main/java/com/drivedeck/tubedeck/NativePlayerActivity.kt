@@ -543,9 +543,10 @@ class NativePlayerActivity : ComponentActivity() {
         PlaybackSessionRegistry.close(playbackSessionId)
         YoutubeStreamResolver.invalidate(url)
 
-        val seconds = (currentPlaybackPositionMs.coerceAtLeast(0L) / 1000L)
-        val separator = if (url.contains("?")) "&" else "?"
-        val resumeUrl = if (seconds > 0L) "$url${separator}t=${seconds}s" else url
+        val resumeUrl = YoutubeUrls.withStartPosition(
+            url,
+            currentPlaybackPositionMs.coerceAtLeast(0L)
+        )
         startActivity(
             Intent(this, MainActivity::class.java).apply {
                 action = Intent.ACTION_VIEW

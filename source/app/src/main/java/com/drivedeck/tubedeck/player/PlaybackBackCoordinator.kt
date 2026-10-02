@@ -15,8 +15,11 @@ internal enum class PlaybackBackAction {
  * the next Back opens Close / Audio only instead of entering PiP again.
  */
 internal class PlaybackBackCoordinator(
-    private val doublePressWindowMs: Long = ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS
+    private val doublePressWindowMs: Long = DEFAULT_WINDOW_MS
 ) {
+    companion object {
+        const val DEFAULT_WINDOW_MS: Long = ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS
+    }
     private val detector = ConsecutiveBackPressDetector(doublePressWindowMs)
     private var chooserVisible = false
     private var pipEnteredFromBack = false

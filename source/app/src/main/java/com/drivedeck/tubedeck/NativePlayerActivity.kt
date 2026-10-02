@@ -228,6 +228,13 @@ class NativePlayerActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
+            PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                playbackBackCoordinator.forceChooserVisible(SystemClock.elapsedRealtime())
+                showPlaybackExitChoices = true
+                return
+            }
             PlaybackPipActions.ACTION_CLOSE -> {
                 closePlaybackCompletely()
                 return
@@ -307,11 +314,19 @@ class NativePlayerActivity : ComponentActivity() {
                 enterPlayerPip()
             }
 
+            PlaybackBackAction.EXPAND_PIP_FOR_EXIT_CHOOSER -> {
+                playbackBackDecisionJob?.cancel()
+                playbackBackDecisionJob = null
+                requestExitChooserFromPip()
+            }
+
             PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
                 showPlaybackExitChoices = true
             }
+
+            PlaybackBackAction.IGNORE -> Unit
 
             PlaybackBackAction.EXIT_APP -> {
                 playbackBackDecisionJob?.cancel()
@@ -320,6 +335,14 @@ class NativePlayerActivity : ComponentActivity() {
                 closePlaybackCompletely()
             }
         }
+    }
+
+    private fun requestExitChooserFromPip() {
+        val intent = Intent(this, NativePlayerActivity::class.java).apply {
+            action = PlaybackPipActions.ACTION_SHOW_EXIT_CHOOSER
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(intent)
     }
 
     private fun closePlaybackCompletely() {

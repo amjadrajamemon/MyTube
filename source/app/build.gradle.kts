@@ -99,6 +99,7 @@ dependencies {
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.android.gms:play-services-auth:21.5.1")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")

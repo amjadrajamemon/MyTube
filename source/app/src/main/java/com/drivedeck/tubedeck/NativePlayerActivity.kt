@@ -39,6 +39,8 @@ import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackHost
+import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
@@ -117,8 +119,10 @@ class NativePlayerActivity : ComponentActivity() {
 
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
         if (
-            repository.settings.value.playerMode == PlayerMode.WEB &&
-            YoutubeUrls.videoId(currentMedia.mediaUri) != null
+            PlaybackHostRouter.choose(
+                repository.settings.value.playerMode,
+                currentMedia.mediaUri
+            ) == PlaybackHost.WEB
         ) {
             returnCurrentVideoToWeb()
             return
@@ -163,8 +167,10 @@ class NativePlayerActivity : ComponentActivity() {
                 }
                 LaunchedEffect(settings.playerMode, media.mediaUri) {
                     if (
-                        settings.playerMode == PlayerMode.WEB &&
-                        YoutubeUrls.videoId(media.mediaUri) != null &&
+                        PlaybackHostRouter.choose(
+                            settings.playerMode,
+                            media.mediaUri
+                        ) == PlaybackHost.WEB &&
                         !closingPlayer
                     ) {
                         returnCurrentVideoToWeb()

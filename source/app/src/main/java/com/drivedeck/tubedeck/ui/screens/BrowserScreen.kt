@@ -96,6 +96,7 @@ fun BrowserScreen(
     onUpdateFabPosition: (instantX: Float, instantY: Float, customX: Float, customY: Float) -> Unit,
     onAdBlocked: (Int) -> Unit,
     webViewRef: (WebView?) -> Unit,
+    onPlaybackStateChanged: (isPlaying: Boolean, positionMs: Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     onFullscreenChanged: (Boolean) -> Unit = {}
 ) {
@@ -106,6 +107,7 @@ fun BrowserScreen(
     val currentOnUrlChanged by rememberUpdatedState(onUrlChanged)
     val currentOnNativeVideo by rememberUpdatedState(onNativeVideo)
     val currentOnAdBlocked by rememberUpdatedState(onAdBlocked)
+    val currentOnPlaybackStateChanged by rememberUpdatedState(onPlaybackStateChanged)
     val currentSettings by rememberUpdatedState(settings)
     val latestUrl by rememberUpdatedState(currentUrl)
     var lastObservedVideoId by remember { mutableStateOf<String?>(null) }
@@ -335,6 +337,24 @@ fun BrowserScreen(
             persistentWebView.evaluateJavascript("location.href") { result ->
                 val url = runCatching { JSONArray("[$result]").optString(0) }.getOrNull()
                 if (url?.startsWith("https://") == true && url != latestUrl) observeUrl(persistentWebView, url)
+            }
+            if (YoutubeUrls.videoId(persistentWebView.url.orEmpty()) != null) {
+                persistentWebView.evaluateJavascript(
+                    """(function(){
+                        var v=document.querySelector('video');
+                        if(!v) return '0|0';
+                        var playing=(!v.paused && !v.ended && v.readyState>1) ? '1' : '0';
+                        return playing+'|'+Math.max(0,Math.floor((v.currentTime||0)*1000));
+                    })();""".trimIndent()
+                ) { result ->
+                    val decoded = runCatching { JSONArray("[$result]").optString(0) }.getOrNull().orEmpty()
+                    val parts = decoded.split('|', limit = 2)
+                    val playing = parts.firstOrNull() == "1"
+                    val positionMs = parts.getOrNull(1)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                    currentOnPlaybackStateChanged(playing, positionMs)
+                }
+            } else {
+                currentOnPlaybackStateChanged(false, 0L)
             }
         }
     }

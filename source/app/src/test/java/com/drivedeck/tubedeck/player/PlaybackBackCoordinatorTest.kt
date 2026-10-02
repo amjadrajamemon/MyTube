@@ -18,7 +18,7 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
-    fun veryFastSecondBackStillMeansPipNotAPlaybackDecision() {
+    fun veryFastSecondPhysicalBackBeforePipEntryStillCompletesPipEntry() {
         val coordinator = PlaybackBackCoordinator(900L)
         coordinator.onBack(1_000L, isInPip = false)
         assertEquals(
@@ -28,24 +28,24 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
-    fun backWhileSystemPipOwnsFocusOnlyRequestsExpansion() {
+    fun secondPlaybackBackWhileInPipExpandsWithChooserAlreadyArmed() {
         val coordinator = PlaybackBackCoordinator(900L)
+        coordinator.onBack(1_000L, isInPip = false)
+        coordinator.onSinglePressTimeout(canEnterPip = true)
         coordinator.onPipModeChanged(true)
+
         assertEquals(
             PlaybackBackAction.EXPAND_PIP,
             coordinator.onBack(2_000L, isInPip = true)
         )
-    }
 
-    @Test
-    fun backAfterPipWasExpandedShowsExplicitChooser() {
-        val coordinator = PlaybackBackCoordinator(900L)
-        coordinator.onPipModeChanged(true)
         coordinator.onPipModeChanged(false)
 
+        // The second Back already owns the decision stage. A third Back must never be required
+        // and must never silently select Close or Audio.
         assertEquals(
-            PlaybackBackAction.SHOW_EXIT_CHOOSER,
-            coordinator.onBack(2_000L, isInPip = false)
+            PlaybackBackAction.IGNORE,
+            coordinator.onBack(5_000L, isInPip = false)
         )
     }
 
@@ -65,7 +65,7 @@ class PlaybackBackCoordinatorTest {
     }
 
     @Test
-    fun explicitPipChoiceCanDismissChooserAndStartFreshCycle() {
+    fun explicitPipChoiceDismissesChooserAndStartsFreshBackCycle() {
         val coordinator = PlaybackBackCoordinator(900L)
         coordinator.forceChooserVisible()
         coordinator.onChooserDismissed()
@@ -75,30 +75,18 @@ class PlaybackBackCoordinatorTest {
             coordinator.onBack(5_000L, isInPip = false)
         )
     }
+
     @Test
-    fun fullSlowBackPipReturnCycleAlwaysEndsAtChooser() {
+    fun pipUnavailableFallsBackDirectlyToChooser() {
         val coordinator = PlaybackBackCoordinator(900L)
-
-        assertEquals(
-            PlaybackBackAction.WAIT_FOR_SECOND_PRESS,
-            coordinator.onBack(1_000L, isInPip = false)
-        )
-        assertEquals(
-            PlaybackBackAction.ENTER_PIP,
-            coordinator.onSinglePressTimeout(canEnterPip = true)
-        )
-
-        coordinator.onPipModeChanged(true)
-        coordinator.onPipModeChanged(false)
-
+        coordinator.onBack(1_000L, isInPip = false)
         assertEquals(
             PlaybackBackAction.SHOW_EXIT_CHOOSER,
-            coordinator.onBack(5_000L, isInPip = false)
+            coordinator.onSinglePressTimeout(canEnterPip = false)
         )
         assertEquals(
             PlaybackBackAction.IGNORE,
-            coordinator.onBack(8_000L, isInPip = false)
+            coordinator.onBack(3_000L, isInPip = false)
         )
     }
-
 }

@@ -58,10 +58,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
     init {
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
-        _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
+        if (_settings.value.autoLoadUpNext) {
+            _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
+        }
     }
 
     fun updateSettings(value: TubeDeckSettings) {
+        val previous = _settings.value
         val next = value
         _settings.value = next
         prefs.edit().apply {
@@ -80,6 +83,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             apply()
+        }
+        if (previous.autoLoadUpNext && !next.autoLoadUpNext) {
+            homeSuggestionsJob?.cancel()
+            homeSuggestionsJob = null
+        } else if (!previous.autoLoadUpNext && next.autoLoadUpNext) {
+            _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
         }
         processQueue()
     }
@@ -126,7 +135,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(40)
         _watchHistory.value = next
         saveHomeVideos("watch_history_json", next)
-        refreshHomeSuggestions(media.mediaUri)
+        if (_settings.value.autoLoadUpNext) {
+            refreshHomeSuggestions(media.mediaUri)
+        }
     }
 
     fun clearWatchHistory() {

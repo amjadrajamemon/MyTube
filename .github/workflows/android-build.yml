@@ -45,10 +45,23 @@ jobs:
           java-version: '21'
 
       - name: Restore stable debug signing key
+        id: signing-cache
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: mytube-debug-signing-v1
+
+      - name: Verify stable debug signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$HOME/.android/debug.keystore"
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "::error::Stable MyTube debug signing key is missing. Refusing to generate a new key because that would rotate the Google OAuth SHA-1."
+            echo "::error::Restore the mytube-debug-signing-v1 cache or provision the registered signing keystore before building."
+            exit 1
+          fi
+          keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android >/dev/null
 
       - name: Install Android SDK 36
         shell: bash

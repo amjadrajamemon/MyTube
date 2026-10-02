@@ -12,62 +12,64 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.ui.theme.TubeDeckAccentCyan
+import com.drivedeck.tubedeck.ui.theme.TubeDeckAccentMint
 import com.drivedeck.tubedeck.ui.theme.TubeDeckError
 
 @Composable
 fun PlaybackBackChoiceOverlay(
     onCloseVideo: () -> Unit,
     onAudioOnly: () -> Unit,
-    onDismiss: () -> Unit,
+    onPictureInPicture: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LaunchedEffect(Unit) {
-        delay(6_000L)
-        onDismiss()
-    }
-
     Surface(
         modifier = modifier
             .navigationBarsPadding()
             .imePadding()
-            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            .padding(start = 10.dp, end = 10.dp, bottom = 12.dp),
         shape = RoundedCornerShape(18.dp),
-        color = Color.Black.copy(alpha = 0.88f),
+        color = Color.Black.copy(alpha = 0.92f),
         tonalElevation = 6.dp
     ) {
         Row(
-            modifier = Modifier.background(Color.Transparent),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.background(Color.Transparent).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             OutlinedButton(
                 onClick = onCloseVideo,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckError)
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close video")
-                Spacer(Modifier.width(4.dp))
-                Text("Close", fontSize = 11.sp)
+                Spacer(Modifier.width(3.dp))
+                Text("Close", fontSize = 10.5.sp)
             }
-
             OutlinedButton(
                 onClick = onAudioOnly,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckAccentCyan)
             ) {
-                Icon(Icons.Default.Headphones, contentDescription = "Audio only")
-                Spacer(Modifier.width(4.dp))
-                Text("Audio only", fontSize = 11.sp)
+                Icon(Icons.Default.Headphones, contentDescription = "Continue audio only")
+                Spacer(Modifier.width(3.dp))
+                Text("Audio", fontSize = 10.5.sp)
+            }
+            OutlinedButton(
+                onClick = onPictureInPicture,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckAccentMint)
+            ) {
+                Icon(Icons.Default.PictureInPictureAlt, contentDescription = "Continue in picture in picture")
+                Spacer(Modifier.width(3.dp))
+                Text("PiP", fontSize = 10.5.sp)
             }
         }
     }

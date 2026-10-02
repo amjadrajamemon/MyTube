@@ -33,4 +33,23 @@ class DownloadFailureClassifierTest {
         assertTrue(DownloadFailureClassifier.isRecoverable(IllegalStateException("Media server returned HTTP 403")))
         assertTrue(DownloadFailureClassifier.isRecoverable(IllegalStateException("Media server returned HTTP 429")))
     }
+    @Test
+    fun deterministicMuxAndFormatFailuresDoNotRetryForever() {
+        assertFalse(
+            DownloadFailureClassifier.isRecoverable(
+                IllegalStateException("Cannot read the selected video track")
+            )
+        )
+        assertFalse(
+            DownloadFailureClassifier.isRecoverable(
+                IllegalStateException("Encrypted media samples cannot be muxed offline")
+            )
+        )
+        assertFalse(
+            DownloadFailureClassifier.isRecoverable(
+                IllegalStateException("Only HTTPS media streams are supported")
+            )
+        )
+    }
+
 }

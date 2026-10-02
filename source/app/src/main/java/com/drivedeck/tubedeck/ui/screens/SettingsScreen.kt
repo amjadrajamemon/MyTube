@@ -273,7 +273,7 @@ fun SettingsScreen(
                     )
                     onClose()
                 },
-                enabled = downloadTreeUri != null && folderError == null,
+                enabled = folderError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(54.dp)

@@ -235,11 +235,14 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         val google = GoogleIdTokenCredential.createFrom(custom.data)
-        val email = google.email?.takeIf { it.isNotBlank() }
-            ?: error("Google email unavailable")
+        // googleid 1.1.x exposes the selected account identifier through id. The newer
+        // email/uniqueId split is not binary-compatible with this project's Kotlin toolchain.
+        // Stable identity is finalized only after AuthorizationClient + YouTube API verification.
+        val email = google.id.takeIf { it.isNotBlank() }
+            ?: error("Google account unavailable")
 
         return SignedInIdentity(
-            uniqueId = google.uniqueId,
+            uniqueId = "",
             email = email,
             displayName = google.displayName.orEmpty(),
             photoUrl = google.profilePictureUri?.toString()

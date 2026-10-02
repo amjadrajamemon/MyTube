@@ -56,12 +56,46 @@ jobs:
         run: |
           set -euo pipefail
           KEYSTORE="$HOME/.android/debug.keystore"
+          EXPECTED_FILE="$GITHUB_WORKSPACE/.github/mytube-signing-sha1.txt"
+          EXPECTED_SHA1="$(tr -d '\r\n ' < "$EXPECTED_FILE")"
           mkdir -p "$(dirname "$KEYSTORE")"
+
           if [ ! -s "$KEYSTORE" ]; then
-            echo "No cached MyTube debug keystore exists yet; generating the one-time stable OAuth/debug identity."
-            keytool -genkeypair -v               -keystore "$KEYSTORE"               -storepass android               -alias androiddebugkey               -keypass android               -keyalg RSA               -keysize 2048               -validity 10000               -dname "CN=MyTube Debug,O=MyTube,C=PK"
+            if [ "$EXPECTED_SHA1" != "UNSET" ] && [ -n "$EXPECTED_SHA1" ]; then
+              echo "::error::Pinned MyTube signing key is missing. Refusing to rotate OAuth identity."
+              echo "::error::Expected SHA-1: $EXPECTED_SHA1"
+              exit 1
+            fi
+            echo "::notice::Generating the one-time MyTube debug signing identity."
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=MyTube Debug,O=MyTube,C=PK"
           fi
+
           keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android >/dev/null
+          ACTUAL_SHA1="$(keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android | awk -F': ' '/SHA1:/{print $2; exit}')"
+          test -n "$ACTUAL_SHA1"
+
+          if [ "$EXPECTED_SHA1" != "UNSET" ] && [ -n "$EXPECTED_SHA1" ] && [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
+            echo "::error::MyTube signing SHA-1 mismatch. Refusing to publish a rotated OAuth identity."
+            echo "::error::Expected: $EXPECTED_SHA1"
+            echo "::error::Actual:   $ACTUAL_SHA1"
+            exit 1
+          fi
+
+          if [ "$EXPECTED_SHA1" = "UNSET" ] || [ -z "$EXPECTED_SHA1" ]; then
+            echo "MYTUBE_SIGNING_PINNED=false" >> "$GITHUB_ENV"
+            echo "::notice::First signing identity SHA-1: $ACTUAL_SHA1"
+          else
+            echo "MYTUBE_SIGNING_PINNED=true" >> "$GITHUB_ENV"
+          fi
+          echo "MYTUBE_SIGNING_SHA1=$ACTUAL_SHA1" >> "$GITHUB_ENV"
 
       - name: Install Android SDK 36
         shell: bash
@@ -138,7 +172,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
           KEYSTORE="$HOME/.android/debug.keystore"
           test -s "$KEYSTORE"
-          SHA1="$(keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android | awk -F': ' '/SHA1:/{print $2; exit}')"
+          SHA1="$MYTUBE_SIGNING_SHA1"
           test -n "$SHA1"
           {
             echo "MyTube Google / YouTube OAuth registration identity"
@@ -186,6 +220,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
+          if [ "${MYTUBE_SIGNING_PINNED:-false}" != "true" ]; then
+            echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
+            exit 0
+          fi
           TAG="v1.3.13-dual-arm64-universal-debug"
           NOTES="MyTube r6.5 LiveDub v1.3.13.
 

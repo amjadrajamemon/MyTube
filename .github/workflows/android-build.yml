@@ -26,17 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.3.9 dual-APK source
+      - name: Verify v1.3.10 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.3.9"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.3.10"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.3.9 ARM64 + Universal source tree."
+          echo "Building MyTube v1.3.10 ARM64 + Universal source tree."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -126,10 +126,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.9-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.9-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.10-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.3.10-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.9-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.3.10-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -139,21 +139,21 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.3.9-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.9-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.3.9-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.9-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.9-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.9-Complete-AndroidStudio-Source.zip.sha256
+          sha256sum dist/MyTube-v1.3.10-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.3.10-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.3.10-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.3.10-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.3.10-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.3.10-Complete-AndroidStudio-Source.zip.sha256
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Publish v1.3.9 dual APK release
+      - name: Publish v1.3.10 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          TAG="v1.3.9-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.3.9.
+          TAG="v1.3.10-dual-arm64-universal-debug"
+          NOTES="MyTube r6.5 LiveDub v1.3.10.
 
           Two APK editions are published for every release:
           - ARM64: optimized for arm64-v8a devices with full native Whisper audio ASR and Download Engine.
@@ -164,7 +164,7 @@ jobs:
           - System Back prioritizes PiP for active video playback in both native and web modes.
           - The ExoPlayer quality control opens its own Auto/all-quality chooser, not Player Settings.
           - Comments use NewPipe pagination with updated Download Engine fallback.
-          - Google account state is only set after a real Google Identity credential succeeds; GOOGLE_WEB_CLIENT_ID can be supplied as a repository Actions secret.
+          - Google account state is only set after a real Google credential succeeds; Credential Manager is used when GOOGLE_WEB_CLIENT_ID is supplied, with a real Google Play Services account-sign-in fallback when that build secret is absent.
           - Weekly automatic and manual Download Engine updates remain enabled.
           - The auxiliary speed/quality/Zoom/fullscreen/CC/Dub row is moved down beside the seek bar and away from the center transport controls.
           - Playlist discovery is now YouTube-context-first, modeled on the Watch Next architecture used by clients such as SmartTube.
@@ -180,10 +180,10 @@ jobs:
           - Partial files are retained and HTTP Range resume is used when supported; each retry re-resolves fresh YouTube stream URLs.
           - Interrupted/failed legacy queue entries are re-queued automatically after app/process restart.
           - A live Android notification reports queued/active/finished/paused/failed/retrying counts, retry totals, aggregate progress, elapsed time and ETA when calculable.
-          - The old 32-parallel-download ceiling has been removed; the user may choose any positive concurrency value.
+          - The parallel-download setting, prompt and numeric ceiling have been removed completely; queued items are scheduled without an app-imposed simultaneous-download limit.
           - Android system Back is intercepted at Activity level before WebView/history navigation while video is active.
-          - One Back enters PiP after a short 350 ms double-press decision window.
-          - Double Back within that window opens compact Close and Audio-only choices instead of entering PiP.
+          - One Back starts PiP promptly after a 180 ms entry delay; PiP timing is no longer tied to the longer consecutive-Back window.
+          - A second Back is recognized naturally within a 900 ms consecutive-Back window and leads to the Close / Audio-only flow without forcing the first PiP transition to wait that long.
           - Audio-only hands the current video/position to a MediaSession foreground service so playback can continue after the app task is removed.
           - Portrait playback now shows a separate More episodes shelf alongside the existing Up next feed.
           - The episode shelf reuses the downloader's strict YouTube Watch Next/playlist discovery and expands canonical playlists with full pagination when available.
@@ -196,7 +196,7 @@ jobs:
           - Native PiP remains a dedicated Activity above the preserved search/browser Activity, allowing search results to remain underneath the PiP window instead of being destroyed.
           - Removed redundant Google-account/settings helper paragraphs and other unnecessary explanatory copy while keeping actionable status and validation text.
           - Removed the stale 32-download Settings validation cap so Save accepts any positive concurrency value, matching the downloader engine.
-          - Consecutive Back detection now uses a shared tested 500ms window in both player hosts, making the double-Back Close/Audio-only gesture easier to trigger.
+          - Consecutive Back detection now uses a shared tested 900 ms recognition window while PiP itself begins after only 180 ms.
           - MainActivity now has one exclusive Back owner while media is active, eliminating competing Compose/Activity callbacks around PiP.
           - Native related-video relaunch, resolved-title propagation, watch-history/sponsor request duplication, and episode discovery title matching were tightened.
           - Download resume/finalization, permanent-vs-recoverable failure handling, retry persistence, stale partial cleanup, Android data-sync timeout recovery, and foreground-service startup were hardened.
@@ -222,18 +222,22 @@ jobs:
           - Fullscreen WebView owns Back exclusively while fullscreen is active; normal app Back resumes only after fullscreen closes.
           - Fixed the PiP second-Back regression: Back while actually in system PiP now requests foreground expansion before the Close / Audio-only chooser is marked visible.
           - The exit chooser is never considered visible only inside the tiny PiP surface; it is shown after the existing player Activity is brought forward.
-          - Added a 400ms chooser settle guard so a duplicated/resumed Back callback cannot immediately advance from showing the chooser to closing playback.
+          - The Close / Audio-only chooser now has an 800 ms settle guard so duplicated/resumed Back callbacks cannot immediately advance to app exit.
           - Added a PiP Options action that expands the current player and opens Close / Audio-only as a fallback on devices that consume Back while PiP owns focus.
           - Third Back exits only after the chooser has genuinely appeared and the settle guard has elapsed; Close and Audio-only buttons remain explicit alternatives.
+          - Back timing is decoupled: PiP starts after 180 ms, consecutive Back recognition remains open for 900 ms, and the exit chooser is protected for 800 ms before a later Back may exit.
+          - Removed the Parallel downloads setting, validation prompt, persisted maxConcurrent value and scheduler ceiling; the queue now schedules all pending items without an app-imposed concurrency limit.
+          - Google sign-in no longer reports the build unsupported when GOOGLE_WEB_CLIENT_ID is absent; it falls back to a genuine Google Play Services account chooser/profile result.
+          - Credential Manager remains the primary Google Identity path whenever a Web OAuth client ID is injected at build time.
           - Unit tests, both APK builds and ABI verification must pass before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.3.9-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.3.9-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.3.9-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.3.9-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.3.9-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.3.9-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.3.10-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.3.10-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.3.10-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.3.10-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.3.10-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.3.10-Complete-AndroidStudio-Source.zip.sha256
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -241,7 +245,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.3.9 ARM64 + Universal Debug" \
+              --title "MyTube v1.3.10 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -212,6 +213,7 @@ class NativePlayerActivity : ComponentActivity() {
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
+                key(media.id) {
                 PlayerScreen(
                     media = media,
                     playerMode = com.drivedeck.tubedeck.data.model.PlayerMode.NATIVE,
@@ -241,6 +243,7 @@ class NativePlayerActivity : ComponentActivity() {
                         }
                     }
                 )
+                }
                 if (showGoogleAccountDialog) {
                     googleAccount?.let { account ->
                         GoogleAccountDialog(

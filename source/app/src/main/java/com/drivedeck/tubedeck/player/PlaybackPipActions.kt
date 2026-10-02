@@ -13,6 +13,7 @@ import androidx.annotation.RequiresApi
 internal object PlaybackPipActions {
     const val ACTION_CLOSE = "com.drivedeck.tubedeck.action.PIP_CLOSE"
     const val ACTION_AUDIO_ONLY = "com.drivedeck.tubedeck.action.PIP_AUDIO_ONLY"
+    const val ACTION_SHOW_EXIT_CHOOSER = "com.drivedeck.tubedeck.action.PIP_EXIT_CHOOSER"
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun buildParams(
@@ -26,6 +27,12 @@ internal object PlaybackPipActions {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setActions(
                 listOf(
+                    RemoteAction(
+                        Icon.createWithResource(context, android.R.drawable.ic_menu_more),
+                        "Options",
+                        "Open playback exit options",
+                        actionIntent(context, activityClass, ACTION_SHOW_EXIT_CHOOSER, 7100)
+                    ),
                     RemoteAction(
                         Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
                         "Close",

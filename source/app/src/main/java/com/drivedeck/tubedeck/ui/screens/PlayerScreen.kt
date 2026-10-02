@@ -130,6 +130,8 @@ fun PlayerScreen(
     playerMode: PlayerMode,
     sponsorSegments: List<SponsorSegment> = emptyList(),
     pipEnabled: Boolean = true,
+    autoLoadEpisodes: Boolean = false,
+    autoLoadUpNext: Boolean = false,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
     onDownloadVideo: (() -> Unit)? = null,
@@ -176,6 +178,8 @@ fun PlayerScreen(
             media = media,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
+            autoLoadEpisodes = autoLoadEpisodes,
+            autoLoadUpNext = autoLoadUpNext,
             onClose = onClose,
             onEnterPip = onEnterPip,
             onWebFallback = { useWebFallback = true },
@@ -318,6 +322,8 @@ fun NativeExoPlayer(
     media: OfflineMedia,
     sponsorSegments: List<SponsorSegment>,
     pipEnabled: Boolean,
+    autoLoadEpisodes: Boolean,
+    autoLoadUpNext: Boolean,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
     onWebFallback: () -> Unit,
@@ -614,10 +620,10 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos) {
-        if (!firstFrameRendered) return@LaunchedEffect
-        // Warm only the two most likely next taps, and only after the current video has rendered.
-        // This improves consecutive-video startup without competing with the current first frame.
+    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos, autoLoadUpNext) {
+        if (!firstFrameRendered || !autoLoadUpNext) return@LaunchedEffect
+        // Up Next prefetch is optional because even post-first-frame extraction can compete for
+        // network/CPU on modest devices. When disabled in Settings no related item is prewarmed.
         resolved?.relatedVideos.orEmpty()
             .asSequence()
             .map { it.url }
@@ -1197,7 +1203,9 @@ fun NativeExoPlayer(
                     exoPlayer.seekTo((seconds * 1_000L).coerceAtLeast(0L))
                     controlsVisible = true
                 },
-                relatedVideos = resolved?.relatedVideos.orEmpty(),
+                relatedVideos = if (autoLoadUpNext) resolved?.relatedVideos.orEmpty() else emptyList(),
+                autoLoadEpisodes = autoLoadEpisodes,
+                autoLoadUpNext = autoLoadUpNext,
                 onPlayRelated = onPlayRelated,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
@@ -1306,6 +1314,8 @@ private fun PortraitCompanionPanel(
     uploadDateText: String,
     onSeekDescriptionTimestamp: (Long) -> Unit,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    autoLoadEpisodes: Boolean,
+    autoLoadUpNext: Boolean,
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
@@ -1344,8 +1354,10 @@ private fun PortraitCompanionPanel(
         }
     }
 
-    LaunchedEffect(media.id, media.mediaUri, commentsAvailable, displayTitle) {
+    LaunchedEffect(media.id, media.mediaUri, commentsAvailable, displayTitle, autoLoadEpisodes) {
         episodeShelf = null
+        episodesLoading = false
+        if (!autoLoadEpisodes) return@LaunchedEffect
         if (!commentsAvailable || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
         // Browser-intercepted native playback initially arrives as "Now Playing"; wait for the
         // resolver's real YouTube title so episode matching does not search for that placeholder.
@@ -1562,14 +1574,31 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !episodesLoading) {
+                    if (!autoLoadEpisodes && !autoLoadUpNext) {
                         Column(
                             Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
-                            Text("Up next", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Fast playback mode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(
-                                "No related videos",
+                                "Episodes and Up Next auto-loading are off in Settings to reduce background extraction and prefetch work.",
+                                color = TubeDeckTextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !episodesLoading) {
+                        Column(
+                            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Text(
+                                if (autoLoadUpNext) "Up next" else "Episodes",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                if (autoLoadUpNext) "No related videos were returned." else "No episode collection was found.",
                                 color = TubeDeckTextSecondary,
                                 fontSize = 11.sp
                             )
@@ -1580,7 +1609,7 @@ private fun PortraitCompanionPanel(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (episodesLoading) {
+                            if (autoLoadEpisodes && episodesLoading) {
                                 item(key = "episodes-loading") {
                                     Row(
                                         Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 5.dp),
@@ -1605,7 +1634,7 @@ private fun PortraitCompanionPanel(
                                 }
                             }
 
-                            if (episodeItems.isNotEmpty()) {
+                            if (autoLoadEpisodes && episodeItems.isNotEmpty()) {
                                 item(key = "episode-shelf") {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Row(
@@ -1673,7 +1702,7 @@ private fun PortraitCompanionPanel(
                                 }
                             }
 
-                            item(key = "up-next-header") {
+                            if (autoLoadUpNext) item(key = "up-next-header") {
                                 Row(
                                     Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
@@ -1695,7 +1724,7 @@ private fun PortraitCompanionPanel(
                                 }
                             }
 
-                            if (relatedVideos.isEmpty()) {
+                            if (autoLoadUpNext && relatedVideos.isEmpty()) {
                                 item(key = "up-next-empty") {
                                     Text(
                                         "No additional related videos were returned for this item.",
@@ -1704,7 +1733,7 @@ private fun PortraitCompanionPanel(
                                         modifier = Modifier.padding(bottom = 6.dp)
                                     )
                                 }
-                            } else {
+                            } else if (autoLoadUpNext) {
                                 items(relatedVideos, key = { "related-${it.videoId}" }) { related ->
                                     RelatedVideoRow(related) {
                                         onPlayRelated?.invoke(

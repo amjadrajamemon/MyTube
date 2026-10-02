@@ -254,6 +254,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun launchRelatedPlayer(media: OfflineMedia) {
         if (closingPlayer) return
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
         replaceMedia(media, recordWatch = true)
     }

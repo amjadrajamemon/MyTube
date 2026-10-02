@@ -280,13 +280,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
             DownloadForegroundService.ensureRunning(context)
         }
 
-        // No app-imposed parallel-download ceiling. We create jobs in short batches only to
-        // avoid monopolizing the repository lock when a very large playlist is queued. Every
-        // remaining queued task is scheduled immediately on subsequent yields.
+        // The user-facing queue remains unrestricted: every item may be queued and auto-retried.
+        // Heavy transfers are admitted through an invisible device-aware governor so a large
+        // playlist cannot exhaust RAM/file descriptors, trigger thermal throttling, or make all
+        // downloads slower by starting hundreds of extractors and muxers at once.
         val toStart = mutableListOf<Job>()
-        var scheduleAnotherBatch = false
         synchronized(lock) {
-            while (toStart.size < 64) {
+            val targetConcurrency = DownloadResourceGovernor.targetConcurrency(context)
+            while (activeJobs.size < targetConcurrency) {
                 val next = _downloadQueue.value.firstOrNull {
                     it.status == TaskStatus.QUEUED && it.id !in activeJobs
                 } ?: break
@@ -301,18 +302,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 }
                 toStart.add(job)
             }
-            scheduleAnotherBatch =
-                _downloadQueue.value.any {
-                    it.status == TaskStatus.QUEUED && it.id !in activeJobs
-                }
         }
         toStart.forEach { it.start() }
-        if (scheduleAnotherBatch) {
-            scope.launch {
-                yield()
-                processQueue()
-            }
-        }
     }
 
     private suspend fun runTask(id: String) {

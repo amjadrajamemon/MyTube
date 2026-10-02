@@ -698,8 +698,10 @@ class MainActivity : ComponentActivity() {
         lastNativeLaunchVideoId = videoId.takeIf { it.isNotBlank() }
         lastNativeLaunchAt = now
 
-        // Start extraction on the tap event. NativePlayerActivity/PlayerScreen joins this same
-        // in-flight resolution instead of starting a duplicate extractor request.
+        // Start the measurable tap-to-first-frame path before extraction or Activity launch.
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
+        // NativePlayerActivity/PlayerScreen joins this same in-flight resolution instead of
+        // starting a duplicate extractor request.
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
 
         val intent = Intent(this, NativePlayerActivity::class.java).apply {

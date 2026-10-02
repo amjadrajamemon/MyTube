@@ -109,6 +109,7 @@ import com.drivedeck.tubedeck.player.LiveDubEngine
 import com.drivedeck.tubedeck.player.LiveDubLanguages
 import com.drivedeck.tubedeck.player.LiveDubInputMode
 import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
+import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
@@ -379,6 +380,7 @@ fun NativeExoPlayer(
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
+    var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val pcmTap = remember(media.id) {
@@ -435,6 +437,7 @@ fun NativeExoPlayer(
             ?: sourceMedia.options.maxByOrNull { it.height }
             ?: return
         val position = if (preservePosition) exoPlayer.currentPosition else 0L
+        PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -475,6 +478,12 @@ fun NativeExoPlayer(
                     duration = exoPlayer.duration.coerceAtLeast(1L)
                     playbackRecoveryAttempts = 0
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
+                }
+            }
+            override fun onRenderedFirstFrame() {
+                if (!firstFrameRendered) {
+                    firstFrameRendered = true
+                    PlaybackStartupTelemetry.markFirstFrame(media.mediaUri)
                 }
             }
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
@@ -603,6 +612,18 @@ fun NativeExoPlayer(
             autoQuality = false
             qualityLabel = media.qualityLabel.ifBlank { "Local" }
         }
+    }
+
+    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos) {
+        if (!firstFrameRendered) return@LaunchedEffect
+        // Warm only the two most likely next taps, and only after the current video has rendered.
+        // This improves consecutive-video startup without competing with the current first frame.
+        resolved?.relatedVideos.orEmpty()
+            .asSequence()
+            .map { it.url }
+            .distinct()
+            .take(2)
+            .forEach { YoutubeStreamResolver.prefetch(context, it) }
     }
 
     val activeDubSourceTag = remember(resolved, dubSourceCode) {

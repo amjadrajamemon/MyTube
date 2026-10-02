@@ -209,11 +209,13 @@ object YoutubeStreamResolver {
         require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
         val key = resolutionKey(url)
         val now = android.os.SystemClock.elapsedRealtime()
+        PlaybackStartupTelemetry.markResolveStart(url)
 
         if (!forceRefresh) {
             synchronized(resolutionLock) {
                 val cached = resolutionCache[key]
                 if (cached != null && now - cached.cachedAtMs <= RESOLUTION_CACHE_TTL_MS) {
+                    PlaybackStartupTelemetry.markResolveDone(url, cacheHit = true)
                     return cached.media
                 }
                 if (cached != null) resolutionCache.remove(key)
@@ -230,21 +232,25 @@ object YoutubeStreamResolver {
         }
 
         return try {
-            deferred.await().also { media ->
-                synchronized(resolutionLock) {
-                    resolutionCache[key] = CachedResolution(
-                        media = media,
-                        cachedAtMs = android.os.SystemClock.elapsedRealtime()
-                    )
-                    while (resolutionCache.size > MAX_RESOLUTION_CACHE_ENTRIES) {
-                        val eldest = resolutionCache.entries.iterator()
-                        if (eldest.hasNext()) {
-                            eldest.next()
-                            eldest.remove()
-                        }
+            val media = deferred.await()
+            synchronized(resolutionLock) {
+                resolutionCache[key] = CachedResolution(
+                    media = media,
+                    cachedAtMs = android.os.SystemClock.elapsedRealtime()
+                )
+                while (resolutionCache.size > MAX_RESOLUTION_CACHE_ENTRIES) {
+                    val eldest = resolutionCache.entries.iterator()
+                    if (eldest.hasNext()) {
+                        eldest.next()
+                        eldest.remove()
                     }
                 }
             }
+            PlaybackStartupTelemetry.markResolveDone(url, cacheHit = false)
+            media
+        } catch (error: Throwable) {
+            PlaybackStartupTelemetry.markResolveFailed(url)
+            throw error
         } finally {
             synchronized(resolutionLock) {
                 if (resolutionInFlight[key] === deferred) {

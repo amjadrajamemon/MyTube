@@ -132,6 +132,9 @@ fun PlayerScreen(
     pipEnabled: Boolean = true,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    initialPositionMs: Long = 0L,
+    resumeGeneration: Int = 0,
+    foregroundPlaybackAllowed: Boolean = true,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
     onDownloadVideo: (() -> Unit)? = null,
@@ -180,6 +183,9 @@ fun PlayerScreen(
             pipEnabled = pipEnabled,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            initialPositionMs = initialPositionMs,
+            resumeGeneration = resumeGeneration,
+            foregroundPlaybackAllowed = foregroundPlaybackAllowed,
             onClose = onClose,
             onEnterPip = onEnterPip,
             onWebFallback = { useWebFallback = true },
@@ -324,6 +330,9 @@ fun NativeExoPlayer(
     pipEnabled: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    initialPositionMs: Long,
+    resumeGeneration: Int,
+    foregroundPlaybackAllowed: Boolean,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
     onWebFallback: () -> Unit,
@@ -387,6 +396,7 @@ fun NativeExoPlayer(
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
+    var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val pcmTap = remember(media.id) {
@@ -442,7 +452,11 @@ fun NativeExoPlayer(
             .maxByOrNull { it.height }
             ?: sourceMedia.options.maxByOrNull { it.height }
             ?: return
-        val position = if (preservePosition) exoPlayer.currentPosition else 0L
+        val position = if (preservePosition) {
+            exoPlayer.currentPosition
+        } else {
+            initialPositionMs.coerceAtLeast(0L)
+        }
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
         exoPlayer.prepare()
@@ -612,11 +626,62 @@ fun NativeExoPlayer(
             }
             val targetUri = Uri.parse(media.mediaUri)
             val subtitleConfigurations = emptyList<SubtitleConfiguration>()
-            exoPlayer.setMediaItem(MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build())
+            exoPlayer.setMediaItem(
+                MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build(),
+                initialPositionMs.coerceAtLeast(0L)
+            )
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
             autoQuality = false
             qualityLabel = media.qualityLabel.ifBlank { "Local" }
+        }
+    }
+
+    LaunchedEffect(foregroundPlaybackAllowed) {
+        if (!foregroundPlaybackAllowed) {
+            lifecycleResumePending = exoPlayer.playWhenReady || exoPlayer.isPlaying
+            exoPlayer.pause()
+        } else if (lifecycleResumePending) {
+            lifecycleResumePending = false
+            exoPlayer.playWhenReady = true
+        }
+    }
+
+    LaunchedEffect(resumeGeneration) {
+        if (resumeGeneration <= 0 || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
+        val positionBeforeRefresh = exoPlayer.currentPosition.coerceAtLeast(0L)
+        resolveError = null
+        try {
+            YoutubeStreamResolver.invalidate(media.mediaUri)
+            val fresh = YoutubeStreamResolver.resolve(
+                context,
+                media.mediaUri,
+                forceRefresh = true
+            )
+            resolved = fresh
+            hasCaptions = fresh.subtitles.isNotEmpty()
+            val target = if (autoQuality) {
+                chooseAutoHeight(
+                    context,
+                    fresh.options.map { it.height },
+                    bandwidthMeter.bitrateEstimate
+                )
+            } else {
+                selectedHeight.takeIf { it > 0 }
+                    ?: fresh.options.maxOfOrNull { it.height }
+                    ?: 720
+            }
+            loadResolvedStream(
+                sourceMedia = fresh,
+                requestedHeight = target,
+                autoSelected = autoQuality,
+                preservePosition = true
+            )
+            if (positionBeforeRefresh > 0L) exoPlayer.seekTo(positionBeforeRefresh)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (t: Throwable) {
+            resolveError = "Could not refresh video after returning to MyTube: ${t.message ?: t.javaClass.simpleName}"
         }
     }
 

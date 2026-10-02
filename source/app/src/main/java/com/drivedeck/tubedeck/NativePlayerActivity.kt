@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -82,6 +83,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
     private var pipChoicePending = false
+    private var pendingChooserAfterPipExit = false
     private var pendingFreshResumeFromPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
@@ -554,19 +556,35 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!closingPlayer) foregroundPlaybackAllowed = true
+        if (!closingPlayer) {
+            foregroundPlaybackAllowed = true
+            if (playerActive) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        if (!closingPlayer && playerActive) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         if (!closingPlayer && pendingFreshResumeFromPip) {
             pendingFreshResumeFromPip = false
             resumeGeneration += 1
             foregroundPlaybackAllowed = true
         }
+        if (!closingPlayer && pendingChooserAfterPipExit && playerActive) {
+            pendingChooserAfterPipExit = false
+            playbackBackCoordinator.forceChooserVisible()
+            showPlaybackExitChoices = true
+        }
     }
 
     override fun onStop() {
+        if (!isPipMode && !enteringPip) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         if (!isPipMode && !enteringPip && !closingPlayer) {
             // If Android dismisses PiP/task UI without an explicit Audio choice, never let the
             // Activity's ExoPlayer silently continue as unintended audio-only playback.
@@ -606,6 +624,7 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
         playerActive = false
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (isFinishing && !isChangingConfigurations) {
             PlaybackSessionRegistry.close(playbackSessionId)
         }
@@ -619,6 +638,10 @@ class NativePlayerActivity : ComponentActivity() {
         enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
 
+        if (isInPictureInPictureMode && playerActive && !closingPlayer) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+
         if (
             PlaybackPipExitPolicy.shouldRestoreChoices(
                 wasInPip = wasInPip,
@@ -631,16 +654,7 @@ class NativePlayerActivity : ComponentActivity() {
             pipChoicePending = false
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
-            playbackBackCoordinator.forceChooserVisible()
-            showPlaybackExitChoices = true
-            if (!hasWindowFocus()) {
-                startActivity(
-                    Intent(this, NativePlayerActivity::class.java).apply {
-                        action = PlaybackPipActions.ACTION_EXPAND_PLAYER
-                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    }
-                )
-            }
+            pendingChooserAfterPipExit = true
         }
 
         if (wasInPip && !isInPictureInPictureMode && playerActive && !closingPlayer) {

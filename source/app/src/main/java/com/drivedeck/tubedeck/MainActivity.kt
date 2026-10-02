@@ -242,8 +242,15 @@ class MainActivity : ComponentActivity() {
                     when (PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)) {
                         PlaybackHost.NATIVE -> launchNativePlayer(media)
                         PlaybackHost.WEB -> {
-                            BackgroundAudioController.stop(applicationContext)
-                            navigateTo(ActiveScreen.BROWSER, media.mediaUri)
+                            val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+                            val targetUrl =
+                                previousAudio
+                                    ?.takeIf {
+                                        YoutubeUrls.videoId(it.sourceUrl) == YoutubeUrls.videoId(media.mediaUri)
+                                    }
+                                    ?.let { YoutubeUrls.withStartPosition(media.mediaUri, it.positionMs) }
+                                    ?: media.mediaUri
+                            navigateTo(ActiveScreen.BROWSER, targetUrl)
                         }
                     }
                 }

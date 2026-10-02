@@ -136,8 +136,8 @@ class MainActivity : ComponentActivity() {
                 val navigation = remember {
                     NavigationCoordinator(
                         NavigationEntry(
-                            screen = ActiveScreen.HOME,
-                            browserUrl = null
+                            screen = currentScreen,
+                            browserUrl = if (currentScreen == ActiveScreen.BROWSER) currentUrl else null
                         )
                     )
                 }
@@ -525,7 +525,10 @@ class MainActivity : ComponentActivity() {
                                         showDownloadModal = true
                                     },
                                     onClose = {
-                                        if (!navigateBack()) navigateTo(ActiveScreen.HOME)
+                                        if (!navigateBack()) {
+                                            navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                            applyNavigationEntry(navigation.current)
+                                        }
                                     }
                                 ) }
                             }
@@ -537,7 +540,10 @@ class MainActivity : ComponentActivity() {
                                     onSaveSettings = { repository.updateSettings(it) },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
                                     onClose = {
-                                        if (!navigateBack()) navigateTo(ActiveScreen.HOME)
+                                        if (!navigateBack()) {
+                                            navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                            applyNavigationEntry(navigation.current)
+                                        }
                                     }
                                 )
                             }
@@ -550,7 +556,10 @@ class MainActivity : ComponentActivity() {
                                         pipEnabled = settings.pipEnabled,
                                         onClose = {
                                             playingMedia = null
-                                            if (!navigateBack()) navigateTo(ActiveScreen.HOME)
+                                            if (!navigateBack()) {
+                                            navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                            applyNavigationEntry(navigation.current)
+                                        }
                                         },
                                         onEnterPip = { triggerPip() },
                                         onDownloadVideo = if (repository.extractVideoId(media.mediaUri) != null) {

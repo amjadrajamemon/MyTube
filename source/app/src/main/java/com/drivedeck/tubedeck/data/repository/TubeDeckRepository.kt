@@ -245,6 +245,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         mode: DownloadMode = _settings.value.instantMode,
         quality: String = _settings.value.instantQuality
     ): String {
+        require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
         val videoId = YoutubeUrls.videoId(url) ?: throw IllegalArgumentException("Open a valid YouTube video first")
         val task = DownloadTask(
             id = UUID.randomUUID().toString(), url = url, videoId = videoId,
@@ -258,6 +259,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String) {
+        require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
         val tasks = items.filter { it.isSelected }.mapNotNull { item ->
             val url = "https://www.youtube.com/watch?v=${item.videoId}"
             val videoId = YoutubeUrls.videoId(url) ?: return@mapNotNull null

@@ -28,12 +28,6 @@ internal object PlaybackPipActions {
             builder.setActions(
                 listOf(
                     RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_menu_more),
-                        "Options",
-                        "Open playback exit options",
-                        actionIntent(context, activityClass, ACTION_SHOW_EXIT_CHOOSER, 7100)
-                    ),
-                    RemoteAction(
                         Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
                         "Close",
                         "Close video",
@@ -44,6 +38,12 @@ internal object PlaybackPipActions {
                         "Audio only",
                         "Continue audio only",
                         actionIntent(context, activityClass, ACTION_AUDIO_ONLY, 7102)
+                    ),
+                    RemoteAction(
+                        Icon.createWithResource(context, android.R.drawable.ic_menu_more),
+                        "Options",
+                        "Open playback exit options",
+                        actionIntent(context, activityClass, ACTION_SHOW_EXIT_CHOOSER, 7100)
                     )
                 )
             )

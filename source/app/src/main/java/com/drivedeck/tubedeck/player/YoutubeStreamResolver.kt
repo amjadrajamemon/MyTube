@@ -26,8 +26,14 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 
 /**
  * Resolves a YouTube webpage URL into real media stream URLs for Media3.
@@ -37,6 +43,18 @@ import kotlinx.coroutines.ensureActive
  */
 object YoutubeStreamResolver {
     private val initialized = AtomicBoolean(false)
+    private val resolutionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val resolutionLock = Any()
+    private val resolutionCache = LinkedHashMap<String, CachedResolution>(16, 0.75f, true)
+    private val resolutionInFlight = mutableMapOf<String, Deferred<ResolvedMedia>>()
+
+    private data class CachedResolution(
+        val media: ResolvedMedia,
+        val cachedAtMs: Long
+    )
+
+    private const val RESOLUTION_CACHE_TTL_MS = 5 * 60 * 1000L
+    private const val MAX_RESOLUTION_CACHE_ENTRIES = 12
 
     @Synchronized
     private fun ensureInitialized() {
@@ -177,8 +195,78 @@ object YoutubeStreamResolver {
         val relatedVideos: List<RelatedVideo> = emptyList()
     )
 
-    suspend fun resolve(context: Context, url: String): ResolvedMedia =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    suspend fun resolve(
+        context: Context,
+        url: String,
+        forceRefresh: Boolean = false
+    ): ResolvedMedia {
+        require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
+        val key = resolutionKey(url)
+        val now = android.os.SystemClock.elapsedRealtime()
+
+        if (!forceRefresh) {
+            synchronized(resolutionLock) {
+                val cached = resolutionCache[key]
+                if (cached != null && now - cached.cachedAtMs <= RESOLUTION_CACHE_TTL_MS) {
+                    return cached.media
+                }
+                if (cached != null) resolutionCache.remove(key)
+            }
+        }
+
+        val deferred = synchronized(resolutionLock) {
+            if (!forceRefresh) {
+                resolutionInFlight[key]?.let { return@synchronized it }
+            }
+            resolutionScope.async {
+                resolveUncached(url)
+            }.also { resolutionInFlight[key] = it }
+        }
+
+        return try {
+            deferred.await().also { media ->
+                synchronized(resolutionLock) {
+                    resolutionCache[key] = CachedResolution(
+                        media = media,
+                        cachedAtMs = android.os.SystemClock.elapsedRealtime()
+                    )
+                    while (resolutionCache.size > MAX_RESOLUTION_CACHE_ENTRIES) {
+                        val eldest = resolutionCache.entries.iterator()
+                        if (eldest.hasNext()) {
+                            eldest.next()
+                            eldest.remove()
+                        }
+                    }
+                }
+            }
+        } finally {
+            synchronized(resolutionLock) {
+                if (resolutionInFlight[key] === deferred) {
+                    resolutionInFlight.remove(key)
+                }
+            }
+        }
+    }
+
+    fun prefetch(context: Context, url: String) {
+        if (YoutubeUrls.videoId(url) == null) return
+        resolutionScope.launch {
+            runCatching { resolve(context.applicationContext, url) }
+        }
+    }
+
+    fun invalidate(url: String) {
+        val key = resolutionKey(url)
+        synchronized(resolutionLock) {
+            resolutionCache.remove(key)
+        }
+    }
+
+    private fun resolutionKey(url: String): String =
+        YoutubeUrls.videoId(url) ?: url
+
+    private suspend fun resolveUncached(url: String): ResolvedMedia =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
             ensureInitialized()
             require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
             val info = StreamInfo.getInfo(url)
@@ -295,7 +383,6 @@ object YoutubeStreamResolver {
                 relatedVideos = relatedVideos
             )
         }
-
 
     suspend fun comments(context: Context, url: String): List<NativeComment> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

@@ -79,8 +79,6 @@ fun SettingsScreen(
     
     var playlistMode by remember { mutableStateOf(currentSettings.playlistMode) }
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
-    var parallelText by remember { mutableStateOf(currentSettings.maxConcurrent.coerceAtLeast(1).toString()) }
-    val parallelCount = parallelText.toIntOrNull()
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     
@@ -202,16 +200,6 @@ fun SettingsScreen(
                     Text(if (downloadTreeUri == null) "Choose folder" else "Change folder")
                 }
                 folderError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Parallel downloads", Modifier.weight(1f), color = Color.White)
-                    OutlinedTextField(
-                        value = parallelText,
-                        onValueChange = { if (it.length <= 9 && it.all { ch -> ch.isDigit() }) parallelText = it },
-                        modifier = Modifier.width(76.dp), singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-                if (parallelCount == null || parallelCount < 1) Text("Enter a positive whole number.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
 
             // Instant Download Settings
@@ -252,7 +240,6 @@ fun SettingsScreen(
                         currentSettings.copy(
                             downloadDir = downloadDir,
                             downloadTreeUri = downloadTreeUri,
-                            maxConcurrent = parallelCount ?: currentSettings.maxConcurrent,
                             instantMode = instantMode,
                             instantQuality = instantQuality,
                             customMode = customMode,
@@ -271,7 +258,7 @@ fun SettingsScreen(
                     )
                     onClose()
                 },
-                enabled = downloadTreeUri != null && parallelCount != null && parallelCount >= 1 && folderError == null,
+                enabled = downloadTreeUri != null && folderError == null,
                 colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(54.dp)

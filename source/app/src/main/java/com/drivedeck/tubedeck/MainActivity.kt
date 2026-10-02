@@ -764,8 +764,6 @@ class MainActivity : ComponentActivity() {
 
                         if (showGoogleAuthorizationProblem) {
                             GoogleAuthorizationProblemDialog(
-                                message = googleAuthStatus.message,
-                                registrationInfo = googleSession.oauthRegistrationInfo(),
                                 onDismiss = { showGoogleAuthorizationProblem = false }
                             )
                         }

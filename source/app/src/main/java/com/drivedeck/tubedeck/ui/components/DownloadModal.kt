@@ -125,7 +125,7 @@ fun DownloadModal(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().wrapContentHeight().clip(RoundedCornerShape(24.dp)).border(2.dp, TubeDeckAccentCyan, RoundedCornerShape(24.dp)),
-            color = TubeDeckSurface, contentColor = Color.White
+            color = TubeDeckSurface, contentColor = TubeDeckTextPrimary
         ) {
             Column(modifier = Modifier.padding(20.dp).fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -314,7 +314,7 @@ fun DownloadModal(
                                     }
                                     
                                     Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                                        Text(item.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text(item.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = TubeDeckTextPrimary, fontWeight = FontWeight.Bold)
                                         if (item.duration.isNotEmpty()) {
                                             Text(item.duration, fontSize = 11.sp, color = TubeDeckTextSecondary)
                                         }

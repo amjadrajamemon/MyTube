@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
+import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
@@ -43,6 +44,7 @@ import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GlobalProgressBar
 import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
+import com.drivedeck.tubedeck.ui.components.GoogleAuthorizationProblemDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
@@ -109,7 +111,9 @@ class MainActivity : ComponentActivity() {
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
+                val googleAuthStatus by googleSession.status.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
+                var showGoogleAuthorizationProblem by remember { mutableStateOf(false) }
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -276,9 +280,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(googleAuthStatus.state) {
+                    if (
+                        googleAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED ||
+                        googleAuthStatus.state == YoutubeAuthorizationState.ERROR
+                    ) {
+                        showGoogleAuthorizationProblem = true
+                    }
+                }
+
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
+                    } else if (
+                        googleAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED
+                    ) {
+                        showGoogleAuthorizationProblem = true
                     } else {
                         lifecycleScope.launch {
                             googleSession.beginYoutubeAuthorization(this@MainActivity)
@@ -734,6 +751,14 @@ class MainActivity : ComponentActivity() {
                                 onUpdateSettings = { repository.updateSettings(it) },
                                 onResetStats = { repository.resetBlockedAdsCount() },
                                 onDismiss = { showAdBlockSheet = false }
+                            )
+                        }
+
+                        if (showGoogleAuthorizationProblem) {
+                            GoogleAuthorizationProblemDialog(
+                                message = googleAuthStatus.message,
+                                registrationInfo = googleSession.oauthRegistrationInfo(),
+                                onDismiss = { showGoogleAuthorizationProblem = false }
                             )
                         }
 

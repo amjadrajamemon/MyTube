@@ -129,7 +129,7 @@ fun DriveDeckScreen(
                             Icon(Icons.Default.SmartDisplay, null, tint = TubeDeckAccentCyan, modifier = Modifier.size(38.dp))
                             Spacer(Modifier.width(14.dp))
                             Column {
-                                Text("Your feed will appear here", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Your feed will appear here", color = TubeDeckTextPrimary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -153,7 +153,7 @@ private fun SectionHeader(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(title, color = TubeDeckTextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (action != null && onAction != null) {
             TextButton(onClick = onAction) { Text(action) }
         }
@@ -183,7 +183,7 @@ private fun CompactVideoCard(video: HomeVideo, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(7.dp))
-        Text(video.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+        Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
         Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
     }
 }
@@ -218,7 +218,7 @@ private fun StandardVideoCard(video: HomeVideo, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(video.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+                Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
                 Spacer(Modifier.height(3.dp))
                 Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
             }
@@ -247,10 +247,10 @@ fun DriveDeckTopHeader(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.PlayCircleFilled, null, tint = Color.Red, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.width(7.dp))
-                Text("MyTube", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                Text("MyTube", color = TubeDeckTextPrimary, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                 GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
                 IconButton(onClick = onOpenDownloads, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Default.FileDownload, contentDescription = "Downloads", tint = Color.White)
+                    Icon(Icons.Default.FileDownload, contentDescription = "Downloads", tint = TubeDeckTextPrimary)
                 }
             }
 
@@ -271,8 +271,8 @@ fun DriveDeckTopHeader(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = TubeDeckTextPrimary,
+                    unfocusedTextColor = TubeDeckTextPrimary,
                     focusedBorderColor = TubeDeckAccentCyan,
                     unfocusedBorderColor = Color.DarkGray,
                     focusedContainerColor = TubeDeckSurfaceVariant,

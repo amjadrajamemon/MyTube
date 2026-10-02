@@ -287,7 +287,12 @@ internal object MediaDownloader {
             if (code != 200 && code != 206) error("Media server returned HTTP $code")
             val rangeStart = connection.getHeaderField("Content-Range")?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
             val append = offset > 0 && code == 206 && rangeStart == offset
-            if (code == 206 && !append && rangeStart != 0L) error("Unexpected partial media response")
+            if (code == 206 && !append && rangeStart != 0L) {
+                // The retained partial no longer matches the server representation. Keeping it
+                // would make every automatic retry request the same invalid range forever.
+                partial.delete()
+                throw java.io.IOException("Resume range no longer matches media stream")
+            }
             if (!append) offset = 0L
             val length = connection.contentLengthLong
             val total = if (code == 206) {

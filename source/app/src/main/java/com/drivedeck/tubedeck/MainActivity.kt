@@ -95,8 +95,13 @@ class MainActivity : ComponentActivity() {
         openDownloadsQueueRequest = intent?.getBooleanExtra("open_downloads_queue", false) == true
 
         setContent {
-            TubeDeckTheme {
-                val settings by repository.settings.collectAsStateWithLifecycle()
+            val settings by repository.settings.collectAsStateWithLifecycle()
+            TubeDeckTheme(
+                fontScale = settings.fontScale,
+                accentArgb = settings.themeAccentArgb,
+                backgroundArgb = settings.themeBackgroundArgb,
+                textArgb = settings.themeTextArgb
+            ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }

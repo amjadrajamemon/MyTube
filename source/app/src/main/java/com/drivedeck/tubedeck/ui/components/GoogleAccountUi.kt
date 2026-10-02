@@ -109,13 +109,32 @@ fun GoogleAccountDialog(
 
 @Composable
 fun GoogleAuthorizationProblemDialog(
+    message: String,
+    registrationInfo: String,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Google sign-in unavailable") },
+        title = { Text("Google sign-in needs attention") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    message.ifBlank {
+                        "Google did not complete the YouTube authorization request."
+                    }
+                )
+                Text(
+                    registrationInfo,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
+            TextButton(onClick = onRetry) { Text("Retry sign-in") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }

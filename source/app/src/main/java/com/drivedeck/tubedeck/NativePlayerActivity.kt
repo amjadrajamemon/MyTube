@@ -129,9 +129,14 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         setContent {
-            TubeDeckTheme {
+            val settings by repository.settings.collectAsStateWithLifecycle()
+            TubeDeckTheme(
+                fontScale = settings.fontScale,
+                accentArgb = settings.themeAccentArgb,
+                backgroundArgb = settings.themeBackgroundArgb,
+                textArgb = settings.themeTextArgb
+            ) {
                 val media = currentMedia
-                val settings by repository.settings.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()

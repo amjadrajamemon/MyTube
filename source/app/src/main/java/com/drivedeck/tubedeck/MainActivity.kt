@@ -229,6 +229,16 @@ class MainActivity : ComponentActivity() {
                     return true
                 }
 
+                fun openOnlineMedia(media: OfflineMedia) {
+                    if (settings.playerMode == PlayerMode.NATIVE) {
+                        launchNativePlayer(media)
+                    } else {
+                        // Web mode is authoritative for every online-video entry point.
+                        BackgroundAudioController.stop(applicationContext)
+                        navigateTo(ActiveScreen.BROWSER, media.mediaUri)
+                    }
+                }
+
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
@@ -267,11 +277,8 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(inboundUrl, settings.playerMode) {
                     inboundUrl?.let {
                         val videoId = repository.extractVideoId(it)
-                        if (videoId != null && settings.playerMode == PlayerMode.NATIVE) {
-                            if (currentScreen != ActiveScreen.BROWSER) {
-                                navigateTo(ActiveScreen.BROWSER, browserReturnUrl)
-                            }
-                            launchNativePlayer(
+                        if (videoId != null) {
+                            openOnlineMedia(
                                 OfflineMedia(
                                     id = UUID.randomUUID().toString(),
                                     title = "Now Playing",
@@ -481,7 +488,7 @@ class MainActivity : ComponentActivity() {
                                             thumbnailUrl = item.thumbnailUrl,
                                             mediaUri = item.url
                                         )
-                                        launchNativePlayer(media)
+                                        openOnlineMedia(media)
                                     },
                                     onClearHistory = { repository.clearWatchHistory() }
                                 )
@@ -503,7 +510,7 @@ class MainActivity : ComponentActivity() {
                                         val id = repository.extractVideoId(url)
                                         if (id != null && currentScreen == ActiveScreen.BROWSER) {
                                             webViewInstance?.stopLoading()
-                                            launchNativePlayer(
+                                            openOnlineMedia(
                                                 OfflineMedia(
                                                     id = UUID.randomUUID().toString(),
                                                     title = "Now Playing",
@@ -708,19 +715,34 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchNativePlayer(media: OfflineMedia) {
+        if (
+            repository.settings.value.playerMode == PlayerMode.WEB &&
+            YoutubeUrls.videoId(media.mediaUri) != null
+        ) {
+            inboundUrl = media.mediaUri
+            return
+        }
+
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         val now = SystemClock.elapsedRealtime()
         if (videoId.isNotBlank() && videoId == lastNativeLaunchVideoId && now - lastNativeLaunchAt < 1_800L) return
         lastNativeLaunchVideoId = videoId.takeIf { it.isNotBlank() }
         lastNativeLaunchAt = now
 
+        // A foreground video supersedes explicit audio-only playback. If it is the same video,
+        // discard the resolver entry created before/during the audio handoff so signed CDN URLs
+        // cannot poison the new foreground session.
+        val previousAudioSource = BackgroundAudioController.stop(applicationContext)
+        if (
+            previousAudioSource != null &&
+            YoutubeUrls.videoId(previousAudioSource) == YoutubeUrls.videoId(media.mediaUri)
+        ) {
+            YoutubeStreamResolver.invalidate(media.mediaUri)
+        }
+
         // Start the measurable tap-to-first-frame path before extraction or Activity launch.
         com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
-        // NativePlayerActivity/PlayerScreen joins this same in-flight resolution instead of
-        // starting a duplicate extractor request.
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
-        // A newly selected foreground video supersedes any prior explicit audio-only session.
-        BackgroundAudioController.stop(applicationContext)
         val playbackSessionId = PlaybackSessionRegistry.open()
 
         val intent = Intent(this, NativePlayerActivity::class.java).apply {

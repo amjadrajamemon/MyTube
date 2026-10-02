@@ -21,7 +21,8 @@ internal class PlaybackBackCoordinator(
 ) {
     companion object {
         const val DEFAULT_WINDOW_MS: Long = ConsecutiveBackPressDetector.DEFAULT_WINDOW_MS
-        const val CHOOSER_SETTLE_MS: Long = 400L
+        const val PIP_ENTRY_DELAY_MS: Long = 180L
+        const val CHOOSER_SETTLE_MS: Long = 800L
     }
     private val detector = ConsecutiveBackPressDetector(doublePressWindowMs)
     private var chooserVisible = false

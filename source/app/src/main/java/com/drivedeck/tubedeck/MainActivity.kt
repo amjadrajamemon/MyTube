@@ -741,11 +741,12 @@ class MainActivity : ComponentActivity() {
         // A foreground video supersedes explicit audio-only playback. If it is the same video,
         // discard the resolver entry created before/during the audio handoff so signed CDN URLs
         // cannot poison the new foreground session.
-        val previousAudioSource = BackgroundAudioController.stop(applicationContext)
-        if (
-            previousAudioSource != null &&
-            YoutubeUrls.videoId(previousAudioSource) == YoutubeUrls.videoId(media.mediaUri)
-        ) {
+        val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+        val resumeFromAudio =
+            previousAudio?.takeIf {
+                YoutubeUrls.videoId(it.sourceUrl) == YoutubeUrls.videoId(media.mediaUri)
+            }
+        if (resumeFromAudio != null) {
             YoutubeStreamResolver.invalidate(media.mediaUri)
         }
 
@@ -764,6 +765,10 @@ class MainActivity : ComponentActivity() {
             putExtra(NativePlayerActivity.EXTRA_IS_AUDIO_ONLY, media.isAudioOnly)
             putExtra(NativePlayerActivity.EXTRA_QUALITY_LABEL, media.qualityLabel)
             putExtra(NativePlayerActivity.EXTRA_SESSION_ID, playbackSessionId)
+            putExtra(
+                NativePlayerActivity.EXTRA_START_POSITION_MS,
+                resumeFromAudio?.positionMs ?: 0L
+            )
         }
         startActivity(intent)
     }
@@ -773,6 +778,20 @@ class MainActivity : ComponentActivity() {
         if (::repository.isInitialized) {
             repository.resumeDownloadsAfterSystemTimeout()
         }
+    }
+
+    override fun onStop() {
+        if (!isPipMode && playerActive) {
+            // Web playback must not silently survive task/background transitions. Only explicit
+            // Audio-only is allowed to continue after the visible player leaves the foreground.
+            webViewInstance?.runCatching {
+                evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                    null
+                )
+            }
+        }
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -173,6 +173,8 @@ class NativePlayerActivity : ComponentActivity() {
                     playerMode = com.drivedeck.tubedeck.data.model.PlayerMode.NATIVE,
                     sponsorSegments = sponsorSegments,
                     pipEnabled = settings.pipEnabled,
+                    autoLoadEpisodes = settings.autoLoadEpisodes,
+                    autoLoadUpNext = settings.autoLoadUpNext,
                     onClose = { finishPlayer() },
                     onEnterPip = { enterPlayerPip() },
                     onDownloadVideo = if (YoutubeUrls.videoId(media.mediaUri) != null) {

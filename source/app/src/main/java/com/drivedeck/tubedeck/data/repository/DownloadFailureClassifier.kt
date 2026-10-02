@@ -37,7 +37,13 @@ internal object DownloadFailureClassifier {
             "eacces",
             "cannot create download folder",
             "could not create file in chosen folder",
-            "could not open chosen folder for writing"
+            "could not open chosen folder for writing",
+            "cannot read the selected video track",
+            "cannot read the selected audio track",
+            "media sample exceeds supported buffer size",
+            "encrypted media samples cannot be muxed offline",
+            "only https media streams are supported",
+            "unsafe media redirect"
         )
         if (permanentMarkers.any { it in message }) return false
 

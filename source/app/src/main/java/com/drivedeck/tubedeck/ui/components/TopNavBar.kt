@@ -75,13 +75,13 @@ fun TopNavBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
                     IconButton(onClick = onBack, enabled = canGoBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (canGoBack) Color.White else Color.DarkGray)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
                     }
                     IconButton(onClick = onForward, enabled = canGoForward) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward", tint = if (canGoForward) Color.White else Color.DarkGray)
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward", tint = if (canGoForward) TubeDeckTextPrimary else Color.DarkGray)
                     }
                     IconButton(onClick = onReload) {
-                        Icon(Icons.Default.Refresh, "Reload", tint = Color.White)
+                        Icon(Icons.Default.Refresh, "Reload", tint = TubeDeckTextPrimary)
                     }
                 }
             }
@@ -105,7 +105,7 @@ fun TopNavBar(
                 },
                 singleLine = true,
                 textStyle = androidx.compose.ui.text.TextStyle(
-                    color = Color.White,
+                    color = TubeDeckTextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 ),
@@ -115,8 +115,8 @@ fun TopNavBar(
                     onNavigate(queryText)
                 }),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = TubeDeckTextPrimary,
+                    unfocusedTextColor = TubeDeckTextPrimary,
                     focusedBorderColor = TubeDeckAccentCyan,
                     unfocusedBorderColor = TubeDeckBorder,
                     focusedContainerColor = Color.Black,

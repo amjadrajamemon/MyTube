@@ -3,6 +3,7 @@ package com.drivedeck.tubedeck.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -30,7 +31,7 @@ class NativePipSessionBridgeTest {
         NativePipSessionBridge.clear()
         try {
             NativePipSessionBridge.activate("session-a")
-            val next = async { NativePipSessionBridge.commands.first() }
+            val next = async(start = CoroutineStart.UNDISPATCHED) { NativePipSessionBridge.commands.first() }
 
             NativePipSessionBridge.request("session-b", NativePipSessionBridge.Action.CLOSE)
             NativePipSessionBridge.request("session-a", NativePipSessionBridge.Action.AUDIO_ONLY)

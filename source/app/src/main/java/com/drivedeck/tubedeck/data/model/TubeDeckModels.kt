@@ -88,7 +88,10 @@ data class TubeDeckSettings(
     val blockTrackers: Boolean = false,
     val sponsorBlockEnabled: Boolean = true,
     val blockShortsEnabled: Boolean = true,
-    val pipEnabled: Boolean = true
+    val pipEnabled: Boolean = true,
+    // Performance-first: expensive companion shelves are opt-in by default.
+    val autoLoadEpisodes: Boolean = false,
+    val autoLoadUpNext: Boolean = false
 )
 
 

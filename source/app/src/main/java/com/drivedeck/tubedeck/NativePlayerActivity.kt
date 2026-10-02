@@ -353,8 +353,19 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
+                pipChoicePending = false
                 playbackBackCoordinator.forceChooserVisible()
                 showPlaybackExitChoices = true
+                return
+            }
+            PlaybackPipActions.ACTION_AUDIO_ONLY -> {
+                pipChoicePending = false
+                handoffToBackgroundAudio()
+                return
+            }
+            PlaybackPipActions.ACTION_CLOSE -> {
+                pipChoicePending = false
+                closePlaybackCompletely()
                 return
             }
         }

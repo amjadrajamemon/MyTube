@@ -119,7 +119,7 @@ fun SettingsScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Settings, contentDescription = null, tint = TubeDeckAccentCyan)
-                    Text("Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TubeDeckTextPrimary)
                 }
                 IconButton(onClick = onClose) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
@@ -619,7 +619,7 @@ private fun QualityGrid(selectedQuality: String, onSelect: (String) -> Unit, qua
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color.White, fontSize = 14.sp)
+        Text(label, color = TubeDeckTextPrimary, fontSize = 14.sp)
         Switch(checked = checked, onCheckedChange = onCheckedChange, colors = SwitchDefaults.colors(checkedTrackColor = TubeDeckAccentCyan))
     }
 }

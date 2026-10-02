@@ -35,6 +35,8 @@ import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackHost
+import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
@@ -230,12 +232,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    if (settings.playerMode == PlayerMode.NATIVE) {
-                        launchNativePlayer(media)
-                    } else {
-                        // Web mode is authoritative for every online-video entry point.
-                        BackgroundAudioController.stop(applicationContext)
-                        navigateTo(ActiveScreen.BROWSER, media.mediaUri)
+                    when (PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)) {
+                        PlaybackHost.NATIVE -> launchNativePlayer(media)
+                        PlaybackHost.WEB -> {
+                            BackgroundAudioController.stop(applicationContext)
+                            navigateTo(ActiveScreen.BROWSER, media.mediaUri)
+                        }
                     }
                 }
 
@@ -716,8 +718,10 @@ class MainActivity : ComponentActivity() {
 
     private fun launchNativePlayer(media: OfflineMedia) {
         if (
-            repository.settings.value.playerMode == PlayerMode.WEB &&
-            YoutubeUrls.videoId(media.mediaUri) != null
+            PlaybackHostRouter.choose(
+                repository.settings.value.playerMode,
+                media.mediaUri
+            ) == PlaybackHost.WEB
         ) {
             inboundUrl = media.mediaUri
             return

@@ -77,17 +77,15 @@ data class YoutubeAuthorizationStatus(
  * 2) Google Play Services DEFAULT_SIGN_IN is the interactive fallback when no Web client ID exists.
  * 3) youtube.readonly authorization is attempted only after a real Google identity is established.
  *
- * Cached SharedPreferences are migration hints only. They never make the app appear signed in.
+ * Fresh-install invariant: no authentication path depends on preferences or data from an older
+ * MyTube installation. Local preferences are used only to cache the current installation's
+ * successfully authenticated profile for diagnostics; they never create authenticated state.
  */
 class GoogleAccountSession private constructor(context: Context) {
     companion object {
         private const val YOUTUBE_READONLY =
             "https://www.googleapis.com/auth/youtube.readonly"
         private const val PREFS = "youtube_account_session"
-        private const val LEGACY_SETTINGS_PREFS = "tubedeck_prefs"
-        private const val LEGACY_IDENTITY_PREFS = "google_account_session"
-        private const val LEGACY_CLIENT_ID_KEY = "googleWebClientId"
-
         private const val KEY_UNIQUE_ID = "google_unique_id"
         private const val KEY_EMAIL = "google_email"
         private const val KEY_NAME = "google_name"
@@ -120,15 +118,9 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val legacySettingsPrefs =
-        appContext.getSharedPreferences(LEGACY_SETTINGS_PREFS, Context.MODE_PRIVATE)
-    private val legacyIdentityPrefs =
-        appContext.getSharedPreferences(LEGACY_IDENTITY_PREFS, Context.MODE_PRIVATE)
-
     // A persisted profile alone is not authentication. Only a current Google Play Services
     // session is restored as connected without user interaction.
     private val startupPlayServicesAccount = GoogleSignIn.getLastSignedInAccount(appContext)
-    private val rememberedIdentity = loadPersistedIdentity()
 
     private val _account = MutableStateFlow(
         startupPlayServicesAccount?.let { profileFromIdentity(identityFromGoogleSignIn(it)) }
@@ -151,15 +143,10 @@ class GoogleAccountSession private constructor(context: Context) {
     @Volatile private var youtubeAccessToken: String? = null
     @Volatile private var authorizedAndroidAccount: Account? = startupPlayServicesAccount?.account
     @Volatile private var pendingIdentity: SignedInIdentity? =
-        startupPlayServicesAccount?.let(::identityFromGoogleSignIn) ?: rememberedIdentity
+        startupPlayServicesAccount?.let(::identityFromGoogleSignIn)
 
-    fun effectiveWebClientId(): String {
-        val buildClient = normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-        if (buildClient.isNotBlank()) return buildClient
-        return normalizeClientId(
-            legacySettingsPrefs.getString(LEGACY_CLIENT_ID_KEY, "").orEmpty()
-        )
-    }
+    fun effectiveWebClientId(): String =
+        normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
 
     fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
 
@@ -246,7 +233,8 @@ class GoogleAccountSession private constructor(context: Context) {
             _status.value = if (_account.value != null) {
                 YoutubeAuthorizationStatus(
                     YoutubeAuthorizationState.CONNECTED,
-                    "Google connected"
+                    "Google signed in",
+                    youtubeAuthorized = false
                 )
             } else {
                 YoutubeAuthorizationStatus()
@@ -364,13 +352,7 @@ class GoogleAccountSession private constructor(context: Context) {
     fun currentYoutubeAccessToken(): String? = youtubeAccessToken
 
     fun oauthRegistrationInfo(): String {
-        val source = when {
-            normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID).isNotBlank() -> "build"
-            normalizeClientId(
-                legacySettingsPrefs.getString(LEGACY_CLIENT_ID_KEY, "").orEmpty()
-            ).isNotBlank() -> "saved"
-            else -> "none"
-        }
+        val source = if (effectiveWebClientId().isNotBlank()) "embedded in build" else "not required for fallback sign-in"
         return "Package ${appContext.packageName} • SHA-1 ${signingCertificateSha1()} • Web client $source"
     }
 
@@ -406,7 +388,6 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         prefs.edit().clear().apply()
-        legacyIdentityPrefs.edit().clear().apply()
         pendingIdentity = null
         youtubeAccessToken = null
         authorizedAndroidAccount = null
@@ -532,7 +513,14 @@ class GoogleAccountSession private constructor(context: Context) {
         val legacy = result.toGoogleSignInAccount()
         val identity = pendingIdentity
             ?: legacy?.let(::identityFromGoogleSignIn)
-            ?: loadPersistedIdentity()
+            ?: authorizedAndroidAccount?.let { account ->
+                SignedInIdentity(
+                    uniqueId = account.name.lowercase(),
+                    email = account.name,
+                    displayName = account.name.substringBefore('@').ifBlank { "Google Account" },
+                    photoUrl = null
+                )
+            }
             ?: error("Google identity unavailable")
 
         authorizedAndroidAccount =
@@ -733,35 +721,6 @@ class GoogleAccountSession private constructor(context: Context) {
             .putString(KEY_NAME, identity.displayName)
             .putString(KEY_PHOTO, identity.photoUrl)
             .apply()
-    }
-
-    /**
-     * Migration-only. This value never directly becomes _account.
-     */
-    private fun loadPersistedIdentity(): SignedInIdentity? {
-        val currentUniqueId = prefs.getString(KEY_UNIQUE_ID, null)?.takeIf { it.isNotBlank() }
-        if (currentUniqueId != null) {
-            return SignedInIdentity(
-                uniqueId = currentUniqueId,
-                email = prefs.getString(KEY_EMAIL, "").orEmpty(),
-                displayName = prefs.getString(KEY_NAME, "").orEmpty(),
-                photoUrl = prefs.getString(KEY_PHOTO, null)
-            )
-        }
-
-        val legacyId =
-            legacyIdentityPrefs.getString("unique_id", null)?.takeIf { it.isNotBlank() }
-                ?: return null
-        val legacy = SignedInIdentity(
-            uniqueId = legacyId,
-            email = legacyIdentityPrefs.getString("email", "").orEmpty(),
-            displayName = legacyIdentityPrefs.getString("display_name", "Google Account")
-                .orEmpty()
-                .ifBlank { "Google Account" },
-            photoUrl = legacyIdentityPrefs.getString("photo_url", null)
-        )
-        persistIdentity(legacy)
-        return legacy
     }
 
     private fun normalizeClientId(value: String): String {

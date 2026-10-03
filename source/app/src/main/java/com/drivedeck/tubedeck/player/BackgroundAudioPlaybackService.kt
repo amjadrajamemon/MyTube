@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -100,7 +101,9 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 .setChannelId(CHANNEL_ID)
                 .build()
         )
-        player = ExoPlayer.Builder(this).build().apply {
+        player = ExoPlayer.Builder(this)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -191,8 +194,13 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
-        // Media3 takes over the same notification; retain foreground status during startup.
-        super.onUpdateNotification(session, startInForegroundRequired || startupPending)
+        // An idle/not-yet-connected Media3 controller can remove the notification even when
+        // foreground is requested. Keep our startup notification until playback is acknowledged.
+        if (startupPending) {
+            promoteToForeground()
+        } else {
+            super.onUpdateNotification(session, startInForegroundRequired)
+        }
     }
 
     private fun loadPlayableUrl(playUrl: String, positionMs: Long) {

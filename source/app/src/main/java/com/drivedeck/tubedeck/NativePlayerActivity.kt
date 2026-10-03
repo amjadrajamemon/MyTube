@@ -187,22 +187,18 @@ class NativePlayerActivity : ComponentActivity() {
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
-                    if (result.resultCode == RESULT_OK) {
-                        lifecycleScope.launch {
-                            googleSession.completeYoutubeAuthorization(this@NativePlayerActivity, result.data)
-                                .onSuccess {
-                                    Toast.makeText(
-                                        this@NativePlayerActivity,
-                                        "Google account connected",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                .onFailure {
-                                    fallBackToGoogleCodeOrShowProblem()
-                                }
+                    lifecycleScope.launch {
+                        googleSession.completeYoutubeAuthorization(
+                            this@NativePlayerActivity, result.data, result.resultCode
+                        ).onSuccess {
+                            Toast.makeText(
+                                this@NativePlayerActivity,
+                                "Google + YouTube connected",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }.onFailure {
+                            fallBackToGoogleCodeOrShowProblem()
                         }
-                    } else {
-                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -213,7 +209,13 @@ class NativePlayerActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
                                 .onSuccess { outcome ->
-                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                    outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                     if (outcome.recoveryIntent != null) {
                                         fallBackToGoogleCodeOrShowProblem()
                                     }
@@ -241,7 +243,13 @@ class NativePlayerActivity : ComponentActivity() {
                                 lifecycleScope.launch {
                                     googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
                                         .onSuccess { outcome ->
-                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                             outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
@@ -309,7 +317,13 @@ class NativePlayerActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
                                     .onSuccess { outcome ->
-                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         if (
                                             outcome.resolution == null &&
@@ -345,7 +359,13 @@ class NativePlayerActivity : ComponentActivity() {
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
-                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
@@ -377,6 +397,7 @@ class NativePlayerActivity : ComponentActivity() {
                     playerMode = com.drivedeck.tubedeck.data.model.PlayerMode.NATIVE,
                     sponsorSegments = sponsorSegments,
                     pipEnabled = settings.pipEnabled,
+                    inPictureInPicture = isPipMode,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
                     preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
@@ -460,7 +481,7 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
-                if (showPlaybackExitChoices) {
+                if (showPlaybackExitChoices && !isPipMode) {
                     PlaybackBackChoiceOverlay(
                         onCloseVideo = {
                             showPlaybackExitChoices = false
@@ -480,7 +501,7 @@ class NativePlayerActivity : ComponentActivity() {
                             playbackBackCoordinator.onChooserDismissed()
                         },
                         pipLabel = "Keep PiP",
-                        modifier = Modifier.align(Alignment.Center).zIndex(100f)
+                        modifier = Modifier.align(Alignment.BottomCenter).zIndex(100f)
                     )
                 }
 
@@ -620,18 +641,8 @@ class NativePlayerActivity : ComponentActivity() {
 
         if (isPipMode) {
             playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = if (rapidCount == 2) {
-                lifecycleScope.launch {
-                    delay(PlaybackBackSequenceTracker.rapidGapMs() + 50L)
-                    moveTaskToBack(true)
-                    PlaybackBackSequenceTracker.reset()
-                    playbackBackDecisionJob = null
-                }
-            } else {
-                moveTaskToBack(true)
-                PlaybackBackSequenceTracker.reset()
-                null
-            }
+            playbackBackDecisionJob = null
+            expandNativePlayerChooser()
             return
         }
 
@@ -737,6 +748,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     private fun enterPlayerPip() {
+        if (isPipMode || enteringPip || closingPlayer) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
             pipChoicePending = true
@@ -746,8 +758,10 @@ class NativePlayerActivity : ComponentActivity() {
                 context = this,
                 activityClass = NativePlayerActivity::class.java
             )
-            setPictureInPictureParams(params)
-            val entered = enterPictureInPictureMode(params)
+            val entered = runCatching {
+                setPictureInPictureParams(params)
+                enterPictureInPictureMode(params)
+            }.getOrDefault(false)
             if (!entered) {
                 enteringPip = false
                 pipChoicePending = false
@@ -787,7 +801,8 @@ class NativePlayerActivity : ComponentActivity() {
         }
         if (!closingPlayer && pendingFreshResumeFromPip) {
             pendingFreshResumeFromPip = false
-            resumeGeneration += 1
+            // Expanding PiP uses the same player, stream, position and user pause state.
+            // Refreshing every signed stream here caused blank frames and needless rebuffering.
             foregroundPlaybackAllowed = true
         }
     }

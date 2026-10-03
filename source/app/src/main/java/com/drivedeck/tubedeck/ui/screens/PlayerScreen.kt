@@ -130,6 +130,7 @@ fun PlayerScreen(
     playerMode: PlayerMode,
     sponsorSegments: List<SponsorSegment> = emptyList(),
     pipEnabled: Boolean = true,
+    inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
     preferredPlaybackQualityHeight: Int = 0,
@@ -187,6 +188,7 @@ fun PlayerScreen(
             media = media,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
+            inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
@@ -340,6 +342,7 @@ fun NativeExoPlayer(
     media: OfflineMedia,
     sponsorSegments: List<SponsorSegment>,
     pipEnabled: Boolean,
+    inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
     preferredPlaybackQualityHeight: Int,
@@ -476,7 +479,7 @@ fun NativeExoPlayer(
         MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}").build()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
-    val compactPortrait = isPortrait && !isFullscreen && !isPipMode(activity)
+    val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
 
     fun loadResolvedStream(
         sourceMedia: YoutubeStreamResolver.ResolvedMedia,
@@ -870,21 +873,31 @@ fun NativeExoPlayer(
     }
 
     LaunchedEffect(gestureOverlayVisible, gestureValue) {
-        if (gestureOverlayVisible) {
+        if (gestureOverlayVisible && !inPictureInPicture) {
             delay(900)
             gestureOverlayVisible = false
         }
     }
 
     BackHandler(
-        enabled = !isPipMode(activity) &&
-            (showSettings || (showComments && compactPortrait) || isFullscreen)
+        enabled = !inPictureInPicture && !isPipMode(activity) &&
+            (showSettings || (showComments && compactPortrait))
     ) {
         when {
             showSettings -> showSettings = false
             showComments && compactPortrait -> showComments = false
             isFullscreen -> isFullscreen = false
             else -> Unit
+        }
+    }
+
+    LaunchedEffect(inPictureInPicture) {
+        if (inPictureInPicture) {
+            isFullscreen = false
+            controlsVisible = false
+            showSettings = false
+            showQuickActions = false
+            gestureOverlayVisible = false
         }
     }
 
@@ -1037,7 +1050,7 @@ fun NativeExoPlayer(
                 }
             }
 
-            FadeVisibility(visible = controlsVisible) {
+            FadeVisibility(visible = controlsVisible && !inPictureInPicture) {
                 Box(
                     Modifier.fillMaxSize()
                         .background(Color.Black.copy(alpha = .35f))

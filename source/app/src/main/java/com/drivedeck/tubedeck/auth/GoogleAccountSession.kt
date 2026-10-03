@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Base64
 import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -211,7 +212,7 @@ class GoogleAccountSession private constructor(context: Context) {
             Result.success(authorizationOperation.run(
                 60_000,
                 "Google session restore timed out",
-                onCancelled = { resetCancelledAuthorization("Sign-in cancelled") }
+                onCancelled = { reportInterruptedAuthorization() }
             ) {
                 val result = authorizeForIdentity(appContext, identity)
                 if (result.hasResolution()) {
@@ -240,7 +241,7 @@ class GoogleAccountSession private constructor(context: Context) {
                 "Google sign-in timed out. Check your connection and retry.",
                 onCancelled = {
                     clearPendingConsent()
-                    resetCancelledAuthorization("Sign-in cancelled")
+                    reportInterruptedAuthorization()
                 }
             ) {
                 _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING, message)
@@ -288,7 +289,7 @@ class GoogleAccountSession private constructor(context: Context) {
         consentTimeoutJob = deviceScope.launch(Dispatchers.Main) {
             delay(120_000)
             if (waitingForConsent) {
-                cancelYoutubeAuthorization("Google approval timed out. Retry sign-in.")
+                failYoutubeAuthorization(IllegalStateException("Google approval timed out. Retry sign-in."))
             }
         }
         return YoutubeAuthorizationOutcome(
@@ -297,15 +298,42 @@ class GoogleAccountSession private constructor(context: Context) {
         )
     }
 
-    suspend fun completeYoutubeAuthorization(activity: Activity, data: Intent?): Result<GoogleAccountProfile> {
+    suspend fun completeYoutubeAuthorization(
+        activity: Activity,
+        data: Intent?,
+        resultCode: Int = Activity.RESULT_OK
+    ): Result<GoogleAccountProfile> {
         if (!waitingForConsent) {
-            return Result.failure(IllegalStateException("Google approval expired or was cancelled. Retry sign-in."))
+            val error = IllegalStateException("Google approval expired or was interrupted. Retry sign-in.")
+            recordExplicitFailure(error)
+            return Result.failure(error)
         }
         return runInteractiveAuthorization("Verifying YouTube access") {
-            val result = Identity.getAuthorizationClient(activity)
-                .getAuthorizationResultFromIntent(requireNotNull(data) { "Authorization cancelled" })
+            // Google can return an ApiException in data even when Android reports RESULT_CANCELED.
+            @Suppress("DEPRECATION")
+            val launchError = data?.getSerializableExtra(
+                ActivityResultContracts.StartIntentSenderForResult.EXTRA_SEND_INTENT_EXCEPTION
+            ) as? Exception
+            if (launchError != null) {
+                throw IllegalStateException("Google permission screen could not open", launchError)
+            }
+            val result = parseGoogleAuthorizationReturn(data, resultCode) { returnedData ->
+                Identity.getAuthorizationClient(activity)
+                    .getAuthorizationResultFromIntent(returnedData)
+            }
             completeAuthorizationResult(result)
         }
+    }
+
+    fun failYoutubeAuthorization(error: Throwable) {
+        clearPendingConsent()
+        authorizationOperation.cancel()
+        recordExplicitFailure(error)
+    }
+
+    private fun reportInterruptedAuthorization() {
+        if (_status.value.youtubeAuthorized) return
+        recordExplicitFailure(IllegalStateException("Google sign-in interrupted. Retry sign-in."))
     }
 
     private fun clearPendingConsent() {
@@ -746,6 +774,13 @@ class GoogleAccountSession private constructor(context: Context) {
         if (error is ApiException && error.statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
             return IllegalStateException(
                 "Google rejected this Android OAuth identity • $registration",
+                error
+            )
+        }
+        if (error is ApiException) {
+            return IllegalStateException(
+                "Google authorization failed (status ${error.statusCode}): " +
+                    (error.statusMessage ?: "No details returned"),
                 error
             )
         }

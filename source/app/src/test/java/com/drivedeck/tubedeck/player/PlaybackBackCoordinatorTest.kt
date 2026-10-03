@@ -38,18 +38,18 @@ class PlaybackBackCoordinatorTest {
             coordinator.onBack(2_100L, isInPip = false)
         )
         assertEquals(
-            PlaybackBackAction.CLOSE_PLAYBACK,
+            PlaybackBackAction.SHOW_EXIT_CHOOSER,
             coordinator.onBack(60_000L, isInPip = false)
         )
     }
 
     @Test
-    fun backWhileChooserVisibleClosesPlaybackDeterministically() {
+    fun backWhileChooserVisibleKeepsExplicitChoicesInsteadOfClosingPlayback() {
         val coordinator = PlaybackBackCoordinator()
         coordinator.forceChooserVisible()
 
         assertEquals(
-            PlaybackBackAction.CLOSE_PLAYBACK,
+            PlaybackBackAction.SHOW_EXIT_CHOOSER,
             coordinator.onBack(2_100L, isInPip = false)
         )
     }
@@ -74,7 +74,7 @@ class PlaybackBackCoordinatorTest {
             coordinator.onSinglePressTimeout(canEnterPip = false)
         )
         assertEquals(
-            PlaybackBackAction.CLOSE_PLAYBACK,
+            PlaybackBackAction.SHOW_EXIT_CHOOSER,
             coordinator.onBack(3_000L, isInPip = false)
         )
     }

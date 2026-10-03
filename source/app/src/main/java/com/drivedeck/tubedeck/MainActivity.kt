@@ -37,6 +37,8 @@ import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
+import com.drivedeck.tubedeck.player.ParentPipBackAction
+import com.drivedeck.tubedeck.player.PlaybackParentPipBackPolicy
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
 import com.drivedeck.tubedeck.player.PlaybackHost
@@ -71,6 +73,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: TubeDeckRepository
     private var webViewInstance: WebView? = null
     private var isPipMode by mutableStateOf(false)
+    private var enteringPip = false
     private var playerActive = false
     private var autoPipEnabled = true
     private var webPlaybackActive by mutableStateOf(false)
@@ -137,22 +140,18 @@ class MainActivity : ComponentActivity() {
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
-                    if (result.resultCode == RESULT_OK) {
-                        lifecycleScope.launch {
-                            googleSession.completeYoutubeAuthorization(this@MainActivity, result.data)
-                                .onSuccess {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Google account connected",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                .onFailure {
-                                    fallBackToGoogleCodeOrShowProblem()
-                                }
+                    lifecycleScope.launch {
+                        googleSession.completeYoutubeAuthorization(
+                            this@MainActivity, result.data, result.resultCode
+                        ).onSuccess {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Google + YouTube connected",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }.onFailure {
+                            fallBackToGoogleCodeOrShowProblem()
                         }
-                    } else {
-                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -163,7 +162,13 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
                                 .onSuccess { outcome ->
-                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                    outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                     if (outcome.recoveryIntent != null) {
                                         fallBackToGoogleCodeOrShowProblem()
                                     }
@@ -191,7 +196,13 @@ class MainActivity : ComponentActivity() {
                                 lifecycleScope.launch {
                                     googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
                                         .onSuccess { outcome ->
-                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                             outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
@@ -383,7 +394,13 @@ class MainActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
                                     .onSuccess { outcome ->
-                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         if (
                                             outcome.resolution == null &&
@@ -419,7 +436,13 @@ class MainActivity : ComponentActivity() {
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
-                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.resolution?.let { request ->
+                                            runCatching { youtubeAuthorizationLauncher.launch(request) }
+                                                .onFailure { error ->
+                                                    googleSession.failYoutubeAuthorization(error)
+                                                    fallBackToGoogleCodeOrShowProblem()
+                                                }
+                                        }
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
@@ -815,6 +838,7 @@ class MainActivity : ComponentActivity() {
                                         playerMode = settings.playerMode,
                                         sponsorSegments = sponsorSegments,
                                         pipEnabled = settings.pipEnabled,
+                    inPictureInPicture = isPipMode,
                                         autoLoadEpisodes = settings.autoLoadEpisodes,
                                         autoLoadUpNext = settings.autoLoadUpNext,
                                         preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
@@ -943,7 +967,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (showPlaybackExitChoices && nativePipSessionId == null) {
+                        if (showPlaybackExitChoices && !isPipMode) {
                             val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
                                 onCloseVideo = {
@@ -973,6 +997,9 @@ class MainActivity : ComponentActivity() {
                                     playbackBackCoordinator.onChooserDismissed()
                                     if (bridgedSession == null) {
                                         triggerPip()
+                                    } else {
+                                        PlaybackBackSequenceTracker.reset()
+                                        moveTaskToBack(true)
                                     }
                                 },
                                 onTimeout = {
@@ -1065,7 +1092,7 @@ class MainActivity : ComponentActivity() {
         if (!isPipMode) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        if (!isPipMode && playerActive) {
+        if (!isPipMode && !enteringPip && playerActive) {
             // Web playback must not silently survive task/background transitions. Only explicit
             // Audio-only is allowed to continue after the visible player leaves the foreground.
             webViewInstance?.runCatching {
@@ -1124,35 +1151,25 @@ class MainActivity : ComponentActivity() {
 
         NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
             val rapidCount = PlaybackBackSequenceTracker.record(now)
-            when {
-                rapidCount >= 3 -> {
-                    nativePipBackExitJob?.cancel()
-                    nativePipBackExitJob = null
+            nativePipBackExitJob?.cancel()
+            nativePipBackExitJob = null
+            when (PlaybackParentPipBackPolicy.onBack(rapidCount, showPlaybackExitChoices)) {
+                ParentPipBackAction.PAUSE_AND_EXIT -> {
+                    showPlaybackExitChoices = false
                     NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.PAUSE)
                     PlaybackBackSequenceTracker.reset()
-                    // Triple Back is an intentional media command: pause the existing PiP
-                    // session and let the user leave MyTube without destroying that session.
                     moveTaskToBack(true)
                 }
-
-                rapidCount == 2 -> {
-                    // Give a very short window for an intentional third press. If none arrives,
-                    // Back behaves normally: the main MyTube task goes away and PiP stays alive.
-                    nativePipBackExitJob?.cancel()
-                    nativePipBackExitJob = lifecycleScope.launch {
-                        delay(PlaybackBackSequenceTracker.rapidGapMs() + 50L)
-                        moveTaskToBack(true)
-                        PlaybackBackSequenceTracker.reset()
-                    }
-                }
-
-                else -> {
-                    // A slow press starts a fresh sequence. The user is navigating away rather
-                    // than issuing a triple-Back media command; keep the PiP session untouched.
-                    nativePipBackExitJob?.cancel()
-                    nativePipBackExitJob = null
-                    moveTaskToBack(true)
+                ParentPipBackAction.KEEP_PIP_AND_EXIT -> {
+                    // A further slow Back leaves the app while the existing PiP keeps playing.
+                    showPlaybackExitChoices = false
                     PlaybackBackSequenceTracker.reset()
+                    moveTaskToBack(true)
+                }
+                ParentPipBackAction.SHOW_CHOICES -> {
+                    // MainActivity owns Back while NativePlayerActivity remains in PiP.
+                    // Show choices here without expanding or recreating the native player.
+                    showPlaybackExitChoices = true
                 }
             }
             return
@@ -1306,15 +1323,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun triggerPip() {
+        if (isPipMode || enteringPip) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            enteringPip = true
             pipChoicePending = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
                 activityClass = MainActivity::class.java
             )
-            setPictureInPictureParams(params)
-            val entered = enterPictureInPictureMode(params)
+            val entered = runCatching {
+                setPictureInPictureParams(params)
+                enterPictureInPictureMode(params)
+            }.getOrDefault(false)
             if (!entered) {
+                enteringPip = false
                 pipChoicePending = false
                 playbackBackCoordinator.onPipEnterFailed()
                 showPlaybackExitChoices = true
@@ -1327,6 +1349,7 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         val wasInPip = isPipMode
         isPipMode = isInPictureInPictureMode
+        enteringPip = false
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
 
         if (isInPictureInPictureMode && playerActive) {

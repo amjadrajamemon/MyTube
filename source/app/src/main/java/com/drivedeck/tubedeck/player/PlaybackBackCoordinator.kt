@@ -26,7 +26,7 @@ internal class PlaybackBackCoordinator {
     fun onBack(nowMs: Long, isInPip: Boolean): PlaybackBackAction {
         @Suppress("UNUSED_VARIABLE")
         val ignoredTimestamp = nowMs
-        if (chooserVisible) return PlaybackBackAction.CLOSE_PLAYBACK
+        if (chooserVisible) return PlaybackBackAction.SHOW_EXIT_CHOOSER
 
         if (isInPip) {
             pipEnteredFromBack = false

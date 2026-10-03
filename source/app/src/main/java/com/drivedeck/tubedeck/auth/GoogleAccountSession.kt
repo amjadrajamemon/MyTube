@@ -26,6 +26,7 @@ import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -385,6 +386,8 @@ class GoogleAccountSession private constructor(context: Context) {
                 completeDeviceTokenSet(tokenSet)
                 _deviceStatus.value = "Google + YouTube connected"
                 _devicePrompt.value = null
+            } catch (_: CancellationException) {
+                _deviceStatus.value = ""
             } catch (error: Throwable) {
                 _deviceStatus.value = error.message ?: "Google code sign-in failed"
                 _status.value = YoutubeAuthorizationStatus(

@@ -26,10 +26,15 @@ import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -118,6 +123,19 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val deviceOAuth = GoogleDeviceCodeOAuth(
+        appContext,
+        BuildConfig.GOOGLE_DEVICE_CLIENT_ID.trim(),
+        BuildConfig.GOOGLE_DEVICE_CLIENT_SECRET.trim()
+    )
+    private val deviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var deviceSignInJob: Job? = null
+
+    private val _devicePrompt = MutableStateFlow<GoogleDeviceCodePrompt?>(null)
+    val devicePrompt: StateFlow<GoogleDeviceCodePrompt?> = _devicePrompt.asStateFlow()
+
+    private val _deviceStatus = MutableStateFlow("")
+    val deviceStatus: StateFlow<String> = _deviceStatus.asStateFlow()
     // Stored identity is never published as authenticated until a live token check succeeds.
     private val currentInstallIdentity = loadCurrentInstallIdentity()
 
@@ -137,6 +155,8 @@ class GoogleAccountSession private constructor(context: Context) {
         normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
 
     fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
+
+    fun isDeviceCodeConfigured(): Boolean = deviceOAuth.isConfigured()
 
     fun googleAccountChooserIntent(): Intent =
         AccountManager.newChooseAccountIntent(
@@ -178,6 +198,16 @@ class GoogleAccountSession private constructor(context: Context) {
         }.onFailure(::recordExplicitFailure)
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
+        if (isDeviceCodeConfigured() && deviceOAuth.hasStoredRefreshToken()) {
+            val restored = runCatching {
+                deviceOAuth.refreshStoredToken()?.let { tokenSet ->
+                    completeDeviceTokenSet(tokenSet)
+                    true
+                } ?: false
+            }.getOrDefault(false)
+            if (restored) return Result.success(true)
+        }
+
         val identity = currentInstallIdentity ?: pendingIdentity ?: return Result.success(false)
         pendingIdentity = identity
         authorizedAndroidAccount = identity.email
@@ -327,6 +357,67 @@ class GoogleAccountSession private constructor(context: Context) {
         }
     }
 
+    fun startDeviceCodeAuthorization() {
+        if (!isDeviceCodeConfigured()) {
+            _status.value = YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONFIGURATION_REQUIRED,
+                "MyTube code sign-in is not configured"
+            )
+            _deviceStatus.value = "Code sign-in is not configured"
+            return
+        }
+        if (deviceSignInJob?.isActive == true) return
+
+        deviceSignInJob = deviceScope.launch {
+            try {
+                _status.value = YoutubeAuthorizationStatus(
+                    YoutubeAuthorizationState.CONNECTING,
+                    "Starting Google code sign-in"
+                )
+                _deviceStatus.value = "Requesting Google sign-in code…"
+
+                val prompt = deviceOAuth.requestDeviceCode()
+                _devicePrompt.value = prompt
+                _deviceStatus.value = "Open Google and enter the displayed code"
+
+                val tokenSet = deviceOAuth.pollForToken(prompt) { message ->
+                    _deviceStatus.value = message
+                }
+                completeDeviceTokenSet(tokenSet)
+                _deviceStatus.value = "Google + YouTube connected"
+                _devicePrompt.value = null
+            } catch (_: CancellationException) {
+                _deviceStatus.value = ""
+            } catch (error: Throwable) {
+                _deviceStatus.value = error.message ?: "Google code sign-in failed"
+                _status.value = YoutubeAuthorizationStatus(
+                    YoutubeAuthorizationState.ERROR,
+                    error.message ?: "Google code sign-in failed"
+                )
+            } finally {
+                deviceSignInJob = null
+            }
+        }
+    }
+
+    fun cancelDeviceCodeAuthorization() {
+        deviceSignInJob?.cancel()
+        deviceSignInJob = null
+        _devicePrompt.value = null
+        _deviceStatus.value = ""
+        if (!_status.value.youtubeAuthorized) {
+            _status.value = if (_account.value != null) {
+                YoutubeAuthorizationStatus(
+                    YoutubeAuthorizationState.CONNECTED,
+                    "Google signed in",
+                    youtubeAuthorized = false
+                )
+            } else {
+                YoutubeAuthorizationStatus()
+            }
+        }
+    }
+
     fun currentYoutubeAccessToken(): String? = youtubeAccessToken
 
     fun oauthRegistrationInfo(): String {
@@ -335,6 +426,12 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     suspend fun signOut() {
+        deviceSignInJob?.cancel()
+        deviceSignInJob = null
+        _devicePrompt.value = null
+        _deviceStatus.value = ""
+        runCatching { deviceOAuth.revokeAndClear() }
+
         youtubeAccessToken?.let { token ->
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -512,6 +609,50 @@ class GoogleAccountSession private constructor(context: Context) {
                 recoveryIntent = recoverable.intent
             )
         }
+    }
+
+    private suspend fun completeDeviceTokenSet(
+        tokenSet: GoogleDeviceTokenSet
+    ): GoogleAccountProfile {
+        val verified = fetchYoutubeIdentity(tokenSet.accessToken)
+        val claims = tokenSet.idToken
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { parseGoogleIdTokenClaims(it) }.getOrNull() }
+
+        val email = claims?.optString("email").orEmpty()
+        val uniqueId = claims?.optString("sub").orEmpty()
+            .ifBlank { verified.channelId }
+            .ifBlank { email.lowercase() }
+            .ifBlank { error("Google identity unavailable") }
+        val displayName = claims?.optString("name").orEmpty()
+            .ifBlank { verified.channelTitle }
+            .ifBlank { email.substringBefore('@') }
+            .ifBlank { "Google Account" }
+        val photoUrl = claims?.optString("picture")
+            ?.takeIf { it.isNotBlank() }
+            ?: verified.photoUrl
+
+        val profile = GoogleAccountProfile(
+            uniqueId = uniqueId,
+            email = email,
+            displayName = displayName,
+            photoUrl = photoUrl,
+            youtubeChannelId = verified.channelId,
+            subscriptionCount = verified.subscriptionCount
+        )
+
+        val identity = identityFromProfile(profile)
+        persistIdentity(identity)
+        pendingIdentity = identity
+        authorizedAndroidAccount = email.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
+        youtubeAccessToken = tokenSet.accessToken
+        _account.value = profile
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTED,
+            "Google + YouTube connected",
+            youtubeAuthorized = true
+        )
+        return profile
     }
 
     private suspend fun completeAccessToken(

@@ -38,6 +38,7 @@ import com.drivedeck.tubedeck.ui.screens.PlayerScreen
 import com.drivedeck.tubedeck.ui.components.DownloadModal
 import com.drivedeck.tubedeck.ui.components.GoogleAccountDialog
 import com.drivedeck.tubedeck.ui.components.GoogleAuthorizationProblemDialog
+import com.drivedeck.tubedeck.ui.components.GoogleDeviceCodeDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
@@ -169,9 +170,20 @@ class NativePlayerActivity : ComponentActivity() {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
                 val googleAuthStatus by googleSession.status.collectAsStateWithLifecycle()
+                val googleDevicePrompt by googleSession.devicePrompt.collectAsStateWithLifecycle()
+                val googleDeviceStatus by googleSession.deviceStatus.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showGoogleAuthorizationProblem by remember { mutableStateOf(false) }
                 var triedExplicitGoogleAddAccount by remember { mutableStateOf(false) }
+
+                fun fallBackToGoogleCodeOrShowProblem() {
+                    if (googleSession.isDeviceCodeConfigured()) {
+                        showGoogleAuthorizationProblem = false
+                        googleSession.startDeviceCodeAuthorization()
+                    } else {
+                        showGoogleAuthorizationProblem = true
+                    }
+                }
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -186,11 +198,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     ).show()
                                 }
                                 .onFailure {
-                                    Toast.makeText(
-                                        this@NativePlayerActivity,
-                                        "Google sign-in failed",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
                     }
@@ -205,11 +213,11 @@ class NativePlayerActivity : ComponentActivity() {
                                 .onSuccess { outcome ->
                                     outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                     if (outcome.recoveryIntent != null) {
-                                        showGoogleAuthorizationProblem = true
+                                        fallBackToGoogleCodeOrShowProblem()
                                     }
                                 }
                                 .onFailure {
-                                    showGoogleAuthorizationProblem = true
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
                     }
@@ -233,7 +241,7 @@ class NativePlayerActivity : ComponentActivity() {
                                             outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
-                                            showGoogleAuthorizationProblem = true
+                                            fallBackToGoogleCodeOrShowProblem()
                                         }
                                 }
                             }
@@ -241,13 +249,13 @@ class NativePlayerActivity : ComponentActivity() {
                                 if (!triedExplicitGoogleAddAccount) {
                                     triedExplicitGoogleAddAccount = true
                                 } else {
-                                    showGoogleAuthorizationProblem = true
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                             }
                     } else if (!triedExplicitGoogleAddAccount) {
                         triedExplicitGoogleAddAccount = true
                     } else {
-                        showGoogleAuthorizationProblem = true
+                        fallBackToGoogleCodeOrShowProblem()
                     }
                 }
 
@@ -311,7 +319,7 @@ class NativePlayerActivity : ComponentActivity() {
                                         }
                                     }
                                     .onFailure {
-                                        showGoogleAuthorizationProblem = true
+                                        fallBackToGoogleCodeOrShowProblem()
                                     }
                             }
                         }
@@ -408,7 +416,23 @@ class NativePlayerActivity : ComponentActivity() {
                             showGoogleAuthorizationProblem = false
                             onGoogleAccountClick()
                         },
-                        onDismiss = { showGoogleAuthorizationProblem = false }
+                        onDismiss = { showGoogleAuthorizationProblem = false },
+                        onSignInWithCode = if (googleSession.isDeviceCodeConfigured()) {
+                            {
+                                showGoogleAuthorizationProblem = false
+                                googleSession.startDeviceCodeAuthorization()
+                            }
+                        } else {
+                            null
+                        }
+                    )
+                }
+
+                googleDevicePrompt?.let { prompt ->
+                    GoogleDeviceCodeDialog(
+                        prompt = prompt,
+                        status = googleDeviceStatus,
+                        onDismiss = { googleSession.cancelDeviceCodeAuthorization() }
                     )
                 }
 

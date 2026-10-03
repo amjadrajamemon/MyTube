@@ -21,9 +21,6 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.auth.api.identity.RevokeAccessRequest
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
@@ -75,8 +72,10 @@ data class YoutubeAuthorizationStatus(
  *
  * Authentication and authorization are deliberately separated:
  * 1) Credential Manager is preferred when a valid Web/server client ID is available.
- * 2) Google Play Services DEFAULT_SIGN_IN is the interactive fallback when no Web client ID exists.
- * 3) youtube.readonly authorization is attempted only after a real Google identity is established.
+ * 2) Android's system Google-account chooser/Add Account flow is the clean-install identity path
+ *    when no Web client ID exists or Credential Manager cannot complete.
+ * 3) youtube.readonly authorization is attempted only after a real Google identity is established,
+ *    using AuthorizationClient with GoogleAuthUtil as an independent direct-token fallback.
  *
  * Fresh-install invariant: no authentication path depends on preferences or data from an older
  * MyTube installation. Local preferences are used only to cache the current installation's
@@ -119,41 +118,25 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    // A persisted profile alone is not authentication. Only a current Google Play Services
-    // session is restored as connected without user interaction.
-    private val startupPlayServicesAccount = GoogleSignIn.getLastSignedInAccount(appContext)
+    // Stored identity is never published as authenticated until a live token check succeeds.
     private val currentInstallIdentity = loadCurrentInstallIdentity()
 
-    private val _account = MutableStateFlow(
-        startupPlayServicesAccount?.let { profileFromIdentity(identityFromGoogleSignIn(it)) }
-    )
+    private val _account = MutableStateFlow<GoogleAccountProfile?>(null)
     val account: StateFlow<GoogleAccountProfile?> = _account.asStateFlow()
 
-    private val _status = MutableStateFlow(
-        if (_account.value != null) {
-            YoutubeAuthorizationStatus(
-                YoutubeAuthorizationState.CONNECTED,
-                "Google signed in",
-                youtubeAuthorized = false
-            )
-        } else {
-            YoutubeAuthorizationStatus()
-        }
-    )
+    private val _status = MutableStateFlow(YoutubeAuthorizationStatus())
     val status: StateFlow<YoutubeAuthorizationStatus> = _status.asStateFlow()
 
     @Volatile private var youtubeAccessToken: String? = null
-    @Volatile private var authorizedAndroidAccount: Account? = startupPlayServicesAccount?.account
-    @Volatile private var pendingIdentity: SignedInIdentity? =
-        startupPlayServicesAccount?.let(::identityFromGoogleSignIn) ?: currentInstallIdentity
+    @Volatile private var authorizedAndroidAccount: Account? =
+        currentInstallIdentity?.email?.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
+    @Volatile private var pendingIdentity: SignedInIdentity? = currentInstallIdentity
+
 
     fun effectiveWebClientId(): String =
         normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
 
     fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
-
-    fun googlePlayServicesSignInIntent(activity: Activity): Intent =
-        GoogleSignIn.getClient(activity, basicGoogleSignInOptions()).signInIntent
 
     fun googleAccountChooserIntent(): Intent =
         AccountManager.newChooseAccountIntent(
@@ -194,30 +177,14 @@ class GoogleAccountSession private constructor(context: Context) {
             )
         }.onFailure(::recordExplicitFailure)
 
-    fun completeGooglePlayServicesSignIn(data: Intent?): Result<GoogleAccountProfile> =
-        runCatching {
-            val intent = requireNotNull(data) { "Google sign-in was cancelled" }
-            val google = GoogleSignIn.getSignedInAccountFromIntent(intent)
-                .getResult(ApiException::class.java)
-                ?: error("Google did not return an account")
-
-            authorizedAndroidAccount = google.account
-            publishGoogleIdentity(identityFromGoogleSignIn(google))
-        }.onFailure(::recordExplicitFailure)
-
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
-        val liveGoogle = GoogleSignIn.getLastSignedInAccount(appContext)
-        if (liveGoogle != null) {
-            authorizedAndroidAccount = liveGoogle.account
-            pendingIdentity = identityFromGoogleSignIn(liveGoogle)
-        }
-
-        val identity = pendingIdentity ?: return Result.success(false)
+        val identity = currentInstallIdentity ?: pendingIdentity ?: return Result.success(false)
+        pendingIdentity = identity
+        authorizedAndroidAccount = identity.email
+            .takeIf { it.isNotBlank() }
+            ?.let { Account(it, "com.google") }
 
         return runCatching {
-            // First try a silent direct token refresh. This verifies that the selected account
-            // still exists and that Google still accepts this installation. Cached profile data
-            // alone is never enough to restore authenticated UI state.
             val direct = authorizeWithGoogleAuthUtil(identity)
             if (direct.recoveryIntent != null) {
                 _account.value = null
@@ -392,12 +359,6 @@ class GoogleAccountSession private constructor(context: Context) {
         runCatching {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
         }
-        runCatching {
-            GoogleSignIn.getClient(appContext, basicGoogleSignInOptions())
-                .signOut()
-                .await()
-        }
-
         prefs.edit().clear().apply()
         pendingIdentity = null
         youtubeAccessToken = null
@@ -465,19 +426,6 @@ class GoogleAccountSession private constructor(context: Context) {
         )
     }
 
-    private fun identityFromGoogleSignIn(account: GoogleSignInAccount): SignedInIdentity {
-        val email = account.email.orEmpty()
-        val uniqueId = account.id?.takeIf { it.isNotBlank() }
-            ?: email.lowercase().takeIf { it.isNotBlank() }
-            ?: error("Google account identity unavailable")
-        return SignedInIdentity(
-            uniqueId = uniqueId,
-            email = email,
-            displayName = account.displayName.orEmpty(),
-            photoUrl = account.photoUrl?.toString()
-        )
-    }
-
     private fun identityFromProfile(profile: GoogleAccountProfile): SignedInIdentity =
         SignedInIdentity(
             uniqueId = profile.uniqueId,
@@ -520,10 +468,7 @@ class GoogleAccountSession private constructor(context: Context) {
         val token = result.accessToken?.takeIf { it.isNotBlank() }
             ?: error("YouTube access token unavailable")
 
-        @Suppress("DEPRECATION")
-        val legacy = result.toGoogleSignInAccount()
         val identity = pendingIdentity
-            ?: legacy?.let(::identityFromGoogleSignIn)
             ?: authorizedAndroidAccount?.let { account ->
                 SignedInIdentity(
                     uniqueId = account.name.lowercase(),
@@ -534,9 +479,9 @@ class GoogleAccountSession private constructor(context: Context) {
             }
             ?: error("Google identity unavailable")
 
-        authorizedAndroidAccount =
-            identity.email.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
-                ?: legacy?.account
+        authorizedAndroidAccount = identity.email
+            .takeIf { it.isNotBlank() }
+            ?.let { Account(it, "com.google") }
 
         return completeAccessToken(token, identity)
     }
@@ -761,12 +706,6 @@ class GoogleAccountSession private constructor(context: Context) {
         )
         return JSONObject(payload.toString(Charsets.UTF_8))
     }
-
-    private fun basicGoogleSignInOptions(): GoogleSignInOptions =
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .build()
 
     private fun generateNonce(byteLength: Int = 32): String {
         val randomBytes = ByteArray(byteLength)

@@ -370,6 +370,49 @@ class NativePlayerActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
+                                        // If Credential Manager cannot start or Google rejects
+                                        // its client configuration, fall back to Android's
+                                        // built-in Google account chooser rather than a dead UI.
+                                        triedExplicitGoogleAddAccount = false
+                                        googleAccountChooserLauncher.launch(
+                                            googleSession.googleAccountChooserIntent()
+                                        )
+                                    }
+                            }
+                        }
+
+                        else -> {
+                            // Clean-install primary path: Android's real account chooser.
+                            // If no Google account is available or the chooser returns none,
+                            // the callback opens Settings.ACTION_ADD_ACCOUNT and retries.
+                            triedExplicitGoogleAddAccount = false
+                            googleAccountChooserLauncher.launch(
+                                googleSession.googleAccountChooserIntent()
+                            )
+                        }
+                    }
+                }
+
+                        googleAccount != null -> {
+                            showGoogleAccountDialog = true
+                        }
+
+                        googleSession.isIdentityConfigured() -> {
+                            showGoogleAuthorizationProblem = false
+                            lifecycleScope.launch {
+                                googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.profile?.let {
+                                            Toast.makeText(
+                                                this@NativePlayerActivity,
+                                                "Signed in with Google",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                    }
+                                    .onFailure {
                                         googlePlayServicesLauncher.launch(
                                             googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
                                         )

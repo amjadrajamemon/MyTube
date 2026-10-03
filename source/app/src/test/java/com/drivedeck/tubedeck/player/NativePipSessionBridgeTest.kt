@@ -49,6 +49,28 @@ class NativePipSessionBridgeTest {
     }
 
     @Test
+    fun tripleBackPauseTargetsTheExistingNativeSession() = runBlocking {
+        NativePipSessionBridge.clear()
+        try {
+            NativePipSessionBridge.activate("session-a")
+            val next = async(start = CoroutineStart.UNDISPATCHED) {
+                NativePipSessionBridge.commands.first()
+            }
+
+            NativePipSessionBridge.request(
+                "session-a",
+                NativePipSessionBridge.Action.PAUSE
+            )
+
+            val command = next.await()
+            assertEquals("session-a", command.sessionId)
+            assertEquals(NativePipSessionBridge.Action.PAUSE, command.action)
+        } finally {
+            NativePipSessionBridge.clear()
+        }
+    }
+
+    @Test
     fun commandsOnlyTargetTheActiveNativeSession() = runBlocking {
         NativePipSessionBridge.clear()
         try {

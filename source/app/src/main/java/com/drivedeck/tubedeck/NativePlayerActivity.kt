@@ -175,6 +175,15 @@ class NativePlayerActivity : ComponentActivity() {
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showGoogleAuthorizationProblem by remember { mutableStateOf(false) }
                 var triedExplicitGoogleAddAccount by remember { mutableStateOf(false) }
+
+                fun fallBackToGoogleCodeOrShowProblem() {
+                    if (googleSession.isDeviceCodeConfigured()) {
+                        showGoogleAuthorizationProblem = false
+                        googleSession.startDeviceCodeAuthorization()
+                    } else {
+                        showGoogleAuthorizationProblem = true
+                    }
+                }
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -189,11 +198,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     ).show()
                                 }
                                 .onFailure {
-                                    Toast.makeText(
-                                        this@NativePlayerActivity,
-                                        "Google sign-in failed",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
                     }
@@ -208,11 +213,11 @@ class NativePlayerActivity : ComponentActivity() {
                                 .onSuccess { outcome ->
                                     outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                     if (outcome.recoveryIntent != null) {
-                                        showGoogleAuthorizationProblem = true
+                                        fallBackToGoogleCodeOrShowProblem()
                                     }
                                 }
                                 .onFailure {
-                                    showGoogleAuthorizationProblem = true
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
                     }
@@ -236,7 +241,7 @@ class NativePlayerActivity : ComponentActivity() {
                                             outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
-                                            showGoogleAuthorizationProblem = true
+                                            fallBackToGoogleCodeOrShowProblem()
                                         }
                                 }
                             }
@@ -244,7 +249,7 @@ class NativePlayerActivity : ComponentActivity() {
                                 if (!triedExplicitGoogleAddAccount) {
                                     triedExplicitGoogleAddAccount = true
                                 } else {
-                                    showGoogleAuthorizationProblem = true
+                                    fallBackToGoogleCodeOrShowProblem()
                                 }
                             }
                     } else if (!triedExplicitGoogleAddAccount) {
@@ -314,7 +319,7 @@ class NativePlayerActivity : ComponentActivity() {
                                         }
                                     }
                                     .onFailure {
-                                        showGoogleAuthorizationProblem = true
+                                        fallBackToGoogleCodeOrShowProblem()
                                     }
                             }
                         }

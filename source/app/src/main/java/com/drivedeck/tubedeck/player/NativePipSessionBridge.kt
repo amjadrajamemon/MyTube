@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 internal object NativePipSessionBridge {
     enum class Action {
         SHOW_CHOOSER,
+        PAUSE,
         AUDIO_ONLY,
         CLOSE
     }

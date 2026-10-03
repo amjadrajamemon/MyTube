@@ -38,6 +38,7 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchVideoId: String? = null
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
+    private var nativePipBackExitJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var pipChoicePending = false
     private var pendingChooserAfterPipExit = false
@@ -119,6 +121,7 @@ class MainActivity : ComponentActivity() {
                 val googleAuthStatus by googleSession.status.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showGoogleAuthorizationProblem by remember { mutableStateOf(false) }
+                var triedExplicitGoogleAddAccount by remember { mutableStateOf(false) }
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -185,44 +188,38 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             .onFailure {
-                                showGoogleAuthorizationProblem = true
+                                if (!triedExplicitGoogleAddAccount) {
+                                    triedExplicitGoogleAddAccount = true
+                                } else {
+                                    showGoogleAuthorizationProblem = true
+                                }
                             }
+                    } else if (!triedExplicitGoogleAddAccount) {
+                        triedExplicitGoogleAddAccount = true
+                    } else {
+                        showGoogleAuthorizationProblem = true
                     }
                 }
 
-                val googlePlayServicesLauncher = rememberLauncherForActivityResult(
+                val googleAddAccountLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
-                ) { result ->
-                    if (result.resultCode == RESULT_OK) {
-                        googleSession.completeGooglePlayServicesSignIn(result.data)
-                            .onSuccess {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "Signed in with Google",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                lifecycleScope.launch {
-                                    googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
-                                        .onSuccess { outcome ->
-                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
-                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
-                                        }
-                                        .onFailure {
-                                            // Google identity remains valid even when optional
-                                            // YouTube Data API authorization is unavailable.
-                                        }
-                                }
-                            }
-                            .onFailure {
-                                // Final real-device identity fallback: Android's system Google
-                                // account chooser does not depend on Credential Manager or the
-                                // legacy GoogleSignInClient succeeding.
-                                googleAccountChooserLauncher.launch(
-                                    googleSession.googleAccountChooserIntent()
-                                )
-                            }
+                ) {
+                    // Android's account Settings activity does not consistently return RESULT_OK.
+                    // On any return, reopen the Google account picker once and continue from the
+                    // newly added account when present.
+                    googleAccountChooserLauncher.launch(
+                        googleSession.googleAccountChooserIntent()
+                    )
+                }
+
+                LaunchedEffect(triedExplicitGoogleAddAccount) {
+                    if (triedExplicitGoogleAddAccount) {
+                        googleAddAccountLauncher.launch(
+                            googleSession.googleAddAccountIntent()
+                        )
                     }
                 }
+
 
                 LaunchedEffect(Unit) {
                     // Restore only a real previously granted YouTube OAuth session. If Google
@@ -413,16 +410,18 @@ class MainActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        googlePlayServicesLauncher.launch(
-                                            googleSession.googlePlayServicesSignInIntent(this@MainActivity)
+                                        triedExplicitGoogleAddAccount = false
+                                        googleAccountChooserLauncher.launch(
+                                            googleSession.googleAccountChooserIntent()
                                         )
                                     }
                             }
                         }
 
                         else -> {
-                            googlePlayServicesLauncher.launch(
-                                googleSession.googlePlayServicesSignInIntent(this@MainActivity)
+                            triedExplicitGoogleAddAccount = false
+                            googleAccountChooserLauncher.launch(
+                                googleSession.googleAccountChooserIntent()
                             )
                         }
                     }
@@ -1088,16 +1087,58 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlaybackBack() {
+        val now = SystemClock.elapsedRealtime()
+
         NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
-            // Native PiP remains owned by NativePlayerActivity. The parent only relays the
-            // second Back so the existing player expands and draws the chooser over the video.
-            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
+            val rapidCount = PlaybackBackSequenceTracker.record(now)
+            when {
+                rapidCount >= 3 -> {
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = null
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.PAUSE)
+                    PlaybackBackSequenceTracker.reset()
+                    // Triple Back is an intentional media command: pause the existing PiP
+                    // session and let the user leave MyTube without destroying that session.
+                    moveTaskToBack(true)
+                }
+
+                rapidCount == 2 -> {
+                    // Give a very short window for an intentional third press. If none arrives,
+                    // Back behaves normally: the main MyTube task goes away and PiP stays alive.
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = lifecycleScope.launch {
+                        delay(PlaybackBackSequenceTracker.rapidGapMs() + 50L)
+                        moveTaskToBack(true)
+                        PlaybackBackSequenceTracker.reset()
+                    }
+                }
+
+                else -> {
+                    // A slow press starts a fresh sequence. The user is navigating away rather
+                    // than issuing a triple-Back media command; keep the PiP session untouched.
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = null
+                    moveTaskToBack(true)
+                    PlaybackBackSequenceTracker.reset()
+                }
+            }
             return
         }
+
         if (!playerActive) return
+
+        val rapidCount = PlaybackBackSequenceTracker.record(now)
+        if (rapidCount >= 3) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            pauseActivePlayback()
+            PlaybackBackSequenceTracker.reset()
+            return
+        }
+
         dispatchPlaybackBackAction(
             playbackBackCoordinator.onBack(
-                nowMs = SystemClock.elapsedRealtime(),
+                nowMs = now,
                 isInPip = isPipMode
             )
         )
@@ -1137,11 +1178,27 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
+    private fun pauseActivePlayback() {
+        NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.PAUSE)
+            return
+        }
+        webViewInstance?.runCatching {
+            evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v){v.pause();return true;}return false;})()",
+                null
+            )
+        }
+    }
+
     private fun closeActivePlaybackCompletely() {
         pipChoicePending = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        nativePipBackExitJob?.cancel()
+        nativePipBackExitJob = null
         playbackBackCoordinator.reset()
+        PlaybackBackSequenceTracker.reset()
         BackgroundAudioController.stop(applicationContext)
         webViewInstance?.runCatching {
             evaluateJavascript(

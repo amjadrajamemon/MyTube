@@ -137,6 +137,7 @@ fun PlayerScreen(
     seekIntervalSeconds: Int = 10,
     initialPositionMs: Long = 0L,
     resumeGeneration: Int = 0,
+    pauseGeneration: Int = 0,
     foregroundPlaybackAllowed: Boolean = true,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
@@ -193,6 +194,7 @@ fun PlayerScreen(
             seekIntervalSeconds = seekIntervalSeconds,
             initialPositionMs = initialPositionMs,
             resumeGeneration = resumeGeneration,
+            pauseGeneration = pauseGeneration,
             foregroundPlaybackAllowed = foregroundPlaybackAllowed,
             onClose = onClose,
             onEnterPip = onEnterPip,
@@ -345,6 +347,7 @@ fun NativeExoPlayer(
     seekIntervalSeconds: Int,
     initialPositionMs: Long,
     resumeGeneration: Int,
+    pauseGeneration: Int,
     foregroundPlaybackAllowed: Boolean,
     onClose: () -> Unit,
     onEnterPip: () -> Unit,
@@ -460,6 +463,13 @@ fun NativeExoPlayer(
     LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
         playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)
         exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
+    LaunchedEffect(pauseGeneration) {
+        if (pauseGeneration > 0) {
+            exoPlayer.pause()
+            controlsVisible = true
+        }
     }
 
     val mediaSession = remember(exoPlayer) {

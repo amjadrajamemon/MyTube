@@ -1009,8 +1009,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlaybackBack() {
-        if (NativePipSessionBridge.isActive()) {
-            showPlaybackExitChoices = true
+        NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            // Native PiP remains owned by NativePlayerActivity. The parent only relays the
+            // second Back so the existing player expands and draws the chooser over the video.
+            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
             return
         }
         if (!playerActive) return
@@ -1041,6 +1043,8 @@ class MainActivity : ComponentActivity() {
                 playbackBackDecisionJob = null
                 showPlaybackExitChoices = true
             }
+
+            PlaybackBackAction.CLOSE_PLAYBACK -> closeActivePlaybackCompletely()
 
             PlaybackBackAction.IGNORE -> Unit
         }

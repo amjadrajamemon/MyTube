@@ -27,6 +27,28 @@ class NativePipSessionBridgeTest {
     }
 
     @Test
+    fun secondBackCanRequestChooserOnTheExistingNativeSession() = runBlocking {
+        NativePipSessionBridge.clear()
+        try {
+            NativePipSessionBridge.activate("session-a")
+            val next = async(start = CoroutineStart.UNDISPATCHED) {
+                NativePipSessionBridge.commands.first()
+            }
+
+            NativePipSessionBridge.request(
+                "session-a",
+                NativePipSessionBridge.Action.SHOW_CHOOSER
+            )
+
+            val command = next.await()
+            assertEquals("session-a", command.sessionId)
+            assertEquals(NativePipSessionBridge.Action.SHOW_CHOOSER, command.action)
+        } finally {
+            NativePipSessionBridge.clear()
+        }
+    }
+
+    @Test
     fun commandsOnlyTargetTheActiveNativeSession() = runBlocking {
         NativePipSessionBridge.clear()
         try {

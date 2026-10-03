@@ -4,6 +4,7 @@ internal enum class PlaybackBackAction {
     ENTER_PIP,
     EXPAND_PIP,
     SHOW_EXIT_CHOOSER,
+    CLOSE_PLAYBACK,
     IGNORE
 }
 
@@ -25,7 +26,7 @@ internal class PlaybackBackCoordinator {
     fun onBack(nowMs: Long, isInPip: Boolean): PlaybackBackAction {
         @Suppress("UNUSED_VARIABLE")
         val ignoredTimestamp = nowMs
-        if (chooserVisible) return PlaybackBackAction.IGNORE
+        if (chooserVisible) return PlaybackBackAction.CLOSE_PLAYBACK
 
         if (isInPip) {
             pipEnteredFromBack = false

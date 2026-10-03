@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
@@ -83,6 +84,8 @@ class NativePlayerActivity : ComponentActivity() {
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
     private var pipChoicePending = false
+    private var pipExitPendingStop = false
+    private var explicitAudioHandoff = false
     private var pendingFreshResumeFromPip = false
     private var currentMedia by mutableStateOf(
         OfflineMedia(
@@ -110,6 +113,7 @@ class NativePlayerActivity : ComponentActivity() {
             NativePipSessionBridge.commands.collect { command ->
                 if (command.sessionId != playbackSessionId || closingPlayer) return@collect
                 when (command.action) {
+                    NativePipSessionBridge.Action.SHOW_CHOOSER -> expandNativePlayerChooser()
                     NativePipSessionBridge.Action.AUDIO_ONLY -> handoffToBackgroundAudio()
                     NativePipSessionBridge.Action.CLOSE -> closePlaybackCompletely()
                 }
@@ -129,7 +133,7 @@ class NativePlayerActivity : ComponentActivity() {
             setPictureInPictureParams(
                 PlaybackPipActions.buildParams(
                     context = this,
-                    activityClass = MainActivity::class.java
+                    activityClass = NativePlayerActivity::class.java
                 )
             )
         }
@@ -184,6 +188,53 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
+                val googleAuthRecoveryLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        lifecycleScope.launch {
+                            googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                .onSuccess { outcome ->
+                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                    if (outcome.recoveryIntent != null) {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                                }
+                                .onFailure {
+                                    showGoogleAuthorizationProblem = true
+                                }
+                        }
+                    }
+                }
+
+                val googleAccountChooserLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        googleSession.completeGoogleAccountChooser(result.data)
+                            .onSuccess {
+                                Toast.makeText(
+                                    this@NativePlayerActivity,
+                                    "Signed in with Google",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                lifecycleScope.launch {
+                                    googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                        .onSuccess { outcome ->
+                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        }
+                                        .onFailure {
+                                            showGoogleAuthorizationProblem = true
+                                        }
+                                }
+                            }
+                            .onFailure {
+                                showGoogleAuthorizationProblem = true
+                            }
+                    }
+                }
+
                 val googlePlayServicesLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
                 ) { result ->
@@ -199,6 +250,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
                                         .onSuccess { outcome ->
                                             outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
                                             // Google identity remains valid even when optional
@@ -207,12 +259,12 @@ class NativePlayerActivity : ComponentActivity() {
                                 }
                             }
                             .onFailure {
-                                showGoogleAuthorizationProblem = true
-                                Toast.makeText(
-                                    this@NativePlayerActivity,
-                                    it.message ?: "Google sign-in failed",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                // Final real-device identity fallback: Android's system Google
+                                // account chooser does not depend on Credential Manager or the
+                                // legacy GoogleSignInClient succeeding.
+                                googleAccountChooserLauncher.launch(
+                                    googleSession.googleAccountChooserIntent()
+                                )
                             }
                     }
                 }
@@ -236,11 +288,38 @@ class NativePlayerActivity : ComponentActivity() {
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
                 val onGoogleAccountClick: () -> Unit = {
-                    if (googleAccount != null) {
-                        showGoogleAccountDialog = true
-                    } else {
-                        showGoogleAuthorizationProblem = false
-                        if (googleSession.isIdentityConfigured()) {
+                    when {
+                        googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
+                            showGoogleAuthorizationProblem = false
+                            lifecycleScope.launch {
+                                googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        if (
+                                            outcome.resolution == null &&
+                                            outcome.recoveryIntent == null &&
+                                            googleSession.status.value.youtubeAuthorized
+                                        ) {
+                                            Toast.makeText(
+                                                this@NativePlayerActivity,
+                                                "Google + YouTube connected",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                    .onFailure {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                            }
+                        }
+
+                        googleAccount != null -> {
+                            showGoogleAccountDialog = true
+                        }
+
+                        googleSession.isIdentityConfigured() -> {
+                            showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
                                 googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
                                     .onSuccess { outcome ->
@@ -252,17 +331,17 @@ class NativePlayerActivity : ComponentActivity() {
                                             ).show()
                                         }
                                         outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        // Credential Manager configuration can be stale or rejected.
-                                        // Fall back to the real Google Play Services account UI
-                                        // rather than presenting a cached/dummy profile.
                                         googlePlayServicesLauncher.launch(
                                             googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
                                         )
                                     }
                             }
-                        } else {
+                        }
+
+                        else -> {
                             googlePlayServicesLauncher.launch(
                                 googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
                             )
@@ -362,7 +441,8 @@ class NativePlayerActivity : ComponentActivity() {
                             showPlaybackExitChoices = false
                             playbackBackCoordinator.onChooserDismissed()
                         },
-                        modifier = Modifier.align(Alignment.BottomCenter)
+                        pipLabel = "Keep PiP",
+                        modifier = Modifier.align(Alignment.Center).zIndex(100f)
                     )
                 }
 
@@ -414,9 +494,11 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
+                pipExitPendingStop = false
                 pipChoicePending = false
-                NativePipSessionBridge.activate(playbackSessionId)
-                showParentPipChooser()
+                NativePipSessionBridge.clear(playbackSessionId)
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
                 return
             }
             PlaybackPipActions.ACTION_AUDIO_ONLY -> {
@@ -497,8 +579,7 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackBackAction.EXPAND_PIP -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
-                NativePipSessionBridge.activate(playbackSessionId)
-                showParentPipChooser()
+                expandNativePlayerChooser()
             }
 
             PlaybackBackAction.SHOW_EXIT_CHOOSER -> {
@@ -507,6 +588,8 @@ class NativePlayerActivity : ComponentActivity() {
                 showPlaybackExitChoices = true
             }
 
+            PlaybackBackAction.CLOSE_PLAYBACK -> closePlaybackCompletely()
+
             PlaybackBackAction.IGNORE -> Unit
         }
     }
@@ -514,6 +597,8 @@ class NativePlayerActivity : ComponentActivity() {
     private fun closePlaybackCompletely() {
         if (closingPlayer) return
         pipChoicePending = false
+        pipExitPendingStop = false
+        explicitAudioHandoff = false
         closingPlayer = true
         playerActive = false
         playbackBackDecisionJob?.cancel()
@@ -536,6 +621,8 @@ class NativePlayerActivity : ComponentActivity() {
                 artworkUrl = media.thumbnailUrl,
                 positionMs = currentPlaybackPositionMs
             ).onSuccess {
+                explicitAudioHandoff = true
+                pipExitPendingStop = false
                 closingPlayer = true
                 playerActive = false
                 NativePipSessionBridge.clear(playbackSessionId)
@@ -554,31 +641,34 @@ class NativePlayerActivity : ComponentActivity() {
     private fun finishPlayer() {
         if (closingPlayer) return
         pipChoicePending = false
+        pipExitPendingStop = false
+        explicitAudioHandoff = false
         closingPlayer = true
         playerActive = false
         NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
+        BackgroundAudioController.stop(applicationContext)
         finish()
     }
 
-    private fun showParentBehindPip(showChooser: Boolean = false) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            if (showChooser) action = PlaybackPipActions.ACTION_EXPAND_PLAYER
+    private fun expandNativePlayerChooser() {
+        if (closingPlayer) return
+        val intent = Intent(this, NativePlayerActivity::class.java).apply {
+            action = PlaybackPipActions.ACTION_EXPAND_PLAYER
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
     }
 
-    private fun showParentPipChooser() = showParentBehindPip(showChooser = true)
-
     private fun enterPlayerPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
             pipChoicePending = true
+            pipExitPendingStop = false
             foregroundPlaybackAllowed = true
             val params = PlaybackPipActions.buildParams(
                 context = this,
-                activityClass = MainActivity::class.java
+                activityClass = NativePlayerActivity::class.java
             )
             setPictureInPictureParams(params)
             val entered = enterPictureInPictureMode(params)
@@ -609,6 +699,16 @@ class NativePlayerActivity : ComponentActivity() {
         if (!closingPlayer && playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+        if (!closingPlayer && pipExitPendingStop) {
+            // Reaching RESUMED means PiP was expanded, not dismissed by the system X.
+            pipExitPendingStop = false
+            NativePipSessionBridge.clear(playbackSessionId)
+            if (pipChoicePending) {
+                pipChoicePending = false
+                playbackBackCoordinator.forceChooserVisible()
+                showPlaybackExitChoices = true
+            }
+        }
         if (!closingPlayer && pendingFreshResumeFromPip) {
             pendingFreshResumeFromPip = false
             resumeGeneration += 1
@@ -620,9 +720,16 @@ class NativePlayerActivity : ComponentActivity() {
         if (!isPipMode && !enteringPip) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+        if (pipExitPendingStop && !closingPlayer) {
+            // Android's system PiP X does not invoke our RemoteAction. A PiP exit followed by
+            // onStop (without onResume) is therefore a dismissal: stop every playback path.
+            pipExitPendingStop = false
+            foregroundPlaybackAllowed = false
+            closePlaybackCompletely()
+            super.onStop()
+            return
+        }
         if (!isPipMode && !enteringPip && !closingPlayer) {
-            // If Android dismisses PiP/task UI without an explicit Audio choice, never let the
-            // Activity's ExoPlayer silently continue as unintended audio-only playback.
             foregroundPlaybackAllowed = false
         }
         super.onStop()
@@ -664,6 +771,9 @@ class NativePlayerActivity : ComponentActivity() {
         if (isFinishing && !isChangingConfigurations) {
             NativePipSessionBridge.clear(playbackSessionId)
             PlaybackSessionRegistry.close(playbackSessionId)
+            if (!explicitAudioHandoff) {
+                BackgroundAudioController.stop(applicationContext)
+            }
         }
         super.onDestroy()
     }
@@ -684,11 +794,12 @@ class NativePlayerActivity : ComponentActivity() {
             // minimize -> maximize -> minimize bounce on the first Back press.
         } else if (wasInPip && !isInPictureInPictureMode) {
             NativePipSessionBridge.clear(playbackSessionId)
-            pipChoicePending = false
+            // We cannot know in this callback whether the user expanded PiP or pressed the
+            // system X. onResume means expansion; onStop means dismissal.
+            pipExitPendingStop = true
         }
 
         if (wasInPip && !isInPictureInPictureMode && playerActive && !closingPlayer) {
-            // Refresh signed media only after the Activity genuinely resumes foreground.
             pendingFreshResumeFromPip = true
         }
     }

@@ -143,6 +143,53 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val googleAuthRecoveryLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        lifecycleScope.launch {
+                            googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                .onSuccess { outcome ->
+                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                    if (outcome.recoveryIntent != null) {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                                }
+                                .onFailure {
+                                    showGoogleAuthorizationProblem = true
+                                }
+                        }
+                    }
+                }
+
+                val googleAccountChooserLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        googleSession.completeGoogleAccountChooser(result.data)
+                            .onSuccess {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Signed in with Google",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                lifecycleScope.launch {
+                                    googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                        .onSuccess { outcome ->
+                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        }
+                                        .onFailure {
+                                            showGoogleAuthorizationProblem = true
+                                        }
+                                }
+                            }
+                            .onFailure {
+                                showGoogleAuthorizationProblem = true
+                            }
+                    }
+                }
+
                 val googlePlayServicesLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
                 ) { result ->
@@ -158,6 +205,7 @@ class MainActivity : ComponentActivity() {
                                     googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
                                         .onSuccess { outcome ->
                                             outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
                                             // Google identity remains valid even when optional
@@ -166,12 +214,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             .onFailure {
-                                showGoogleAuthorizationProblem = true
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    it.message ?: "Google sign-in failed",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                // Final real-device identity fallback: Android's system Google
+                                // account chooser does not depend on Credential Manager or the
+                                // legacy GoogleSignInClient succeeding.
+                                googleAccountChooserLauncher.launch(
+                                    googleSession.googleAccountChooserIntent()
+                                )
                             }
                     }
                 }
@@ -319,11 +367,38 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val onGoogleAccountClick: () -> Unit = {
-                    if (googleAccount != null) {
-                        showGoogleAccountDialog = true
-                    } else {
-                        showGoogleAuthorizationProblem = false
-                        if (googleSession.isIdentityConfigured()) {
+                    when {
+                        googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
+                            showGoogleAuthorizationProblem = false
+                            lifecycleScope.launch {
+                                googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        if (
+                                            outcome.resolution == null &&
+                                            outcome.recoveryIntent == null &&
+                                            googleSession.status.value.youtubeAuthorized
+                                        ) {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Google + YouTube connected",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                    .onFailure {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                            }
+                        }
+
+                        googleAccount != null -> {
+                            showGoogleAccountDialog = true
+                        }
+
+                        googleSession.isIdentityConfigured() -> {
+                            showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
                                 googleSession.beginYoutubeAuthorization(this@MainActivity)
                                     .onSuccess { outcome ->
@@ -335,17 +410,17 @@ class MainActivity : ComponentActivity() {
                                             ).show()
                                         }
                                         outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        // Credential Manager configuration can be stale or rejected.
-                                        // Fall back to the real Google Play Services account UI
-                                        // rather than presenting a cached/dummy profile.
                                         googlePlayServicesLauncher.launch(
                                             googleSession.googlePlayServicesSignInIntent(this@MainActivity)
                                         )
                                     }
                             }
-                        } else {
+                        }
+
+                        else -> {
                             googlePlayServicesLauncher.launch(
                                 googleSession.googlePlayServicesSignInIntent(this@MainActivity)
                             )
@@ -836,7 +911,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (showPlaybackExitChoices) {
+                        if (showPlaybackExitChoices && nativePipSessionId == null) {
                             val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
                                 onCloseVideo = {
@@ -979,6 +1054,10 @@ class MainActivity : ComponentActivity() {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
                 pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
+                    return
+                }
                 playbackBackCoordinator.forceChooserVisible()
                 showPlaybackExitChoices = true
                 return
@@ -1009,8 +1088,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlaybackBack() {
-        if (NativePipSessionBridge.isActive()) {
-            showPlaybackExitChoices = true
+        NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            // Native PiP remains owned by NativePlayerActivity. The parent only relays the
+            // second Back so the existing player expands and draws the chooser over the video.
+            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
             return
         }
         if (!playerActive) return
@@ -1041,6 +1122,8 @@ class MainActivity : ComponentActivity() {
                 playbackBackDecisionJob = null
                 showPlaybackExitChoices = true
             }
+
+            PlaybackBackAction.CLOSE_PLAYBACK -> closeActivePlaybackCompletely()
 
             PlaybackBackAction.IGNORE -> Unit
         }

@@ -143,6 +143,25 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val googleAuthRecoveryLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        lifecycleScope.launch {
+                            googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                .onSuccess { outcome ->
+                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                    if (outcome.recoveryIntent != null) {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                                }
+                                .onFailure {
+                                    showGoogleAuthorizationProblem = true
+                                }
+                        }
+                    }
+                }
+
                 val googlePlayServicesLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
                 ) { result ->
@@ -158,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                     googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
                                         .onSuccess { outcome ->
                                             outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                         }
                                         .onFailure {
                                             // Google identity remains valid even when optional
@@ -335,6 +355,7 @@ class MainActivity : ComponentActivity() {
                                             ).show()
                                         }
                                         outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
                                         // Credential Manager configuration can be stale or rejected.

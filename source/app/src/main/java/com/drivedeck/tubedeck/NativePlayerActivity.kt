@@ -255,7 +255,7 @@ class NativePlayerActivity : ComponentActivity() {
                     } else if (!triedExplicitGoogleAddAccount) {
                         triedExplicitGoogleAddAccount = true
                     } else {
-                        showGoogleAuthorizationProblem = true
+                        fallBackToGoogleCodeOrShowProblem()
                     }
                 }
 

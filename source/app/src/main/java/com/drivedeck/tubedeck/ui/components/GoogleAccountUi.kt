@@ -110,12 +110,7 @@ fun GoogleAccountDialog(
             TextButton(onClick = onSignOut) { Text("Sign out") }
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                onSignInWithCode?.let { signInWithCode ->
-                    TextButton(onClick = signInWithCode) { Text("Sign in with code") }
-                }
-                TextButton(onClick = onDismiss) { Text("Close") }
-            }
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
 }
@@ -213,7 +208,12 @@ fun GoogleAuthorizationProblemDialog(
             TextButton(onClick = onRetry) { Text("Retry sign-in") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                onSignInWithCode?.let { signInWithCode ->
+                    TextButton(onClick = signInWithCode) { Text("Sign in with code") }
+                }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
         }
     )
 }

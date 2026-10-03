@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
                                 .onSuccess {
                                     Toast.makeText(
                                         this@MainActivity,
-                                        "YouTube account connected",
+                                        "Google account connected",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -307,7 +307,7 @@ class MainActivity : ComponentActivity() {
                                     outcome.profile?.let {
                                         Toast.makeText(
                                             this@MainActivity,
-                                            "YouTube account connected",
+                                            "Google account connected",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }

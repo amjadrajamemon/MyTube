@@ -47,7 +47,10 @@ jobs:
           MAIN=source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
           NATIVE=source/app/src/main/java/com/drivedeck/tubedeck/NativePlayerActivity.kt
           BRIDGE=source/app/src/main/java/com/drivedeck/tubedeck/player/NativePipSessionBridge.kt
-          grep -Fq 'signInGoogleIdentity(activity)' "$AUTH"
+          grep -Fq 'signInGoogleIdentity(activity, clientId)' "$AUTH"
+          grep -Fq 'LEGACY_CLIENT_ID_KEY = "googleWebClientId"' "$AUTH"
+          grep -Fq 'LEGACY_IDENTITY_PREFS = "google_account_session"' "$AUTH"
+          grep -Fq 'AuthorizationRequest.Prompt.SELECT_ACCOUNT' "$AUTH"
           grep -Fq 'setAccount(Account(identity.email, "com.google"))' "$AUTH"
           grep -Fq 'https://www.googleapis.com/auth/youtube.readonly' "$AUTH"
           grep -Fq 'channels?part=snippet&mine=true' "$AUTH"
@@ -59,15 +62,18 @@ jobs:
           grep -Fq 'Retry sign-in' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/GoogleAccountUi.kt
           echo "Release-critical Google OAuth and Back/PiP source checks passed."
 
-      - name: Verify Google sign-in configuration
+      - name: Verify Google sign-in recovery paths
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GOOGLE_WEB_CLIENT_ID:-}" || { echo "::error::GOOGLE_WEB_CLIENT_ID is required for the v1.4.0 Google sign-in build."; exit 1; }
-          case "$GOOGLE_WEB_CLIENT_ID" in
-            *.apps.googleusercontent.com) echo "Google OAuth client ID configured." ;;
-            *) echo "::error::GOOGLE_WEB_CLIENT_ID is malformed."; exit 1 ;;
-          esac
+          if [ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
+            case "$GOOGLE_WEB_CLIENT_ID" in
+              *.apps.googleusercontent.com) echo "Build-time Google identity configuration present." ;;
+              *) echo "::error::Google identity configuration is malformed."; exit 1 ;;
+            esac
+          else
+            echo "::notice::Using legacy saved configuration recovery and Android authorization fallback."
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5

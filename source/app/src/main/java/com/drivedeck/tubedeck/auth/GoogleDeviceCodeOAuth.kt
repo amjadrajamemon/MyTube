@@ -211,7 +211,7 @@ internal class GoogleDeviceCodeOAuth(
             doOutput = true
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
             setRequestProperty("Accept", "application/json")
-            fixedLengthStreamingMode(body.size)
+            setFixedLengthStreamingMode(body.size)
         }
 
         try {

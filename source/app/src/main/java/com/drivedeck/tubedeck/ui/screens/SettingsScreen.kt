@@ -90,7 +90,6 @@ fun SettingsScreen(
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
     
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
-    var googleWebClientId by remember { mutableStateOf(currentSettings.googleWebClientId) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
@@ -325,15 +324,6 @@ fun SettingsScreen(
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = googleWebClientId,
-                    onValueChange = { googleWebClientId = it.trim() },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Google OAuth client") },
-                    placeholder = { Text("…apps.googleusercontent.com") }
-                )
-                Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = onGoogleAccountClick,
                     enabled = youtubeAuthStatus.state != YoutubeAuthorizationState.CONNECTING,
@@ -512,7 +502,6 @@ fun SettingsScreen(
                             playlistMode = playlistMode,
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
-                            googleWebClientId = googleWebClientId.trim(),
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,

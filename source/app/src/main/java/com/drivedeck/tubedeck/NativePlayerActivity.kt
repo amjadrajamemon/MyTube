@@ -650,9 +650,10 @@ class NativePlayerActivity : ComponentActivity() {
         if (isInPictureInPictureMode && playerActive && !closingPlayer) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             NativePipSessionBridge.activate(playbackSessionId)
-            // SmartTube-style ownership: ExoPlayer stays in this PiP activity while MyTube's
-            // parent UI becomes the foreground surface that owns the next Back press.
-            showParentBehindPip()
+            // Do not launch/reorder MainActivity from the PiP transition callback.
+            // Android reveals the existing parent Activity underneath the PiP window naturally.
+            // Starting an Activity here races the system PiP animation and caused the observed
+            // minimize -> maximize -> minimize bounce on the first Back press.
         } else if (wasInPip && !isInPictureInPictureMode) {
             NativePipSessionBridge.clear(playbackSessionId)
             pipChoicePending = false

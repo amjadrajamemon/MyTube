@@ -47,6 +47,7 @@ jobs:
           MAIN=source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
           NATIVE=source/app/src/main/java/com/drivedeck/tubedeck/NativePlayerActivity.kt
           BRIDGE=source/app/src/main/java/com/drivedeck/tubedeck/player/NativePipSessionBridge.kt
+          BACKSEQ=source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackBackSequenceTracker.kt
           grep -Fq 'signInGoogleIdentity(activity, clientId)' "$AUTH"
           ! grep -Fq 'googleWebClientId' "$AUTH"
           ! grep -Fq 'LEGACY_SETTINGS_PREFS' "$AUTH"
@@ -68,7 +69,9 @@ jobs:
           grep -Fq 'UserRecoverableAuthException' "$AUTH"
           grep -Fq 'youtubeAuthorized: Boolean = false' "$AUTH"
           grep -Fq 'GoogleSignIn.getLastSignedInAccount' "$AUTH"
-          grep -Fq 'Cached SharedPreferences are migration hints only' "$AUTH"
+          grep -Fq 'Fresh-install invariant' "$AUTH"
+          grep -Fq 'googleAccountChooserIntent' "$MAIN"
+          grep -Fq 'googleAccountChooserIntent' "$NATIVE"
           grep -Fq 'googleid:googleid:1.1.1' source/app/build.gradle.kts
           grep -Fq 'parseGoogleIdTokenClaims' "$AUTH"
           grep -Fq 'setAccount(Account(identity.email, "com.google"))' "$AUTH"
@@ -82,6 +85,12 @@ jobs:
           grep -Fq 'PlaybackBackAction.CLOSE_PLAYBACK' "$NATIVE"
           grep -Fq 'NativePipSessionBridge.Action.SHOW_CHOOSER' "$MAIN"
           grep -Fq 'NativePipSessionBridge.Action.SHOW_CHOOSER' "$NATIVE"
+          grep -Fq 'NativePipSessionBridge.Action.PAUSE' "$NATIVE"
+          grep -Fq 'NativePipSessionBridge.Action.PAUSE' "$MAIN"
+          grep -Fq 'PlaybackBackSequenceTracker.record' "$MAIN"
+          grep -Fq 'PlaybackBackSequenceTracker.record' "$NATIVE"
+          grep -Fq 'RAPID_GAP_MS = 550L' "$BACKSEQ"
+          grep -Fq 'moveTaskToBack(true)' "$MAIN"
           grep -Fq 'activityClass = NativePlayerActivity::class.java' "$NATIVE"
           grep -Fq 'pipExitPendingStop' "$NATIVE"
           grep -Fq 'BackgroundAudioController.stop(applicationContext)' "$NATIVE"
@@ -330,6 +339,14 @@ jobs:
           TAG="v1.4.3-dual-arm64-universal-debug"
           NOTES="MyTube r6.5 LiveDub v1.4.3.
 
+          v1.4.3 professional Back gesture behavior:
+          - First Back from active native playback enters PiP.
+          - A normal/slow Back while native PiP is active sends the MyTube task to the background and keeps PiP alive.
+          - Slow additional Back navigation never tears down the PiP session.
+          - Three rapid consecutive Back presses are a deliberate media gesture: pause the existing native PiP/ExoPlayer session without converting it to audio-only.
+          - The rapid sequence is process-wide so the gesture survives the NativePlayerActivity -> MainActivity handoff.
+          - The three-option Keep PiP / Audio-only / Close overlay remains available from the player/PiP Options action rather than being forced into ordinary Back navigation.
+
           v1.4.3 clean-install self-contained account baseline:
           - No authentication path reads credentials, client IDs or account profiles from older MyTube builds.
           - Removed legacy googleWebClientId setting, tubedeck_prefs recovery and google_account_session migration.
@@ -346,7 +363,7 @@ jobs:
           - Dismissing system PiP with its X is treated as a hard stop unless Audio-only was explicitly selected.
           - Native teardown also stops any background-audio service to prevent audio surviving a closed PiP.
           - One app-wide GoogleAccountSession is shared by Web and Exo modes.
-          - Identity fallback chain: Credential Manager -> Google Play Services sign-in -> Android system Google-account chooser.
+          - Identity path is fresh-install safe: Credential Manager when a valid embedded Web client exists; otherwise Android's real Google-account chooser, with Settings.ACTION_ADD_ACCOUNT as the explicit no-account fallback.
           - YouTube authorization fallback chain: AuthorizationClient -> direct GoogleAuthUtil access token with recoverable Google consent intent.
           - Google identity and full YouTube authorization are reported separately; a selected/cached profile never masquerades as YouTube-connected.
 
@@ -424,9 +441,9 @@ jobs:
 
           Google / YouTube authorization:
           - One GoogleAccountSession is shared by Web and Native/Exo playback modes.
-          - Cached profile data is migration-only and never creates a false authenticated state.
+          - No legacy MyTube profile/client data is read. Current-install cached identity is accepted only after a live Google token check succeeds.
           - Credential Manager is preferred when a valid Web client ID is available.
-          - If Credential Manager fails or no Web client ID exists, MyTube tries Google Play Services sign-in and then Android's system Google-account chooser.
+          - If Credential Manager fails or no Web client ID exists, MyTube opens Android's real Google-account chooser directly; if no usable account is returned, it opens the system Add Google account screen and retries.
           - After a real identity is selected, MyTube requests youtube.readonly using AuthorizationClient and falls back to direct GoogleAuthUtil token acquisition with Google's recoverable consent intent.
           - Full YouTube-connected state is published only after an access token succeeds against both channels?mine=true and subscriptions?mine=true.
           - Google Cloud Android OAuth registration may still be required by Google for full YouTube authorization; the APK reports its exact package and signing SHA-1 for diagnosis.

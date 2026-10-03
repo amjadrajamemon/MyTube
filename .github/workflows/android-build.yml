@@ -294,7 +294,7 @@ jobs:
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86_64/'
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86/'
 
-      - name: Verify actual APK signing and upgrade compatibility
+      - name: Verify actual APK signing and report install compatibility
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -304,15 +304,32 @@ jobs:
           PREVIOUS_DIR="$(mktemp -d)"
           gh release download v1.4.7-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.4.7-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
           PREVIOUS_APK="$PREVIOUS_DIR/MyTube-v1.4.7-ARM64-Whisper-DownloadEngine-debug.apk"
-          PREVIOUS_SHA1="$("$APKSIGNER" verify --print-certs "$PREVIOUS_APK" | sed -n 's/^Signer #1 certificate SHA-1 digest: //p')"
+          PREVIOUS_SHA1="$("$APKSIGNER" verify --print-certs "$PREVIOUS_APK" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
           test -n "$PREVIOUS_SHA1"
+          PINNED_SHA1="$(printf '%s' "$MYTUBE_SIGNING_SHA1" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           for EDITION in arm64 universal; do
             APK="source/app/build/outputs/apk/$EDITION/debug/app-$EDITION-debug.apk"
-            ACTUAL_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-1 digest: //p')"
-            test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
+            ACTUAL_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
+            if [ "$ACTUAL_SHA1" != "$PINNED_SHA1" ]; then
+              echo "::error::Actual APK signing certificate differs from the saved, pinned key."
+              exit 1
+            fi
           done
           echo "MYTUBE_SIGNING_SHA1=$ACTUAL_SHA1" >> "$GITHUB_ENV"
-          echo "Both APKs preserve the prior release certificate: $ACTUAL_SHA1"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          {
+            echo "Previous v1.4.7 signing certificate: $PREVIOUS_SHA1"
+            echo "Saved stable signing certificate used by v1.4.8: $ACTUAL_SHA1"
+            if [ "$ACTUAL_SHA1" != "$PREVIOUS_SHA1" ]; then
+              # v1.4.7 used AGP's uncached XDG debug key, which is unavailable on new runners.
+              test "$PREVIOUS_SHA1" = "48b7bf9932e46b838c7f302d8048575d6f8abe8c"
+              echo "A fresh install is required. This APK cannot update over v1.4.7."
+              echo "Uninstalling removes app data and sign-in. Back up anything needed first."
+              echo "Subsequent releases must retain the saved stable key."
+            else
+              echo "The APK is compatible with an update over the prior release."
+            fi
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.4.8-Install-Compatibility.txt"
 
       - name: Report OAuth registration identity
         shell: bash
@@ -390,7 +407,9 @@ jobs:
           - New videos start in Fit mode; Zoom and Stretch remain selectable.
           - Settings > Playback > Auto-rotate video playback defaults on and works with Android rotation locked.
           - Turning auto-rotation off restores Android orientation behavior; leaving playback restores app orientation.
-          - Unit tests, lint, both APK builds and upgrade signing compatibility gate publication.
+          - Correct signing to use the saved, pinned CI key instead of AGP's uncached XDG debug key.
+          - IMPORTANT: v1.4.7 was signed by the unavailable uncached key. A fresh install is required for this release; uninstalling removes app data and sign-in. Back up needed data first.
+          - Unit tests, lint, both APK builds and actual pinned APK signing checks gate publication.
           - Device testing remains necessary for PiP, OEM rotation behavior and Google consent."
 
 
@@ -403,6 +422,7 @@ jobs:
             dist/MyTube-r6.5-LiveDub-v1.4.8-Complete-AndroidStudio-Source.zip
             dist/MyTube-r6.5-LiveDub-v1.4.8-Complete-AndroidStudio-Source.zip.sha256
             dist/MyTube-v1.4.8-OAuth-Registration.txt
+            dist/MyTube-v1.4.8-Install-Compatibility.txt
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then

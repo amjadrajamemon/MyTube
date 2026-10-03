@@ -50,6 +50,16 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // CI restores and verifies this exact key. AGP's default XDG path is different.
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

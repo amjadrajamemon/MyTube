@@ -5,6 +5,16 @@ val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
     .orElse("")
     .get()
 
+val googleDeviceClientId = providers.gradleProperty("GOOGLE_DEVICE_CLIENT_ID")
+    .orElse(providers.environmentVariable("GOOGLE_DEVICE_CLIENT_ID"))
+    .orElse("")
+    .get()
+
+val googleDeviceClientSecret = providers.gradleProperty("GOOGLE_DEVICE_CLIENT_SECRET")
+    .orElse(providers.environmentVariable("GOOGLE_DEVICE_CLIENT_SECRET"))
+    .orElse("")
+    .get()
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -24,6 +34,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        buildConfigField("String", "GOOGLE_DEVICE_CLIENT_ID", "\"$googleDeviceClientId\"")
+        buildConfigField("String", "GOOGLE_DEVICE_CLIENT_SECRET", "\"$googleDeviceClientSecret\"")
     }
 
     flavorDimensions += "abi"

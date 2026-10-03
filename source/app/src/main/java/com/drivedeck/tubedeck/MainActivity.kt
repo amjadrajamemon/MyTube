@@ -885,7 +885,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (showPlaybackExitChoices) {
+                        if (showPlaybackExitChoices && nativePipSessionId == null) {
                             val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
                                 onCloseVideo = {
@@ -1028,6 +1028,10 @@ class MainActivity : ComponentActivity() {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
                 pipChoicePending = false
+                NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
+                    return
+                }
                 playbackBackCoordinator.forceChooserVisible()
                 showPlaybackExitChoices = true
                 return

@@ -26,10 +26,14 @@ import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -118,6 +122,19 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val deviceOAuth = GoogleDeviceCodeOAuth(
+        appContext,
+        BuildConfig.GOOGLE_DEVICE_CLIENT_ID.trim(),
+        BuildConfig.GOOGLE_DEVICE_CLIENT_SECRET.trim()
+    )
+    private val deviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var deviceSignInJob: Job? = null
+
+    private val _devicePrompt = MutableStateFlow<GoogleDeviceCodePrompt?>(null)
+    val devicePrompt: StateFlow<GoogleDeviceCodePrompt?> = _devicePrompt.asStateFlow()
+
+    private val _deviceStatus = MutableStateFlow("")
+    val deviceStatus: StateFlow<String> = _deviceStatus.asStateFlow()
     // Stored identity is never published as authenticated until a live token check succeeds.
     private val currentInstallIdentity = loadCurrentInstallIdentity()
 
@@ -137,6 +154,8 @@ class GoogleAccountSession private constructor(context: Context) {
         normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
 
     fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
+
+    fun isDeviceCodeConfigured(): Boolean = deviceOAuth.isConfigured()
 
     fun googleAccountChooserIntent(): Intent =
         AccountManager.newChooseAccountIntent(

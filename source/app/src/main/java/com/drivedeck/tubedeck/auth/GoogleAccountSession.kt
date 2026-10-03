@@ -391,8 +391,17 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         val google = GoogleIdTokenCredential.createFrom(custom.data)
-        val email = google.email?.takeIf { it.isNotBlank() }.orEmpty()
-        val uniqueId = google.uniqueId.takeIf { it.isNotBlank() }
+        val claims = parseGoogleIdTokenClaims(google.idToken)
+        @Suppress("DEPRECATION")
+        val legacyId = google.id
+
+        val email = claims.optString("email")
+            .takeIf { it.isNotBlank() }
+            ?: legacyId.takeIf { it.contains("@") }.orEmpty()
+
+        val uniqueId = claims.optString("sub")
+            .takeIf { it.isNotBlank() }
+            ?: legacyId.takeIf { it.isNotBlank() }
             ?: email.lowercase().takeIf { it.isNotBlank() }
             ?: error("Google account identity unavailable")
 
@@ -664,6 +673,16 @@ class GoogleAccountSession private constructor(context: Context) {
         return trimmed.takeIf {
             it.endsWith(".apps.googleusercontent.com", ignoreCase = true)
         }.orEmpty()
+    }
+
+    private fun parseGoogleIdTokenClaims(idToken: String): JSONObject {
+        val parts = idToken.split('.')
+        require(parts.size >= 2) { "Google ID token is malformed" }
+        val payload = Base64.decode(
+            parts[1],
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        return JSONObject(payload.toString(Charsets.UTF_8))
     }
 
     private fun basicGoogleSignInOptions(): GoogleSignInOptions =

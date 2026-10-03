@@ -143,6 +143,39 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val googlePlayServicesLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        googleSession.completeGooglePlayServicesSignIn(result.data)
+                            .onSuccess {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Signed in with Google",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                lifecycleScope.launch {
+                                    googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                        .onSuccess { outcome ->
+                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        }
+                                        .onFailure {
+                                            // Google identity remains valid even when optional
+                                            // YouTube Data API authorization is unavailable.
+                                        }
+                                }
+                            }
+                            .onFailure {
+                                showGoogleAuthorizationProblem = true
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    it.message ?: "Google sign-in failed",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                    }
+                }
+
                 LaunchedEffect(Unit) {
                     // Restore only a real previously granted YouTube OAuth session. If Google
                     // requires account selection/consent, remain signed out until the user taps.
@@ -285,42 +318,37 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(googleAuthStatus.state) {
-                    if (
-                        googleAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED ||
-                        googleAuthStatus.state == YoutubeAuthorizationState.ERROR
-                    ) {
-                        showGoogleAuthorizationProblem = true
-                    }
-                }
-
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
                     } else {
-                        // A previous OAuth/configuration error must never turn this into a dead-end.
-                        // Every explicit tap performs a fresh Google/YouTube authorization attempt.
                         showGoogleAuthorizationProblem = false
-                        lifecycleScope.launch {
-                            googleSession.beginYoutubeAuthorization(this@MainActivity)
-                                .onSuccess { outcome ->
-                                    outcome.profile?.let {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Google account connected",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                        if (googleSession.isIdentityConfigured()) {
+                            lifecycleScope.launch {
+                                googleSession.beginYoutubeAuthorization(this@MainActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.profile?.let {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Signed in with Google",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                     }
-                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
-                                }
-                                .onFailure {
-                                    showGoogleAuthorizationProblem = true
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        it.message ?: "YouTube authorization failed",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
+                                    .onFailure {
+                                        // Credential Manager configuration can be stale or rejected.
+                                        // Fall back to the real Google Play Services account UI
+                                        // rather than presenting a cached/dummy profile.
+                                        googlePlayServicesLauncher.launch(
+                                            googleSession.googlePlayServicesSignInIntent(this@MainActivity)
+                                        )
+                                    }
+                            }
+                        } else {
+                            googlePlayServicesLauncher.launch(
+                                googleSession.googlePlayServicesSignInIntent(this@MainActivity)
+                            )
                         }
                     }
                 }

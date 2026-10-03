@@ -305,6 +305,18 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp
                 )
+                youtubeAuthStatus.message.takeIf { it.isNotBlank() }?.let { message ->
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        message,
+                        color = if (youtubeAuthStatus.state == YoutubeAuthorizationState.CONNECTED) {
+                            TubeDeckTextPrimary.copy(alpha = .72f)
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                        fontSize = 10.5.sp
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = googleWebClientId,

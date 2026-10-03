@@ -184,6 +184,39 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
+                val googlePlayServicesLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        googleSession.completeGooglePlayServicesSignIn(result.data)
+                            .onSuccess {
+                                Toast.makeText(
+                                    this@NativePlayerActivity,
+                                    "Signed in with Google",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                lifecycleScope.launch {
+                                    googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                        .onSuccess { outcome ->
+                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        }
+                                        .onFailure {
+                                            // Google identity remains valid even when optional
+                                            // YouTube Data API authorization is unavailable.
+                                        }
+                                }
+                            }
+                            .onFailure {
+                                showGoogleAuthorizationProblem = true
+                                Toast.makeText(
+                                    this@NativePlayerActivity,
+                                    it.message ?: "Google sign-in failed",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                    }
+                }
+
                 LaunchedEffect(Unit) {
                     // Restore only a real previously granted YouTube OAuth session. If Google
                     // requires account selection/consent, remain signed out until the user taps.
@@ -202,42 +235,37 @@ class NativePlayerActivity : ComponentActivity() {
                 }
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
-                LaunchedEffect(googleAuthStatus.state) {
-                    if (
-                        googleAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED ||
-                        googleAuthStatus.state == YoutubeAuthorizationState.ERROR
-                    ) {
-                        showGoogleAuthorizationProblem = true
-                    }
-                }
-
                 val onGoogleAccountClick: () -> Unit = {
                     if (googleAccount != null) {
                         showGoogleAccountDialog = true
                     } else {
-                        // A previous OAuth/configuration error must never turn this into a dead-end.
-                        // Every explicit tap performs a fresh Google/YouTube authorization attempt.
                         showGoogleAuthorizationProblem = false
-                        lifecycleScope.launch {
-                            googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
-                                .onSuccess { outcome ->
-                                    outcome.profile?.let {
-                                        Toast.makeText(
-                                            this@NativePlayerActivity,
-                                            "Google account connected",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                        if (googleSession.isIdentityConfigured()) {
+                            lifecycleScope.launch {
+                                googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.profile?.let {
+                                            Toast.makeText(
+                                                this@NativePlayerActivity,
+                                                "Signed in with Google",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
                                     }
-                                    outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
-                                }
-                                .onFailure {
-                                    showGoogleAuthorizationProblem = true
-                                    Toast.makeText(
-                                        this@NativePlayerActivity,
-                                        it.message ?: "YouTube authorization failed",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
+                                    .onFailure {
+                                        // Credential Manager configuration can be stale or rejected.
+                                        // Fall back to the real Google Play Services account UI
+                                        // rather than presenting a cached/dummy profile.
+                                        googlePlayServicesLauncher.launch(
+                                            googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
+                                        )
+                                    }
+                            }
+                        } else {
+                            googlePlayServicesLauncher.launch(
+                                googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
+                            )
                         }
                     }
                 }
@@ -650,9 +678,10 @@ class NativePlayerActivity : ComponentActivity() {
         if (isInPictureInPictureMode && playerActive && !closingPlayer) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             NativePipSessionBridge.activate(playbackSessionId)
-            // SmartTube-style ownership: ExoPlayer stays in this PiP activity while MyTube's
-            // parent UI becomes the foreground surface that owns the next Back press.
-            showParentBehindPip()
+            // Do not launch/reorder MainActivity from the PiP transition callback.
+            // Android reveals the existing parent Activity underneath the PiP window naturally.
+            // Starting an Activity here races the system PiP animation and caused the observed
+            // minimize -> maximize -> minimize bounce on the first Back press.
         } else if (wasInPip && !isInPictureInPictureMode) {
             NativePipSessionBridge.clear(playbackSessionId)
             pipChoicePending = false

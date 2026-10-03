@@ -45,6 +45,7 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
@@ -81,6 +82,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var initialPlaybackPositionMs = 0L
     private var playbackSessionId: String = ""
     private var resumeGeneration by mutableStateOf(0)
+    private var pauseGeneration by mutableStateOf(0)
     private var foregroundPlaybackAllowed by mutableStateOf(true)
     private var enteringPip = false
     private var pipChoicePending = false
@@ -114,6 +116,11 @@ class NativePlayerActivity : ComponentActivity() {
                 if (command.sessionId != playbackSessionId || closingPlayer) return@collect
                 when (command.action) {
                     NativePipSessionBridge.Action.SHOW_CHOOSER -> expandNativePlayerChooser()
+                    NativePipSessionBridge.Action.PAUSE -> {
+                        pauseGeneration += 1
+                        showPlaybackExitChoices = false
+                        playbackBackCoordinator.onChooserDismissed()
+                    }
                     NativePipSessionBridge.Action.AUDIO_ONLY -> handoffToBackgroundAudio()
                     NativePipSessionBridge.Action.CLOSE -> closePlaybackCompletely()
                 }
@@ -392,6 +399,7 @@ class NativePlayerActivity : ComponentActivity() {
                     seekIntervalSeconds = settings.seekIntervalSeconds,
                     initialPositionMs = initialPlaybackPositionMs,
                     resumeGeneration = resumeGeneration,
+                    pauseGeneration = pauseGeneration,
                     foregroundPlaybackAllowed = foregroundPlaybackAllowed,
                     onClose = { finishPlayer() },
                     onEnterPip = { enterPlayerPip() },
@@ -569,6 +577,7 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.onNewMedia()
+        PlaybackBackSequenceTracker.reset()
         showPlaybackExitChoices = false
         closingPlayer = false
         playerActive = true
@@ -589,9 +598,19 @@ class NativePlayerActivity : ComponentActivity() {
             return
         }
 
+        val now = SystemClock.elapsedRealtime()
+        val rapidCount = PlaybackBackSequenceTracker.record(now)
+        if (rapidCount >= 3) {
+            pauseGeneration += 1
+            showPlaybackExitChoices = false
+            playbackBackCoordinator.onChooserDismissed()
+            PlaybackBackSequenceTracker.reset()
+            return
+        }
+
         dispatchPlaybackBackAction(
             playbackBackCoordinator.onBack(
-                nowMs = SystemClock.elapsedRealtime(),
+                nowMs = now,
                 isInPip = isPipMode
             )
         )
@@ -633,6 +652,7 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
+        PlaybackBackSequenceTracker.reset()
         NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
         BackgroundAudioController.stop(applicationContext)

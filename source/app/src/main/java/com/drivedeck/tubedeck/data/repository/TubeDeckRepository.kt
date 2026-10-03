@@ -74,7 +74,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
             putString("playerMode", next.playerMode.name)
-            putString("googleWebClientId", next.googleWebClientId.trim())
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
@@ -112,7 +111,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistMode = enumValue(prefs.getString("playlistMode", null), DownloadMode.VIDEO),
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
-        googleWebClientId = prefs.getString("googleWebClientId", "").orEmpty().trim(),
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
         preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 2.0f),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),

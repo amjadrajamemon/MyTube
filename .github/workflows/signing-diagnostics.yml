@@ -1,0 +1,36 @@
+name: Inspect MyTube signing
+on:
+  push:
+    paths: ['.github/workflows/signing-diagnostics.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: mytube-debug-signing-v1
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Inspect configured signing paths and prior release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "Android user home: ${ANDROID_USER_HOME:-unset}"
+          echo "Android prefs root: ${ANDROID_PREFS_ROOT:-unset}"
+          gradle -p source :app:signingReport --console=plain
+          PREVIOUS_DIR="$(mktemp -d)"
+          gh release download v1.4.7-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.4.7-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs "$PREVIOUS_DIR/MyTube-v1.4.7-ARM64-Whisper-DownloadEngine-debug.apk"

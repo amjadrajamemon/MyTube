@@ -1,5 +1,10 @@
 package com.drivedeck.tubedeck.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -11,10 +16,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
+import com.drivedeck.tubedeck.auth.GoogleDeviceCodePrompt
 
 @Composable
 fun GoogleAccountButton(
@@ -101,7 +110,76 @@ fun GoogleAccountDialog(
             TextButton(onClick = onSignOut) { Text("Sign out") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                onSignInWithCode?.let { signInWithCode ->
+                    TextButton(onClick = signInWithCode) { Text("Sign in with code") }
+                }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    )
+}
+
+@Composable
+fun GoogleDeviceCodeDialog(
+    prompt: GoogleDeviceCodePrompt,
+    status: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sign in with Google code") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Open Google and enter this code:")
+                Text(
+                    prompt.userCode,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    prompt.verificationUrl,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (status.isNotBlank()) {
+                    Text(
+                        status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(prompt.verificationUrl))
+                        )
+                    }
+                }
+            ) { Text("Open Google") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    onClick = {
+                        val clipboard =
+                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText("MyTube Google sign-in code", prompt.userCode)
+                        )
+                    }
+                ) { Text("Copy code") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         }
     )
 }
@@ -112,7 +190,8 @@ fun GoogleAuthorizationProblemDialog(
     message: String,
     registrationInfo: String,
     onRetry: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSignInWithCode: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,

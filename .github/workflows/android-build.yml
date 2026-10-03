@@ -19,27 +19,23 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-      GOOGLE_DEVICE_CLIENT_ID: ${{ secrets.GOOGLE_DEVICE_CLIENT_ID }}
-      GOOGLE_DEVICE_CLIENT_SECRET: ${{ secrets.GOOGLE_DEVICE_CLIENT_SECRET }}
     timeout-minutes: 65
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.4.4 dual-APK source
+      - name: Verify v1.4.5 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.4.4"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.4.5"' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.4.4 ARM64 + Universal source tree."
+          echo "Building MyTube v1.4.5 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -112,18 +108,14 @@ jobs:
           grep -Fq 'Retry sign-in' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/GoogleAccountUi.kt
           echo "Release-critical Google OAuth and Back/PiP source checks passed."
 
-      - name: Verify clean-install Google sign-in paths
+      - name: Verify MyTube Android OAuth configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
-            case "$GOOGLE_WEB_CLIENT_ID" in
-              *.apps.googleusercontent.com) echo "Optional build-time Google identity configuration present." ;;
-              *) echo "::error::Google identity configuration is malformed."; exit 1 ;;
-            esac
-          else
-            echo "::notice::No Web client embedded. Clean installs use Android Google account picker/Add Account plus AuthorizationClient/GoogleAuthUtil fallbacks."
-          fi
+          CLIENT_ID="$(sed -n 's/^GOOGLE_WEB_CLIENT_ID=//p' source/gradle.properties | tr -d '\r')"
+          test "$CLIENT_ID" = "452637572013-j7n0rvi7bkgtei3c979tr004h4da31nh.apps.googleusercontent.com"
+          echo "MYTUBE_WEB_CLIENT_ID=$CLIENT_ID" >> "$GITHUB_ENV"
+          echo "MyTube Web client configured for Credential Manager."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -233,20 +225,18 @@ jobs:
       - name: Build ARM64 and Universal debug APKs
         run: gradle -p source assembleArm64Debug assembleUniversalDebug --stacktrace
 
-      - name: Verify MyTube device-code OAuth release credentials
+      - name: Verify compiled Android OAuth configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${GOOGLE_DEVICE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_DEVICE_CLIENT_SECRET:-}" ]; then
-            echo "::error::MyTube-owned Google TV/Limited-Input OAuth credentials are required before publishing v1.4.4."
-            echo "::error::Set repository secrets GOOGLE_DEVICE_CLIENT_ID and GOOGLE_DEVICE_CLIENT_SECRET, then re-run this workflow."
-            exit 1
-          fi
-          case "$GOOGLE_DEVICE_CLIENT_ID" in
-            *.apps.googleusercontent.com) ;;
-            *) echo "::error::GOOGLE_DEVICE_CLIENT_ID is malformed."; exit 1 ;;
-          esac
-          echo "MyTube device-code OAuth credentials are configured."
+          for EDITION in arm64 universal; do
+            CONFIG="source/app/build/generated/source/buildConfig/$EDITION/debug/com/drivedeck/tubedeck/BuildConfig.java"
+            test -s "$CONFIG"
+            grep -Fq "GOOGLE_WEB_CLIENT_ID = \"$MYTUBE_WEB_CLIENT_ID\"" "$CONFIG"
+            grep -Fq 'GOOGLE_DEVICE_CLIENT_ID = ""' "$CONFIG"
+            grep -Fq 'GOOGLE_DEVICE_CLIENT_SECRET = ""' "$CONFIG"
+          done
+          echo "Both APK variants embed the MyTube Web client; TV credentials are disabled."
 
       - name: Verify visible refinements are inside compiled APKs
         shell: bash
@@ -257,6 +247,7 @@ jobs:
             test -s "$APK"
             DEX_STRINGS="$(mktemp)"
             unzip -p "$APK" 'classes*.dex' | strings > "$DEX_STRINGS"
+            grep -Fq "$MYTUBE_WEB_CLIENT_ID" "$DEX_STRINGS"
             grep -Fq 'Sign in with Google' "$DEX_STRINGS"
             grep -Fq 'Enhanced Player' "$DEX_STRINGS"
             grep -Fq 'Seek interval' "$DEX_STRINGS"
@@ -276,7 +267,7 @@ jobs:
             grep -Fq 'Waiting for Google approval' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.4.4 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.4.5 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -313,10 +304,10 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.4.4-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.4.5-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Package: `com.aistudio.tubedeck.kxmvd`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SHA-1: `$SHA1`" >> "$GITHUB_STEP_SUMMARY"
+          echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage both APKs and complete source
         shell: bash
@@ -326,10 +317,10 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.4.4-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.4.4-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.4.5-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.4.5-Universal-Older-Rooted-debug.apk"
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.4.4-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.4.5-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -339,22 +330,22 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.4.4-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.4.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.4.4-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.4.4-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.4.4-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.4.4-Complete-AndroidStudio-Source.zip.sha256
-          test -s dist/MyTube-v1.4.4-OAuth-Registration.txt
+          sha256sum dist/MyTube-v1.4.5-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.4.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.4.5-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.4.5-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.4.5-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.4.5-Complete-AndroidStudio-Source.zip.sha256
+          test -s dist/MyTube-v1.4.5-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Upload verified v1.4.4 build artifact
+      - name: Upload verified v1.4.5 build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.4.4-verified-build
+          name: MyTube-v1.4.5-verified-build
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish v1.4.4 dual APK release
+      - name: Publish v1.4.5 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -365,143 +356,25 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.4.4-dual-arm64-universal-debug"
-          NOTES="MyTube r6.5 LiveDub v1.4.4.
+          TAG="v1.4.5-dual-arm64-universal-debug"
+          NOTES="MyTube v1.4.5: MyTube-owned Android Google sign-in.
+          - Credential Manager uses the registered Web client from project metal-scholar-510509-b2.
+          - The Android package and pinned signing certificate are preserved.
+          - Phone builds do not embed a Web client secret or enable the TV device-code flow.
+          - Both player modes share the existing GoogleAccountSession.
+          - Unit tests, lint, both APK assemblies, compiled client-ID checks, ABI coverage and signing checks gate publication.
+          - Google Cloud API enablement, consent/test-user configuration and interactive device sign-in still require verification; CI does not prove end-to-end Google login.
+          - Existing v1.4.4 playback/navigation behavior is retained."
 
-          v1.4.4 professional Back gesture behavior:
-          - First Back from active native playback enters PiP.
-          - A normal/slow Back while native PiP is active sends the MyTube task to the background and keeps PiP alive.
-          - Slow additional Back navigation never tears down the PiP session.
-          - Three rapid consecutive Back presses are a deliberate media gesture: pause the existing native PiP/ExoPlayer session without converting it to audio-only.
-          - The rapid sequence is process-wide so the gesture survives the NativePlayerActivity -> MainActivity handoff.
-          - The three-option Keep PiP / Audio-only / Close overlay remains available from the player/PiP Options action rather than being forced into ordinary Back navigation.
-
-          v1.4.4 dual-route Google authorization:
-          - Native Android authorization remains the primary phone flow.
-          - SmartTube-style Sign in with code is a second independent route using Google's official device authorization endpoints.
-          - The code route requests openid/email/profile plus youtube.readonly, then verifies the YouTube account before publishing Connected state.
-          - Device refresh tokens are encrypted with Android Keystore AES-GCM and silently refreshed on later launches.
-          - Web and Exo modes consume the exact same GoogleAccountSession regardless of which sign-in route succeeded.
-          - Native OAuth failures automatically converge on code sign-in when the MyTube device client is configured.
-          - CI refuses to publish v1.4.4 unless MyTube-owned device OAuth credentials are configured; no borrowed SmartTube/third-party credentials are used.
-
-          v1.4.4 clean-install self-contained account baseline:
-          - No authentication path reads credentials, client IDs or account profiles from older MyTube builds.
-          - Removed legacy googleWebClientId setting, tubedeck_prefs recovery and google_account_session migration.
-          - A clean install starts with Android's real Google account picker; if no account is available/selected, MyTube explicitly launches Android's Add Google account screen and retries the picker.
-          - The account session uses a new mytube_account_session_v2 store created only by v1.4.4+.
-          - Stored identity from the current installation is restored only after Google returns a live usable token; cached text alone never authenticates the UI.
-          - Web and Exo modes continue to share the same single app-wide GoogleAccountSession.
-
-          v1.4.4 session-ownership and universal account fix:
-          - NativePlayerActivity is the sole owner of native PiP, the three-option chooser, Close, Audio-only and Keep PiP.
-          - The chooser is rendered centered over the foreground video window; MainActivity only relays the second Back when native PiP is active.
-          - A further Back while the chooser is visible closes playback instead of being ignored.
-          - The third chooser action re-enters/retains PiP using the same ExoPlayer session.
-          - Dismissing system PiP with its X is treated as a hard stop unless Audio-only was explicitly selected.
-          - Native teardown also stops any background-audio service to prevent audio surviving a closed PiP.
-          - One app-wide GoogleAccountSession is shared by Web and Exo modes.
-          - Identity path is fresh-install safe: Credential Manager when a valid embedded Web client exists; otherwise Android's real Google-account chooser, with Settings.ACTION_ADD_ACCOUNT as the explicit no-account fallback.
-          - YouTube authorization fallback chain: AuthorizationClient -> direct GoogleAuthUtil access token with recoverable Google consent intent.
-          - Google identity and full YouTube authorization are reported separately; a selected/cached profile never masquerades as YouTube-connected.
-
-          Root-cause navigation and Google sign-in fix:
-          - First Back enters PiP without launching/reordering MainActivity from onPictureInPictureModeChanged.
-          - MainActivity is revealed by Android naturally underneath the PiP activity, removing the minimize/maximize race.
-          - Cached Google profiles are migration data only and never create an authenticated UI state.
-          - Credential Manager remains preferred when a real Web client ID exists.
-          - Without that client, MyTube uses Android's system Google-account chooser/Add Account flow rather than the deprecated GoogleSignInClient.
-          - The Kotlin-compatible Google ID SDK 1.1.1 is retained; MyTube parses the signed ID token's standard sub/email claims directly to avoid deprecated/ambiguous identity fields.
-          - YouTube Data API authorization is attempted only after a real Google identity is established.
-
-          Fresh v1.4.4 baseline:
-          - Rebased from the hardened v1.3.22 code with a clean version line and fresh release artifacts.
-          - Google sign-in and SmartTube-parity Back/PiP navigation remain release-critical gates.
-          - Same application ID and pinned signing identity are deliberately preserved for OAuth and update compatibility, but no prior app data is required.
-
-          Adaptive playback / weak networks:
-          - Auto quality now continuously re-evaluates sustainable bandwidth during playback.
-          - Low buffer or active rebuffering triggers a fast quality downshift instead of waiting for a hard playback error.
-          - Quality upgrades require repeated stable samples and a healthy forward buffer to prevent resolution ping-pong.
-          - Startup/rebuffer thresholds are shortened while the forward buffer ceiling is increased to 90 seconds.
-          - Manual quality selections remain fixed and are never overridden by the adaptive controller.
-          - Companion Up Next / episode work remains deferred until after the first rendered frame.
-
-          Release-critical hardening:
-          - Google sign-in never becomes a dead-end after a previous configuration or API error; explicit user taps always retry a fresh authorization attempt.
-          - OAuth failure UI now exposes exact package/signing registration diagnostics and a Retry sign-in action.
-          - CI statically verifies the YouTube OAuth scope/account checks and the native PiP session bridge before tests.
-          - CI also scans the compiled APKs for Google retry/auth and Keep PiP surfaces before publication.
-
-          SmartTube-parity Back / PiP cycle:
-          - Native ExoPlayer stays owned by NativePlayerActivity for foreground playback and system PiP.
-          - MainActivity only relays Back to the active native session; it never draws the native chooser.
-          - The native player expands itself and shows Keep PiP, Audio only, or Close directly over the video.
-          - PiP remote actions target NativePlayerActivity itself and therefore operate on the existing ExoPlayer session.
-          - Closing or switching to audio-only finishes only the player activity instead of removing the whole MyTube task.
-          - System PiP X is a hard playback stop unless Audio-only was explicitly selected.
-
-          Playback / PiP:
-          - Active video playback keeps the screen awake in foreground and PiP.
-          - PiP exit no longer relaunches an Activity while Android is restoring the existing one; the three-way chooser is deferred until normal onResume.
-          - Close / Audio / PiP choices fade after about 4.5 seconds without selecting any action.
-          - Extra Back callbacks never silently choose Close or Audio.
-          - PiP retains direct Options, Audio and Close actions as a device-level fallback.
-          - Foreground, PiP, audio-only and closed sessions remain explicitly separated.
-          - Web versus Native playback continues through the centralized PlaybackHostRouter.
-
-          UI cleanup:
-          - Persistent guides, explanatory paragraphs and redundant narration are removed from Settings and player surfaces.
-          - Theme cards, playback settings, Google status, request shield and download confirmations are compact and action-oriented.
-          - Functional labels, concise status values and real error messages remain.
-          - Ten built-in themes and temporary Theme Preview remain available; the removed theme sliders stay removed.
-
-          Playback performance:
-          - Auto-load Episodes and Auto-load Up Next remain independent and default OFF.
-          - Enabled companion shelves still wait until after first frame.
-          - Adaptive download admission remains automatic with no user-facing parallel-download limit.
-
-          Visible refinement verification:
-          - Signed-out users now see a labeled Sign in with Google control in the top bar and Settings.
-          - Player quick actions are available from a visible overflow button as well as long-press.
-          - Current chapter is surfaced next to the seek controls.
-          - Settings exposes the Enhanced Player capabilities directly.
-          - CI scans the compiled APK DEX payload and refuses publication if the required v1.4.4 feature surfaces are absent.
-
-          SmartTube-style player refinements:
-          - Real YouTube storyboard seek previews with chapter labels.
-          - Chapter markers and SponsorBlock segment marks on the seek timeline.
-          - Remembered speed and quality preferences across videos and restarts.
-          - Configurable 5/10/15/30/60-second seek intervals.
-          - Long-press video quick actions for PiP, audio-only, downloads and settings.
-          - Double-tap/pinch seeking now respects the configured seek interval.
-          - Return YouTube Dislike and DeArrow are intentionally not included.
-
-          Google / YouTube authorization:
-          - One GoogleAccountSession is shared by Web and Native/Exo playback modes.
-          - No legacy MyTube profile/client data is read. Current-install cached identity is accepted only after a live Google token check succeeds.
-          - Credential Manager is preferred when a valid Web client ID is available.
-          - If Credential Manager fails or no Web client ID exists, MyTube opens Android's real Google-account chooser directly; if no usable account is returned, it opens the system Add Google account screen and retries.
-          - After a real identity is selected, MyTube requests youtube.readonly using AuthorizationClient and falls back to direct GoogleAuthUtil token acquisition with Google's recoverable consent intent.
-          - Full YouTube-connected state is published only after an access token succeeds against both channels?mine=true and subscriptions?mine=true.
-          - Google Cloud Android OAuth registration may still be required by Google for full YouTube authorization; the APK reports its exact package and signing SHA-1 for diagnosis.
-          - The release includes MyTube-v1.4.4-OAuth-Registration.txt with the exact built APK identity.
-
-          Build gates:
-          - ARM64 + Universal unit tests.
-          - Android lint for both editions.
-          - ARM64 + Universal APK assembly.
-          - ABI verification.
-          - OAuth signing identity verification before release publication."
 
           ASSETS=(
-            dist/MyTube-v1.4.4-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.4.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.4.4-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.4.4-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.4.4-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.4.4-Complete-AndroidStudio-Source.zip.sha256
-            dist/MyTube-v1.4.4-OAuth-Registration.txt
+            dist/MyTube-v1.4.5-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.4.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.4.5-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.4.5-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.4.5-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.4.5-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.4.5-OAuth-Registration.txt
           )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -509,7 +382,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.4.4 ARM64 + Universal Debug" \
+              --title "MyTube v1.4.5 ARM64 + Universal Debug" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

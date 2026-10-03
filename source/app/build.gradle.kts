@@ -5,15 +5,13 @@ val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
     .orElse("")
     .get()
 
-val googleDeviceClientId = providers.gradleProperty("GOOGLE_DEVICE_CLIENT_ID")
-    .orElse(providers.environmentVariable("GOOGLE_DEVICE_CLIENT_ID"))
-    .orElse("")
-    .get()
+// Phone builds use Credential Manager + Android authorization, not TV device credentials.
+val googleDeviceClientId = ""
+val googleDeviceClientSecret = ""
 
-val googleDeviceClientSecret = providers.gradleProperty("GOOGLE_DEVICE_CLIENT_SECRET")
-    .orElse(providers.environmentVariable("GOOGLE_DEVICE_CLIENT_SECRET"))
-    .orElse("")
-    .get()
+require(googleWebClientId.matches(Regex("[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com"))) {
+    "Configure GOOGLE_WEB_CLIENT_ID with the MyTube Web OAuth client ID"
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -29,8 +27,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 50
-        versionName = "1.4.4"
+        versionCode = 51
+        versionName = "1.4.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")

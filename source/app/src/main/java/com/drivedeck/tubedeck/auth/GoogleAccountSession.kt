@@ -146,17 +146,15 @@ class GoogleAccountSession private constructor(context: Context) {
     fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
-        val identity = loadPersistedIdentity()
-        if (identity != null) {
-            pendingIdentity = identity
-            if (_account.value == null) {
-                _account.value = profileFromIdentity(identity)
-            }
-            _status.value = YoutubeAuthorizationStatus(
-                YoutubeAuthorizationState.CONNECTED,
-                "Google connected"
-            )
+        val identity = loadPersistedIdentity() ?: return Result.success(false)
+        pendingIdentity = identity
+        if (_account.value == null) {
+            _account.value = profileFromIdentity(identity)
         }
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTED,
+            "Google connected"
+        )
 
         return runCatching {
             val builder = AuthorizationRequest.builder()

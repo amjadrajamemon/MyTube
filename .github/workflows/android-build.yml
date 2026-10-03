@@ -54,7 +54,8 @@ jobs:
           grep -Fq 'googlePlayServicesSignInIntent' "$AUTH"
           grep -Fq 'GoogleSignIn.getLastSignedInAccount' "$AUTH"
           grep -Fq 'Cached SharedPreferences are migration hints only' "$AUTH"
-          grep -Fq 'googleid:googleid:1.2.1' source/app/build.gradle.kts
+          grep -Fq 'googleid:googleid:1.1.1' source/app/build.gradle.kts
+          grep -Fq 'parseGoogleIdTokenClaims' "$AUTH"
           grep -Fq 'setAccount(Account(identity.email, "com.google"))' "$AUTH"
           grep -Fq 'https://www.googleapis.com/auth/youtube.readonly' "$AUTH"
           grep -Fq 'channels?part=snippet&mine=true' "$AUTH"
@@ -311,7 +312,7 @@ jobs:
           - Cached Google profiles are migration data only and never create an authenticated UI state.
           - Credential Manager remains preferred when a real Web client ID exists.
           - Google Play Services DEFAULT_SIGN_IN is the interactive fallback when no Web client ID is available.
-          - Google ID SDK 1.2.1 provides explicit email and uniqueId parsing.
+          - The Kotlin-compatible Google ID SDK 1.1.1 is retained; MyTube parses the signed ID token's standard sub/email claims directly to avoid deprecated/ambiguous identity fields.
           - YouTube Data API authorization is attempted only after a real Google identity is established.
 
           Fresh v1.4.1 baseline:

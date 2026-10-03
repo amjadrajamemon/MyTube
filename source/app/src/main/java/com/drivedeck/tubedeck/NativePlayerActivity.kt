@@ -169,7 +169,7 @@ class NativePlayerActivity : ComponentActivity() {
                                 .onSuccess {
                                     Toast.makeText(
                                         this@NativePlayerActivity,
-                                        "YouTube account connected",
+                                        "Google account connected",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -224,7 +224,7 @@ class NativePlayerActivity : ComponentActivity() {
                                     outcome.profile?.let {
                                         Toast.makeText(
                                             this@NativePlayerActivity,
-                                            "YouTube account connected",
+                                            "Google account connected",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }

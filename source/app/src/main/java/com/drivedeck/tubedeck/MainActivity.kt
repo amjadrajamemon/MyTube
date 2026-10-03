@@ -151,6 +151,8 @@ class MainActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
+                    } else {
+                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -170,6 +172,8 @@ class MainActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
+                    } else {
+                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -202,10 +206,8 @@ class MainActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                             }
-                    } else if (!triedExplicitGoogleAddAccount) {
-                        triedExplicitGoogleAddAccount = true
                     } else {
-                        fallBackToGoogleCodeOrShowProblem()
+                        googleSession.cancelYoutubeAuthorization("Google account selection cancelled")
                     }
                 }
 
@@ -373,6 +375,9 @@ class MainActivity : ComponentActivity() {
 
                 val onGoogleAccountClick: () -> Unit = {
                     when {
+                        googleAuthStatus.state == YoutubeAuthorizationState.CONNECTING -> {
+                            googleSession.cancelYoutubeAuthorization()
+                        }
                         googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
                             showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
@@ -418,10 +423,14 @@ class MainActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        triedExplicitGoogleAddAccount = false
-                                        googleAccountChooserLauncher.launch(
-                                            googleSession.googleAccountChooserIntent()
-                                        )
+                                        if (googleSession.account.value != null) {
+                                            fallBackToGoogleCodeOrShowProblem()
+                                        } else {
+                                            triedExplicitGoogleAddAccount = false
+                                            googleAccountChooserLauncher.launch(
+                                                googleSession.googleAccountChooserIntent()
+                                            )
+                                        }
                                     }
                             }
                         }
@@ -1350,3 +1359,4 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+

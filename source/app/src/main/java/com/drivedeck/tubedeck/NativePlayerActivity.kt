@@ -201,6 +201,8 @@ class NativePlayerActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
+                    } else {
+                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -220,6 +222,8 @@ class NativePlayerActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                         }
+                    } else {
+                        googleSession.cancelYoutubeAuthorization()
                     }
                 }
 
@@ -252,10 +256,8 @@ class NativePlayerActivity : ComponentActivity() {
                                     fallBackToGoogleCodeOrShowProblem()
                                 }
                             }
-                    } else if (!triedExplicitGoogleAddAccount) {
-                        triedExplicitGoogleAddAccount = true
                     } else {
-                        fallBackToGoogleCodeOrShowProblem()
+                        googleSession.cancelYoutubeAuthorization("Google account selection cancelled")
                     }
                 }
 
@@ -299,6 +301,9 @@ class NativePlayerActivity : ComponentActivity() {
                 var playlistMode by remember { mutableStateOf(false) }
                 val onGoogleAccountClick: () -> Unit = {
                     when {
+                        googleAuthStatus.state == YoutubeAuthorizationState.CONNECTING -> {
+                            googleSession.cancelYoutubeAuthorization()
+                        }
                         googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
                             showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
@@ -344,10 +349,14 @@ class NativePlayerActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        triedExplicitGoogleAddAccount = false
-                                        googleAccountChooserLauncher.launch(
-                                            googleSession.googleAccountChooserIntent()
-                                        )
+                                        if (googleSession.account.value != null) {
+                                            fallBackToGoogleCodeOrShowProblem()
+                                        } else {
+                                            triedExplicitGoogleAddAccount = false
+                                            googleAccountChooserLauncher.launch(
+                                                googleSession.googleAccountChooserIntent()
+                                            )
+                                        }
                                     }
                             }
                         }
@@ -871,3 +880,4 @@ class NativePlayerActivity : ComponentActivity() {
         }
     }
 }
+

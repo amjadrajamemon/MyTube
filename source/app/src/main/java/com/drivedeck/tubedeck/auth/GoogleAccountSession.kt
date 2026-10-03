@@ -15,8 +15,6 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import com.drivedeck.tubedeck.BuildConfig
-import com.google.android.gms.auth.GoogleAuthUtil
-import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
@@ -30,6 +28,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +81,7 @@ data class YoutubeAuthorizationStatus(
  * 2) Android's system Google-account chooser/Add Account flow is the clean-install identity path
  *    when no Web client ID exists or Credential Manager cannot complete.
  * 3) youtube.readonly authorization is attempted only after a real Google identity is established,
- *    using AuthorizationClient with GoogleAuthUtil as an independent direct-token fallback.
+ *    using the asynchronous AuthorizationClient with bounded waits and explicit consent results.
  *
  * Fresh-install invariant: no authentication path depends on preferences or data from an older
  * MyTube installation. Local preferences are used only to cache the current installation's
@@ -130,6 +131,9 @@ class GoogleAccountSession private constructor(context: Context) {
     )
     private val deviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var deviceSignInJob: Job? = null
+    private val authorizationOperation = GoogleAuthorizationOperation()
+    private var consentTimeoutJob: Job? = null
+    private var waitingForConsent = false
 
     private val _devicePrompt = MutableStateFlow<GoogleDeviceCodePrompt?>(null)
     val devicePrompt: StateFlow<GoogleDeviceCodePrompt?> = _devicePrompt.asStateFlow()
@@ -198,163 +202,133 @@ class GoogleAccountSession private constructor(context: Context) {
         }.onFailure(::recordExplicitFailure)
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
-        if (isDeviceCodeConfigured() && deviceOAuth.hasStoredRefreshToken()) {
-            val restored = runCatching {
-                deviceOAuth.refreshStoredToken()?.let { tokenSet ->
-                    completeDeviceTokenSet(tokenSet)
-                    true
-                } ?: false
-            }.getOrDefault(false)
-            if (restored) return Result.success(true)
+        // A second player host must not replace an interactive sign-in already in progress.
+        if (authorizationOperation.isRunning || waitingForConsent || _status.value.youtubeAuthorized) {
+            return Result.success(_status.value.youtubeAuthorized)
         }
-
-        val identity = currentInstallIdentity ?: pendingIdentity ?: return Result.success(false)
-        pendingIdentity = identity
-        authorizedAndroidAccount = identity.email
-            .takeIf { it.isNotBlank() }
-            ?.let { Account(it, "com.google") }
-
-        return runCatching {
-            val direct = authorizeWithGoogleAuthUtil(identity)
-            if (direct.recoveryIntent != null) {
-                _account.value = null
-                _status.value = YoutubeAuthorizationStatus()
-                false
-            } else {
-                direct.profile != null && _status.value.youtubeAuthorized
-            }
-        }.recoverCatching {
-            val builder = AuthorizationRequest.builder()
-                .setRequestedScopes(YOUTUBE_SCOPES)
-            identity.email.takeIf { it.isNotBlank() }?.let {
-                builder.setAccount(Account(it, "com.google"))
-            }
-
-            val result = Identity.getAuthorizationClient(appContext)
-                .authorize(builder.build())
-                .await()
-
-            if (result.hasResolution()) {
-                _account.value = null
-                youtubeAccessToken = null
-                _status.value = YoutubeAuthorizationStatus()
-                false
-            } else {
-                completeAuthorizationResult(result)
-                true
-            }
-        }.recover {
-            _account.value = null
-            youtubeAccessToken = null
-            _status.value = YoutubeAuthorizationStatus()
-            false
+        val identity = pendingIdentity ?: return Result.success(false)
+        return try {
+            Result.success(authorizationOperation.run(
+                60_000,
+                "Google session restore timed out",
+                onCancelled = { resetCancelledAuthorization("Sign-in cancelled") }
+            ) {
+                val result = authorizeForIdentity(appContext, identity)
+                if (result.hasResolution()) {
+                    false // Silent restore never launches consent or creates a signed-in profile.
+                } else {
+                    completeAuthorizationResult(result)
+                    true
+                }
+            })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            recordExplicitFailure(error)
+            Result.success(false)
         }
     }
 
-    suspend fun beginYoutubeAuthorization(
-        activity: Activity
-    ): Result<YoutubeAuthorizationOutcome> {
-        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
+    private suspend fun <T> runInteractiveAuthorization(
+        message: String,
+        block: suspend () -> T
+    ): Result<T> {
+        clearPendingConsent()
+        return try {
+            Result.success(authorizationOperation.run(
+                120_000,
+                "Google sign-in timed out. Check your connection and retry.",
+                onCancelled = {
+                    clearPendingConsent()
+                    resetCancelledAuthorization("Sign-in cancelled")
+                }
+            ) {
+                _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING, message)
+                block()
+            })
+        } catch (cancelled: CancellationException) {
+            // Lifecycle cancellation is not an authorization error and must not start a fallback.
+            throw cancelled
+        } catch (error: Exception) {
+            recordExplicitFailure(error)
+            Result.failure(decorateAuthorizationError(error))
+        }
+    }
 
-        return runCatching {
+    suspend fun beginYoutubeAuthorization(activity: Activity): Result<YoutubeAuthorizationOutcome> =
+        runInteractiveAuthorization("Choose your Google account") {
             val clientId = effectiveWebClientId()
             require(clientId.isNotBlank()) {
                 "Credential Manager requires a Google Web OAuth client ID"
             }
-
             val identity = signInGoogleIdentity(activity, clientId)
-            pendingIdentity = identity
-            val profile = publishGoogleIdentity(identity)
-
-            runCatching {
-                val result = authorizeForIdentity(activity, identity)
-                if (result.hasResolution()) {
-                    val pendingIntent = requireNotNull(result.pendingIntent) {
-                        "YouTube authorization unavailable"
-                    }
-                    YoutubeAuthorizationOutcome(
-                        profile = profile,
-                        resolution = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                    )
-                } else {
-                    YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
-                }
-            }.getOrElse {
-                authorizeWithGoogleAuthUtil(identity)
-            }
-        }.recoverCatching { error ->
-            _account.value?.let {
-                preserveGoogleIdentityAfterYoutubeFailure(error)
-                return@recoverCatching YoutubeAuthorizationOutcome(profile = it)
-            }
-            recordExplicitFailure(error)
-            throw decorateAuthorizationError(error)
+            publishGoogleIdentity(identity)
+            _status.value = YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONNECTING, "Requesting YouTube access"
+            )
+            authorizationOutcome(authorizeForIdentity(activity, identity))
         }
+
+    suspend fun authorizeYoutubeForCurrentIdentity(activity: Activity): Result<YoutubeAuthorizationOutcome> =
+        runInteractiveAuthorization("Requesting YouTube access") {
+            val identity = pendingIdentity ?: _account.value?.let(::identityFromProfile)
+                ?: error("Google account is not signed in")
+            authorizationOutcome(authorizeForIdentity(activity, identity))
+        }
+
+    private suspend fun authorizationOutcome(result: AuthorizationResult): YoutubeAuthorizationOutcome {
+        if (!result.hasResolution()) {
+            return YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
+        }
+        val pendingIntent = requireNotNull(result.pendingIntent) { "YouTube consent is unavailable" }
+        waitingForConsent = true
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTING, "Approve YouTube access in Google"
+        )
+        consentTimeoutJob = deviceScope.launch(Dispatchers.Main) {
+            delay(120_000)
+            if (waitingForConsent) {
+                cancelYoutubeAuthorization("Google approval timed out. Retry sign-in.")
+            }
+        }
+        return YoutubeAuthorizationOutcome(
+            profile = _account.value,
+            resolution = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+        )
     }
 
-    suspend fun authorizeYoutubeForCurrentIdentity(
-        activity: Activity
-    ): Result<YoutubeAuthorizationOutcome> {
-        val identity = pendingIdentity
-            ?: _account.value?.let(::identityFromProfile)
-            ?: return Result.failure(IllegalStateException("Google account is not signed in"))
-
-        _status.value = YoutubeAuthorizationStatus(
-            YoutubeAuthorizationState.CONNECTING,
-            "Requesting YouTube access"
-        )
-
-        return runCatching {
-            // Independent Google Play services access-token path. GoogleAuthUtil is deprecated,
-            // but remains a documented direct-token fallback when AuthorizationClient is not
-            // completing on a device. UserRecoverableAuthException carries Google's consent UI.
-            runCatching {
-                authorizeWithGoogleAuthUtil(identity)
-            }.getOrElse {
-                val result = authorizeForIdentity(activity, identity)
-                if (result.hasResolution()) {
-                    val pendingIntent = requireNotNull(result.pendingIntent) {
-                        "YouTube authorization unavailable"
-                    }
-                    YoutubeAuthorizationOutcome(
-                        profile = _account.value,
-                        resolution = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                    )
-                } else {
-                    YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
-                }
-            }
-        }.recoverCatching { error ->
-            _account.value?.let {
-                preserveGoogleIdentityAfterYoutubeFailure(error)
-                return@recoverCatching YoutubeAuthorizationOutcome(profile = it)
-            }
-            recordExplicitFailure(error)
-            throw decorateAuthorizationError(error)
+    suspend fun completeYoutubeAuthorization(activity: Activity, data: Intent?): Result<GoogleAccountProfile> {
+        if (!waitingForConsent) {
+            return Result.failure(IllegalStateException("Google approval expired or was cancelled. Retry sign-in."))
         }
-    }
-
-    suspend fun completeYoutubeAuthorization(
-        activity: Activity,
-        data: Intent?
-    ): Result<GoogleAccountProfile> {
-        _status.value = YoutubeAuthorizationStatus(
-            YoutubeAuthorizationState.CONNECTING,
-            "Completing YouTube access"
-        )
-        return runCatching {
-            val resultIntent = requireNotNull(data) { "Authorization cancelled" }
+        return runInteractiveAuthorization("Verifying YouTube access") {
             val result = Identity.getAuthorizationClient(activity)
-                .getAuthorizationResultFromIntent(resultIntent)
+                .getAuthorizationResultFromIntent(requireNotNull(data) { "Authorization cancelled" })
             completeAuthorizationResult(result)
-        }.recoverCatching { error ->
-            _account.value?.let {
-                preserveGoogleIdentityAfterYoutubeFailure(error)
-                return@recoverCatching it
-            }
-            recordExplicitFailure(error)
-            throw decorateAuthorizationError(error)
         }
+    }
+
+    private fun clearPendingConsent() {
+        waitingForConsent = false
+        consentTimeoutJob?.cancel()
+        consentTimeoutJob = null
+    }
+
+    private fun resetCancelledAuthorization(message: String) {
+        if (_status.value.youtubeAuthorized) return
+        youtubeAccessToken = null
+        _status.value = YoutubeAuthorizationStatus(
+            if (_account.value == null) YoutubeAuthorizationState.SIGNED_OUT
+            else YoutubeAuthorizationState.CONNECTED,
+            message,
+            youtubeAuthorized = false
+        )
+    }
+
+    fun cancelYoutubeAuthorization(message: String = "YouTube access cancelled. Retry when ready.") {
+        clearPendingConsent()
+        authorizationOperation.cancel()
+        resetCancelledAuthorization(message)
     }
 
     fun startDeviceCodeAuthorization() {
@@ -426,20 +400,12 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     suspend fun signOut() {
+        cancelYoutubeAuthorization()
         deviceSignInJob?.cancel()
         deviceSignInJob = null
         _devicePrompt.value = null
         _deviceStatus.value = ""
         runCatching { deviceOAuth.revokeAndClear() }
-
-        youtubeAccessToken?.let { token ->
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    @Suppress("DEPRECATION")
-                    GoogleAuthUtil.clearToken(appContext, token)
-                }
-            }
-        }
 
         val request = RevokeAccessRequest.builder()
             .setScopes(YOUTUBE_SCOPES)
@@ -449,12 +415,14 @@ class GoogleAccountSession private constructor(context: Context) {
             .build()
 
         runCatching {
-            Identity.getAuthorizationClient(appContext)
-                .revokeAccess(request)
-                .await()
+            withGoogleAuthorizationTimeout(20_000, "Google disconnect timed out") {
+                Identity.getAuthorizationClient(appContext).revokeAccess(request).await()
+            }
         }
         runCatching {
-            credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            withGoogleAuthorizationTimeout(10_000, "Google credential reset timed out") {
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            }
         }
         prefs.edit().clear().apply()
         pendingIdentity = null
@@ -477,9 +445,12 @@ class GoogleAccountSession private constructor(context: Context) {
             builder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
         }
 
-        return Identity.getAuthorizationClient(context)
-            .authorize(builder.build())
-            .await()
+        return withGoogleAuthorizationTimeout(
+            20_000,
+            "Google Play services did not respond within 20 seconds. Check your connection and retry."
+        ) {
+            Identity.getAuthorizationClient(context).authorize(builder.build()).await()
+        }
     }
 
     private suspend fun signInGoogleIdentity(
@@ -583,34 +554,6 @@ class GoogleAccountSession private constructor(context: Context) {
         return completeAccessToken(token, identity)
     }
 
-    private suspend fun authorizeWithGoogleAuthUtil(
-        identity: SignedInIdentity
-    ): YoutubeAuthorizationOutcome {
-        val androidAccount = authorizedAndroidAccount
-            ?: identity.email.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
-            ?: error("Google account email is unavailable for direct YouTube authorization")
-
-        return try {
-            val token = withContext(Dispatchers.IO) {
-                @Suppress("DEPRECATION")
-                GoogleAuthUtil.getToken(
-                    appContext,
-                    androidAccount,
-                    "oauth2:$YOUTUBE_READONLY"
-                )
-            }.takeIf { it.isNotBlank() }
-                ?: error("Google Play services returned an empty YouTube token")
-
-            authorizedAndroidAccount = androidAccount
-            YoutubeAuthorizationOutcome(profile = completeAccessToken(token, identity))
-        } catch (recoverable: UserRecoverableAuthException) {
-            YoutubeAuthorizationOutcome(
-                profile = _account.value,
-                recoveryIntent = recoverable.intent
-            )
-        }
-    }
-
     private suspend fun completeDeviceTokenSet(
         tokenSet: GoogleDeviceTokenSet
     ): GoogleAccountProfile {
@@ -659,7 +602,11 @@ class GoogleAccountSession private constructor(context: Context) {
         token: String,
         identity: SignedInIdentity
     ): GoogleAccountProfile {
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTING, "Verifying YouTube access"
+        )
         val verified = fetchYoutubeIdentity(token)
+        currentCoroutineContext().ensureActive()
         val email = identity.email
         val displayName = identity.displayName
             .ifBlank { verified.channelTitle }
@@ -704,6 +651,7 @@ class GoogleAccountSession private constructor(context: Context) {
                     thumbnails?.optJSONObject(size)?.optString("url")?.takeIf { it.isNotBlank() }
                 }
 
+            currentCoroutineContext().ensureActive()
             val subscriptionsJson = getYoutubeJson(
                 "https://www.googleapis.com/youtube/v3/subscriptions?part=id&mine=true&maxResults=1",
                 accessToken
@@ -754,8 +702,9 @@ class GoogleAccountSession private constructor(context: Context) {
         val profile = _account.value
         _status.value = if (profile != null) {
             YoutubeAuthorizationStatus(
-                YoutubeAuthorizationState.CONNECTED,
-                "Google signed in • YouTube authorization not active",
+                YoutubeAuthorizationState.ERROR,
+                decorateAuthorizationError(error).message.orEmpty()
+                    .ifBlank { "YouTube authorization failed. Retry sign-in." },
                 youtubeAuthorized = false
             )
         } else {

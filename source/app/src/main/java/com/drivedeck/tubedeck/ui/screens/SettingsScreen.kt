@@ -326,7 +326,6 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = onGoogleAccountClick,
-                    enabled = youtubeAuthStatus.state != YoutubeAuthorizationState.CONNECTING,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TubeDeckAccentCyan,
                         contentColor = Color.Black
@@ -335,7 +334,14 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (googleAccount == null) "Sign in with Google" else "Google account")
+                    Text(when {
+                        youtubeAuthStatus.state == YoutubeAuthorizationState.CONNECTING -> "Cancel sign-in"
+                        youtubeAuthStatus.state == YoutubeAuthorizationState.ERROR ||
+                            youtubeAuthStatus.state == YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "Retry sign-in"
+                        googleAccount == null -> "Sign in with Google"
+                        !youtubeAuthStatus.youtubeAuthorized -> "Connect YouTube"
+                        else -> "Google account"
+                    })
                 }
                 if (googleAccountSession.isDeviceCodeConfigured() && !youtubeAuthStatus.youtubeAuthorized) {
                     Spacer(Modifier.height(6.dp))
@@ -638,3 +644,4 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
         }
     }
 }
+

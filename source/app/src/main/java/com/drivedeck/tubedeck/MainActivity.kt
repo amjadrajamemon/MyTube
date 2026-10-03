@@ -735,24 +735,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onCanGoBackChanged = { webCanGoBack = it },
                                     onCanGoForwardChanged = { webCanGoForward = it },
-                                    onQuickDownload = { targetUrl ->
-                                        downloadModalTargetUrl = targetUrl
-                                        downloadPlaylistMode = false
-                                        showDownloadModal = true
-                                    },
-                                    onSilentDownload = { targetUrl ->
-                                        runCatching {
-                                            repository.enqueueDownload(targetUrl, mode = settings.instantMode, quality = settings.instantQuality)
-                                        }.onSuccess {
-                                            Toast.makeText(applicationContext, "Download queued", Toast.LENGTH_SHORT).show()
-                                        }.onFailure {
-                                            Toast.makeText(applicationContext, it.message ?: "Open a video first", Toast.LENGTH_LONG).show()
-                                        }
-                                    },
                                     settings = settings,
-                                    onUpdateFabPosition = { iX, iY, cX, cY ->
-                                        repository.updateSettings(settings.copy(fabInstantX = iX, fabInstantY = iY, fabCustomX = cX, fabCustomY = cY))
-                                    },
                                     onAdBlocked = { repository.incrementBlockedAds(it) },
                                     webViewRef = {
                                         webViewInstance = it
@@ -844,6 +827,7 @@ class MainActivity : ComponentActivity() {
                                         preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                                         preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                                         seekIntervalSeconds = settings.seekIntervalSeconds,
+                                        autoRotatePlayback = settings.autoRotatePlayback,
                                         onClose = {
                                             playingMedia = null
                                             if (!navigateBack()) {
@@ -1382,4 +1366,5 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
 

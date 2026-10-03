@@ -21,6 +21,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.view.MotionEvent
+import android.view.OrientationEventListener
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -130,6 +131,7 @@ fun PlayerScreen(
     playerMode: PlayerMode,
     sponsorSegments: List<SponsorSegment> = emptyList(),
     pipEnabled: Boolean = true,
+    autoRotatePlayback: Boolean = true,
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
@@ -159,12 +161,34 @@ fun PlayerScreen(
     // Normal playback Back is intentionally owned by the parent Activity so its
     // single/double-Back state machine cannot be bypassed by a nested Compose handler.
 
-    // Preserve the caller's orientation instead of forcing landscape. This lets the player
-    // start and remain in portrait when the device is portrait, while still allowing users
-    // to rotate explicitly from the player controls.
-    DisposableEffect(activity) {
-        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    // Sensor rotation applies only while the player is visible, even with Android rotation locked.
+    val originalOrientation = remember(activity) {
+        activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    DisposableEffect(activity, inPictureInPicture, autoRotatePlayback) {
+        activity?.requestedOrientation = if (inPictureInPicture || !autoRotatePlayback) originalOrientation
+            else ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        val tiltListener = object : OrientationEventListener(context) {
+            private var lastQuadrant: Int? = null
+            override fun onOrientationChanged(orientation: Int) {
+                val quadrant = when (orientation) {
+                    in 0..30, in 330..359 -> 0
+                    in 60..120 -> 1
+                    in 150..210 -> 2
+                    in 240..300 -> 3
+                    else -> return // Ignore flat/unknown angles and boundaries to prevent jitter.
+                }
+                if (lastQuadrant != null && lastQuadrant != quadrant) {
+                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                }
+                lastQuadrant = quadrant
+            }
+        }
+        if (autoRotatePlayback && !inPictureInPicture && tiltListener.canDetectOrientation()) {
+            tiltListener.enable()
+        }
         onDispose {
+            tiltListener.disable()
             activity?.let { setFullscreen(it, false) }
             activity?.requestedOrientation = originalOrientation
         }
@@ -391,7 +415,7 @@ fun NativeExoPlayer(
     var duration by remember { mutableLongStateOf(1L) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
-    var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_ZOOM) }
+    var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
     var captionsEnabled by remember { mutableStateOf(true) }
     var captionLanguageTag by rememberSaveable(media.id) { mutableStateOf("auto") }
@@ -919,7 +943,7 @@ fun NativeExoPlayer(
                         player = exoPlayer
                         useController = false
                         setKeepContentOnPlayerReset(true)
-                        this.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        this.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         layoutParams = FrameLayout.LayoutParams(-1, -1)
                     }
                 },
@@ -2885,3 +2909,4 @@ private fun formatDuration(millis: Long): String {
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 }
+

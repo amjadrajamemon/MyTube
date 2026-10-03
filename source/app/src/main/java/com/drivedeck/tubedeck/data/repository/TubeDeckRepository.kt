@@ -77,6 +77,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
+            putBoolean("autoRotatePlayback", next.autoRotatePlayback)
             putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
             putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
             putBoolean("adBlockEnabled", next.adBlockEnabled); putBoolean("blockVideoAds", next.blockVideoAds)
@@ -114,6 +115,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
         preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 2.0f),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
+        autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
         fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
         fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),
         adBlockEnabled = prefs.getBoolean("adBlockEnabled", true),
@@ -812,3 +814,4 @@ class TubeDeckRepository private constructor(private val context: Context) {
         else "$minutes:${secs.toString().padStart(2, '0')}"
     }
 }
+

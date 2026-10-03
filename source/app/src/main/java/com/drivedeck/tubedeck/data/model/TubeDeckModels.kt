@@ -79,6 +79,7 @@ data class TubeDeckSettings(
     val preferredPlaybackQualityHeight: Int = 0,
     val preferredPlaybackSpeed: Float = 1.0f,
     val seekIntervalSeconds: Int = 10,
+    val autoRotatePlayback: Boolean = true,
     
     // Movable browser buttons, stored in screen pixels.
     val fabInstantX: Float = 40f,
@@ -136,3 +137,4 @@ data class PlaylistItem(
 )
 
 data class DownloadChoices(val videoQualities: List<String>, val audioAvailable: Boolean)
+

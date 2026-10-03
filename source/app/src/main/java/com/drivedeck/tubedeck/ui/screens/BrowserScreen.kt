@@ -11,23 +11,13 @@ import android.webkit.*
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -38,49 +28,7 @@ import com.drivedeck.tubedeck.ui.theme.*
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
-import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-
-@Composable
-private fun DraggableDownloadFab(
-    x: Float,
-    y: Float,
-    maxX: Float,
-    maxY: Float,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    contentDescription: String,
-    onClick: () -> Unit,
-    onPositionChanged: (Float, Float) -> Unit
-) {
-    var position by remember(x, y, maxX, maxY) {
-        mutableStateOf(androidx.compose.ui.geometry.Offset(x.coerceIn(0f, maxX), y.coerceIn(0f, maxY)))
-    }
-
-    FloatingActionButton(
-        onClick = onClick,
-        containerColor = TubeDeckSurfaceVariant.copy(alpha = 0.92f),
-        contentColor = tint,
-        shape = CircleShape,
-        modifier = Modifier
-            .offset { IntOffset(position.x.roundToInt(), position.y.roundToInt()) }
-            .size(48.dp)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        position = androidx.compose.ui.geometry.Offset(
-                            (position.x + dragAmount.x).coerceIn(0f, maxX),
-                            (position.y + dragAmount.y).coerceIn(0f, maxY)
-                        )
-                    },
-                    onDragEnd = { onPositionChanged(position.x, position.y) }
-                )
-            }
-    ) {
-        Icon(icon, contentDescription = contentDescription)
-    }
-}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -90,10 +38,7 @@ fun BrowserScreen(
     onNativeVideo: (String) -> Unit,
     onCanGoBackChanged: (Boolean) -> Unit,
     onCanGoForwardChanged: (Boolean) -> Unit,
-    onQuickDownload: (String) -> Unit,
-    onSilentDownload: (String) -> Unit,
     settings: TubeDeckSettings,
-    onUpdateFabPosition: (instantX: Float, instantY: Float, customX: Float, customY: Float) -> Unit,
     onAdBlocked: (Int) -> Unit,
     webViewRef: (WebView?) -> Unit,
     onPlaybackStateChanged: (isPlaying: Boolean, positionMs: Long) -> Unit = { _, _ -> },
@@ -398,41 +343,7 @@ fun BrowserScreen(
             )
         }
 
-        if (!isCustomViewShowing) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val density = LocalDensity.current
-                val maxX = with(density) { (maxWidth - 48.dp).toPx() }.coerceAtLeast(0f)
-                val maxY = with(density) { (maxHeight - 48.dp).toPx() }.coerceAtLeast(0f)
-                // Instant Download Button (Amber)
-                // Both shortcuts are freely draggable. Positions are persisted by MainActivity.
-                DraggableDownloadFab(
-                    x = settings.fabInstantX,
-                    y = settings.fabInstantY,
-                    maxX = maxX,
-                    maxY = maxY,
-                    icon = Icons.Default.FlashOn,
-                    tint = TubeDeckAccentAmber,
-                    contentDescription = "Instant Download",
-                    onClick = { onSilentDownload(persistentWebView.url ?: currentUrl) },
-                    onPositionChanged = { x, y ->
-                        onUpdateFabPosition(x, y, settings.fabCustomX, settings.fabCustomY)
-                    }
-                )
 
-                DraggableDownloadFab(
-                    x = settings.fabCustomX,
-                    y = settings.fabCustomY,
-                    maxX = maxX,
-                    maxY = maxY,
-                    icon = Icons.Default.Download,
-                    tint = TubeDeckAccentCyan,
-                    contentDescription = "Custom Download",
-                    onClick = { onQuickDownload(persistentWebView.url ?: currentUrl) },
-                    onPositionChanged = { x, y ->
-                        onUpdateFabPosition(settings.fabInstantX, settings.fabInstantY, x, y)
-                    }
-                )
-            }
-        }
     }
 }
+

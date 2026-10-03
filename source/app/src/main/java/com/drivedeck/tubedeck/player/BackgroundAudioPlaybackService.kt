@@ -1,5 +1,14 @@
 package com.drivedeck.tubedeck.player
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.DefaultMediaNotificationProvider
+import kotlinx.coroutines.withTimeout
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -27,9 +36,13 @@ import kotlinx.coroutines.withContext
  * If a signed CDN URL expires, the original watch URL is re-resolved and playback resumes from
  * the current position instead of leaving a broken/zombie MediaSession behind.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 class BackgroundAudioPlaybackService : MediaSessionService() {
 
     companion object {
+        private const val NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID = "mytube_background_audio"
+        private const val EXTRA_REQUEST_ID = "request_id"
         private const val ACTION_PLAY = "com.drivedeck.tubedeck.action.PLAY_BACKGROUND_AUDIO"
         private const val EXTRA_SOURCE_URL = "source_url"
         private const val EXTRA_PLAY_URL = "play_url"
@@ -43,10 +56,12 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             playUrl: String,
             title: String,
             artworkUrl: String?,
-            positionMs: Long
+            positionMs: Long,
+            requestId: Long
         ) {
             val intent = Intent(context, BackgroundAudioPlaybackService::class.java).apply {
                 action = ACTION_PLAY
+                putExtra(EXTRA_REQUEST_ID, requestId)
                 putExtra(EXTRA_SOURCE_URL, sourceUrl)
                 putExtra(EXTRA_PLAY_URL, playUrl)
                 putExtra(EXTRA_TITLE, title)
@@ -70,14 +85,33 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var sourceUrl: String = ""
     private var currentTitle: String = "MyTube audio"
     private var currentArtwork: String? = null
+    private var requestId = 0L
+    private var startupPending = true
     private var recovering = false
     private var recoveryAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
+        // Fulfil startForegroundService immediately, before player/session creation or buffering.
+        promoteToForeground()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setNotificationId(NOTIFICATION_ID)
+                .setChannelId(CHANNEL_ID)
+                .build()
+        )
         player = ExoPlayer.Builder(this).build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (isPlaying && startupPending) {
+                        startupPending = false
+                        BackgroundAudioController.markStarted(sourceUrl)
+                        BackgroundAudioController.markPosition(sourceUrl, player.currentPosition)
+                        BackgroundAudioController.startup.ready(requestId)
+                    }
+                }
+
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_READY) recoveryAttempts = 0
                 }
@@ -113,6 +147,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_PLAY) {
+            promoteToForeground()
+            requestId = intent.getLongExtra(EXTRA_REQUEST_ID, 0L)
+            startupPending = true
+        }
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_PLAY) {
             val directUrl = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
@@ -123,11 +162,37 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     .ifBlank { "MyTube audio" }
                 currentArtwork = intent.getStringExtra(EXTRA_ARTWORK)
                 val position = intent.getLongExtra(EXTRA_POSITION_MS, 0L).coerceAtLeast(0L)
-                BackgroundAudioController.markStarted(sourceUrl)
                 loadPlayableUrl(directUrl, position)
+            } else {
+                stopSelf()
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun promoteToForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "MyTube audio", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle(currentTitle)
+            .setContentText("Starting audio playback…")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        ServiceCompat.startForeground(
+            this, NOTIFICATION_ID, notification,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+        )
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        // Media3 takes over the same notification; retain foreground status during startup.
+        super.onUpdateNotification(session, startInForegroundRequired || startupPending)
     }
 
     private fun loadPlayableUrl(playUrl: String, positionMs: Long) {
@@ -190,6 +255,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        BackgroundAudioController.startup.fail(requestId, "Audio playback stopped before it was ready")
         BackgroundAudioController.markStopped(sourceUrl)
         serviceScope.cancel()
         mediaSession?.release()
@@ -205,6 +271,7 @@ data class BackgroundAudioSnapshot(
 )
 
 object BackgroundAudioController {
+    internal val startup = AudioHandoffStartup()
     @Volatile
     private var activeSourceUrl: String? = null
     @Volatile
@@ -252,31 +319,43 @@ object BackgroundAudioController {
         title: String,
         artworkUrl: String?,
         positionMs: Long
-    ): Result<Unit> = runCatching {
-        val playUrl = withContext(Dispatchers.IO) {
-            if (YoutubeUrls.videoId(sourceUrl) != null) {
-                YoutubeStreamResolver.invalidate(sourceUrl)
-                val resolved = YoutubeStreamResolver.resolve(
-                    context.applicationContext,
-                    sourceUrl,
-                    forceRefresh = true
-                )
-                resolved.audioOptions.maxByOrNull { it.bitrate }?.url
-                    ?: resolved.progressiveUrl
-                    ?: error("No playable audio stream is available for this video.")
-            } else {
-                sourceUrl
+    ): Result<Unit> {
+        val request = startup.begin()
+            ?: return Result.failure(IllegalStateException("Audio playback is already starting"))
+        var serviceRequested = false
+        val result = runCatching {
+            val playUrl = withContext(Dispatchers.IO) {
+                if (YoutubeUrls.videoId(sourceUrl) != null) {
+                    YoutubeStreamResolver.invalidate(sourceUrl)
+                    val resolved = YoutubeStreamResolver.resolve(
+                        context.applicationContext,
+                        sourceUrl,
+                        forceRefresh = true
+                    )
+                    resolved.audioOptions.maxByOrNull { it.bitrate }?.url
+                        ?: resolved.progressiveUrl
+                        ?: error("No playable audio stream is available for this video.")
+                } else {
+                    sourceUrl
+                }
             }
-        }
 
-        activeSourceUrl = sourceUrl
-        BackgroundAudioPlaybackService.start(
-            context = context.applicationContext,
-            sourceUrl = sourceUrl,
-            playUrl = playUrl,
-            title = title,
-            artworkUrl = artworkUrl,
-            positionMs = positionMs
-        )
+            BackgroundAudioPlaybackService.start(
+                context = context.applicationContext,
+                sourceUrl = sourceUrl,
+                playUrl = playUrl,
+                title = title,
+                artworkUrl = artworkUrl,
+                positionMs = positionMs,
+                requestId = request.id
+            )
+            serviceRequested = true
+            // Keep the video host alive until audio actually plays, or return a recoverable failure.
+            withTimeout(20_000L) { request.ready.await().getOrThrow() }
+        }
+        if (result.isFailure && serviceRequested) BackgroundAudioPlaybackService.stop(context)
+        startup.finish(request.id)
+        return result
     }
 }
+

@@ -89,6 +89,7 @@ fun SettingsScreen(
     var playlistMode by remember { mutableStateOf(currentSettings.playlistMode) }
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
     
+    var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
@@ -418,6 +419,13 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Playback") {
+                ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
+                Text(
+                    "Rotate the player when you tilt your phone, even when Android rotation is locked.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 12.sp
+                )
+                HorizontalDivider()
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
                 HorizontalDivider()
@@ -521,6 +529,7 @@ fun SettingsScreen(
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,
+                            autoRotatePlayback = autoRotatePlayback,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,
                             blockBannerAds = blockBannerAds,
@@ -546,14 +555,6 @@ fun SettingsScreen(
             ) {
                 Text("Save and Apply Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
-            OutlinedButton(
-                onClick = {
-                    onSaveSettings(currentSettings.copy(fabInstantX = 40f, fabInstantY = 120f, fabCustomX = 40f, fabCustomY = 190f))
-                    onClose()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Reset floating button positions") }
-            
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
@@ -644,4 +645,5 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
         }
     }
 }
+
 

@@ -403,6 +403,7 @@ class NativePlayerActivity : ComponentActivity() {
                     preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                     preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                     seekIntervalSeconds = settings.seekIntervalSeconds,
+                    autoRotatePlayback = settings.autoRotatePlayback,
                     initialPositionMs = initialPlaybackPositionMs,
                     resumeGeneration = resumeGeneration,
                     pauseGeneration = pauseGeneration,
@@ -895,4 +896,5 @@ class NativePlayerActivity : ComponentActivity() {
         }
     }
 }
+
 

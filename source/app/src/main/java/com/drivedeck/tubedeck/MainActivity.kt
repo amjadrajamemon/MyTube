@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity() {
                     } else if (!triedExplicitGoogleAddAccount) {
                         triedExplicitGoogleAddAccount = true
                     } else {
-                        showGoogleAuthorizationProblem = true
+                        fallBackToGoogleCodeOrShowProblem()
                     }
                 }
 

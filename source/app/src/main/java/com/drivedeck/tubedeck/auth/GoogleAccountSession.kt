@@ -60,18 +60,23 @@ data class YoutubeAuthorizationStatus(
 )
 
 /**
- * Two-stage Google / YouTube session:
- * 1) explicit Google identity through Credential Manager,
- * 2) YouTube Data API authorization through AuthorizationClient.
+ * Compatibility-first Google / YouTube session.
  *
- * CONNECTED is published only after youtube.readonly is granted and authenticated YouTube API
- * calls succeed. A profile/ID token alone is never presented as a working YouTube session.
+ * Stage 1 restores the original v1.2.x behavior: a valid Credential Manager Google identity is a
+ * real signed-in Google account by itself. Stage 2 attempts youtube.readonly authorization and
+ * enriches that account with channel/subscription data when Google Cloud Android OAuth is valid.
+ *
+ * A YouTube authorization failure no longer erases a successfully selected Google identity.
  */
 class GoogleAccountSession private constructor(context: Context) {
     companion object {
         private const val YOUTUBE_READONLY =
             "https://www.googleapis.com/auth/youtube.readonly"
         private const val PREFS = "youtube_account_session"
+        private const val LEGACY_SETTINGS_PREFS = "tubedeck_prefs"
+        private const val LEGACY_IDENTITY_PREFS = "google_account_session"
+        private const val LEGACY_CLIENT_ID_KEY = "googleWebClientId"
+
         private const val KEY_UNIQUE_ID = "google_unique_id"
         private const val KEY_EMAIL = "google_email"
         private const val KEY_NAME = "google_name"
@@ -104,76 +109,129 @@ class GoogleAccountSession private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val legacySettingsPrefs =
+        appContext.getSharedPreferences(LEGACY_SETTINGS_PREFS, Context.MODE_PRIVATE)
+    private val legacyIdentityPrefs =
+        appContext.getSharedPreferences(LEGACY_IDENTITY_PREFS, Context.MODE_PRIVATE)
 
-    private val _account = MutableStateFlow<GoogleAccountProfile?>(null)
+    private val startupIdentity = loadPersistedIdentity()
+
+    private val _account = MutableStateFlow(startupIdentity?.let(::profileFromIdentity))
     val account: StateFlow<GoogleAccountProfile?> = _account.asStateFlow()
 
-    private val _status = MutableStateFlow(initialStatus())
+    private val _status = MutableStateFlow(
+        if (_account.value != null) {
+            YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONNECTED,
+                "Google connected"
+            )
+        } else {
+            YoutubeAuthorizationStatus()
+        }
+    )
     val status: StateFlow<YoutubeAuthorizationStatus> = _status.asStateFlow()
 
     @Volatile private var youtubeAccessToken: String? = null
     @Volatile private var authorizedAndroidAccount: Account? = null
-    @Volatile private var pendingIdentity: SignedInIdentity? = null
+    @Volatile private var pendingIdentity: SignedInIdentity? = startupIdentity
 
-    fun isIdentityConfigured(): Boolean = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
+    fun effectiveWebClientId(): String {
+        val buildClient = normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+        if (buildClient.isNotBlank()) return buildClient
+        return normalizeClientId(
+            legacySettingsPrefs.getString(LEGACY_CLIENT_ID_KEY, "").orEmpty()
+        )
+    }
+
+    fun isIdentityConfigured(): Boolean = effectiveWebClientId().isNotBlank()
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
         val identity = loadPersistedIdentity()
-        _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
-        pendingIdentity = identity
+        if (identity != null) {
+            pendingIdentity = identity
+            if (_account.value == null) {
+                _account.value = profileFromIdentity(identity)
+            }
+            _status.value = YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONNECTED,
+                "Google connected"
+            )
+        }
+
         return runCatching {
             val builder = AuthorizationRequest.builder()
                 .setRequestedScopes(YOUTUBE_SCOPES)
             if (!identity?.email.isNullOrBlank()) {
                 builder.setAccount(Account(identity!!.email, "com.google"))
             }
+
             val result = Identity.getAuthorizationClient(appContext)
                 .authorize(builder.build())
                 .await()
 
             if (result.hasResolution()) {
-                clearRuntimeSession()
                 false
             } else {
                 completeAuthorizationResult(result)
                 true
             }
-        }.onFailure(::recordAuthorizationFailure)
-            .recoverCatching { throw decorateAuthorizationError(it) }
+        }.recover { error ->
+            preserveGoogleIdentityAfterYoutubeFailure(error)
+            false
+        }
     }
 
     suspend fun beginYoutubeAuthorization(
         activity: Activity
     ): Result<YoutubeAuthorizationOutcome> {
         _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
-        return runCatching {
-            require(isIdentityConfigured()) {
-                "Google Web OAuth client ID is missing from this build"
-            }
 
-            val identity = signInGoogleIdentity(activity)
-            pendingIdentity = identity
+        return runCatching {
+            val clientId = effectiveWebClientId()
+            var googleProfile: GoogleAccountProfile? = _account.value
 
             val builder = AuthorizationRequest.builder()
                 .setRequestedScopes(YOUTUBE_SCOPES)
-                .setAccount(Account(identity.email, "com.google"))
 
-            val result = Identity.getAuthorizationClient(activity)
-                .authorize(builder.build())
-                .await()
+            if (clientId.isNotBlank()) {
+                val identity = signInGoogleIdentity(activity, clientId)
+                pendingIdentity = identity
+                googleProfile = publishGoogleIdentity(identity)
+                builder.setAccount(Account(identity.email, "com.google"))
+            } else {
+                // Official Android OAuth fallback. This path uses the Android OAuth registration
+                // identified by package name + signing SHA-1 and does not require a Web client ID.
+                builder.setPrompt(AuthorizationRequest.Prompt.SELECT_ACCOUNT)
+            }
+
+            val result = runCatching {
+                Identity.getAuthorizationClient(activity)
+                    .authorize(builder.build())
+                    .await()
+            }.getOrElse { error ->
+                if (googleProfile != null) {
+                    preserveGoogleIdentityAfterYoutubeFailure(error)
+                    return@runCatching YoutubeAuthorizationOutcome(profile = googleProfile)
+                }
+                throw error
+            }
 
             if (result.hasResolution()) {
                 val pendingIntent = requireNotNull(result.pendingIntent) {
                     "YouTube authorization unavailable"
                 }
                 YoutubeAuthorizationOutcome(
+                    profile = googleProfile,
                     resolution = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
                 )
             } else {
                 YoutubeAuthorizationOutcome(profile = completeAuthorizationResult(result))
             }
         }.onFailure(::recordAuthorizationFailure)
-            .recoverCatching { throw decorateAuthorizationError(it) }
+            .recoverCatching { error ->
+                _account.value?.let { return@recoverCatching YoutubeAuthorizationOutcome(profile = it) }
+                throw decorateAuthorizationError(error)
+            }
     }
 
     suspend fun completeYoutubeAuthorization(
@@ -186,15 +244,27 @@ class GoogleAccountSession private constructor(context: Context) {
             val result = Identity.getAuthorizationClient(activity)
                 .getAuthorizationResultFromIntent(resultIntent)
             completeAuthorizationResult(result)
-        }.onFailure(::recordAuthorizationFailure)
-            .recoverCatching { throw decorateAuthorizationError(it) }
+        }.recoverCatching { error ->
+            _account.value?.let {
+                preserveGoogleIdentityAfterYoutubeFailure(error)
+                return@recoverCatching it
+            }
+            recordAuthorizationFailure(error)
+            throw decorateAuthorizationError(error)
+        }
     }
 
     fun currentYoutubeAccessToken(): String? = youtubeAccessToken
 
     fun oauthRegistrationInfo(): String {
-        val webClient = if (isIdentityConfigured()) "configured" else "missing"
-        return "Package ${appContext.packageName} • SHA-1 ${signingCertificateSha1()} • Web client $webClient"
+        val source = when {
+            normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID).isNotBlank() -> "build"
+            normalizeClientId(
+                legacySettingsPrefs.getString(LEGACY_CLIENT_ID_KEY, "").orEmpty()
+            ).isNotBlank() -> "recovered"
+            else -> "missing"
+        }
+        return "Package ${appContext.packageName} • SHA-1 ${signingCertificateSha1()} • Web client $source"
     }
 
     suspend fun signOut() {
@@ -215,12 +285,19 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         prefs.edit().clear().apply()
+        legacyIdentityPrefs.edit().clear().apply()
         pendingIdentity = null
-        clearRuntimeSession()
+        youtubeAccessToken = null
+        authorizedAndroidAccount = null
+        _account.value = null
+        _status.value = YoutubeAuthorizationStatus()
     }
 
-    private suspend fun signInGoogleIdentity(activity: Activity): SignedInIdentity {
-        val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+    private suspend fun signInGoogleIdentity(
+        activity: Activity,
+        clientId: String
+    ): SignedInIdentity {
+        val option = GetSignInWithGoogleOption.Builder(clientId)
             .build()
         val request = GetCredentialRequest.Builder()
             .addCredentialOption(option)
@@ -233,19 +310,39 @@ class GoogleAccountSession private constructor(context: Context) {
         }
 
         val google = GoogleIdTokenCredential.createFrom(custom.data)
-        // googleid 1.1.x exposes the selected account identifier through id. The newer
-        // email/uniqueId split is not binary-compatible with this project's Kotlin toolchain.
-        // Stable identity is finalized only after AuthorizationClient + YouTube API verification.
-        val email = google.id.takeIf { it.isNotBlank() }
+        val accountId = google.id.takeIf { it.isNotBlank() }
             ?: error("Google account unavailable")
 
         return SignedInIdentity(
-            uniqueId = "",
-            email = email,
+            uniqueId = accountId,
+            email = accountId,
             displayName = google.displayName.orEmpty(),
             photoUrl = google.profilePictureUri?.toString()
         )
     }
+
+    private fun publishGoogleIdentity(identity: SignedInIdentity): GoogleAccountProfile {
+        persistIdentity(identity)
+        val profile = profileFromIdentity(identity)
+        _account.value = profile
+        _status.value = YoutubeAuthorizationStatus(
+            YoutubeAuthorizationState.CONNECTED,
+            "Google connected"
+        )
+        return profile
+    }
+
+    private fun profileFromIdentity(identity: SignedInIdentity): GoogleAccountProfile =
+        GoogleAccountProfile(
+            uniqueId = identity.uniqueId
+                .ifBlank { identity.email.lowercase() }
+                .ifBlank { "google-account" },
+            email = identity.email,
+            displayName = identity.displayName
+                .ifBlank { identity.email.substringBefore('@') }
+                .ifBlank { "Google Account" },
+            photoUrl = identity.photoUrl
+        )
 
     private suspend fun completeAuthorizationResult(
         result: AuthorizationResult
@@ -296,12 +393,17 @@ class GoogleAccountSession private constructor(context: Context) {
                 photoUrl = profile.photoUrl
             )
         )
-        pendingIdentity = null
+        pendingIdentity = SignedInIdentity(
+            uniqueId = profile.uniqueId,
+            email = profile.email,
+            displayName = profile.displayName,
+            photoUrl = profile.photoUrl
+        )
         youtubeAccessToken = token
         _account.value = profile
         _status.value = YoutubeAuthorizationStatus(
             YoutubeAuthorizationState.CONNECTED,
-            "Connected"
+            "Google + YouTube connected"
         )
         return profile
     }
@@ -365,17 +467,26 @@ class GoogleAccountSession private constructor(context: Context) {
         }
     }
 
-    private fun initialStatus(): YoutubeAuthorizationStatus =
-        if (isIdentityConfigured()) {
-            YoutubeAuthorizationStatus()
-        } else {
-            YoutubeAuthorizationStatus(
-                YoutubeAuthorizationState.CONFIGURATION_REQUIRED,
-                "Google Web OAuth client ID is missing from this build"
+    private fun preserveGoogleIdentityAfterYoutubeFailure(error: Throwable) {
+        youtubeAccessToken = null
+        authorizedAndroidAccount = null
+        val profile = _account.value
+        if (profile != null) {
+            _status.value = YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONNECTED,
+                "Google connected • YouTube authorization unavailable"
             )
+        } else {
+            recordAuthorizationFailure(error)
         }
+    }
 
     private fun recordAuthorizationFailure(error: Throwable) {
+        if (_account.value != null) {
+            preserveGoogleIdentityAfterYoutubeFailure(error)
+            return
+        }
+
         val decorated = decorateAuthorizationError(error)
         val message = decorated.message.orEmpty()
         val state = if (
@@ -391,7 +502,8 @@ class GoogleAccountSession private constructor(context: Context) {
         } else {
             YoutubeAuthorizationState.ERROR
         }
-        clearRuntimeSession()
+        youtubeAccessToken = null
+        authorizedAndroidAccount = null
         _status.value = YoutubeAuthorizationStatus(state, message)
     }
 
@@ -424,13 +536,36 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     private fun loadPersistedIdentity(): SignedInIdentity? {
-        val email = prefs.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() } ?: return null
-        return SignedInIdentity(
-            uniqueId = prefs.getString(KEY_UNIQUE_ID, "").orEmpty(),
-            email = email,
-            displayName = prefs.getString(KEY_NAME, "").orEmpty(),
-            photoUrl = prefs.getString(KEY_PHOTO, null)
+        val currentEmail = prefs.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() }
+        if (currentEmail != null) {
+            return SignedInIdentity(
+                uniqueId = prefs.getString(KEY_UNIQUE_ID, "").orEmpty(),
+                email = currentEmail,
+                displayName = prefs.getString(KEY_NAME, "").orEmpty(),
+                photoUrl = prefs.getString(KEY_PHOTO, null)
+            )
+        }
+
+        val legacyId =
+            legacyIdentityPrefs.getString("unique_id", null)?.takeIf { it.isNotBlank() }
+                ?: return null
+        val legacy = SignedInIdentity(
+            uniqueId = legacyId,
+            email = legacyIdentityPrefs.getString("email", legacyId).orEmpty().ifBlank { legacyId },
+            displayName = legacyIdentityPrefs.getString("display_name", "Google Account")
+                .orEmpty()
+                .ifBlank { "Google Account" },
+            photoUrl = legacyIdentityPrefs.getString("photo_url", null)
         )
+        persistIdentity(legacy)
+        return legacy
+    }
+
+    private fun normalizeClientId(value: String): String {
+        val trimmed = value.trim()
+        return trimmed.takeIf {
+            it.endsWith(".apps.googleusercontent.com", ignoreCase = true)
+        }.orEmpty()
     }
 
     private fun signingCertificateSha1(): String = runCatching {
@@ -458,13 +593,4 @@ class GoogleAccountSession private constructor(context: Context) {
             .digest(signatureBytes)
             .joinToString(":") { "%02X".format(it) }
     }.getOrElse { "unavailable" }
-
-    private fun clearRuntimeSession() {
-        youtubeAccessToken = null
-        authorizedAndroidAccount = null
-        _account.value = null
-        if (_status.value.state != YoutubeAuthorizationState.CONFIGURATION_REQUIRED) {
-            _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.SIGNED_OUT)
-        }
-    }
 }

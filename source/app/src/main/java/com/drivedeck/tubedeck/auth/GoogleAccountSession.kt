@@ -86,7 +86,7 @@ class GoogleAccountSession private constructor(context: Context) {
     companion object {
         private const val YOUTUBE_READONLY =
             "https://www.googleapis.com/auth/youtube.readonly"
-        private const val PREFS = "youtube_account_session"
+        private const val PREFS = "mytube_account_session_v2"
         private const val KEY_UNIQUE_ID = "google_unique_id"
         private const val KEY_EMAIL = "google_email"
         private const val KEY_NAME = "google_name"
@@ -122,6 +122,7 @@ class GoogleAccountSession private constructor(context: Context) {
     // A persisted profile alone is not authentication. Only a current Google Play Services
     // session is restored as connected without user interaction.
     private val startupPlayServicesAccount = GoogleSignIn.getLastSignedInAccount(appContext)
+    private val currentInstallIdentity = loadCurrentInstallIdentity()
 
     private val _account = MutableStateFlow(
         startupPlayServicesAccount?.let { profileFromIdentity(identityFromGoogleSignIn(it)) }
@@ -144,7 +145,7 @@ class GoogleAccountSession private constructor(context: Context) {
     @Volatile private var youtubeAccessToken: String? = null
     @Volatile private var authorizedAndroidAccount: Account? = startupPlayServicesAccount?.account
     @Volatile private var pendingIdentity: SignedInIdentity? =
-        startupPlayServicesAccount?.let(::identityFromGoogleSignIn)
+        startupPlayServicesAccount?.let(::identityFromGoogleSignIn) ?: currentInstallIdentity
 
     fun effectiveWebClientId(): String =
         normalizeClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
@@ -209,12 +210,23 @@ class GoogleAccountSession private constructor(context: Context) {
         if (liveGoogle != null) {
             authorizedAndroidAccount = liveGoogle.account
             pendingIdentity = identityFromGoogleSignIn(liveGoogle)
-            publishGoogleIdentity(pendingIdentity!!)
         }
 
         val identity = pendingIdentity ?: return Result.success(false)
 
         return runCatching {
+            // First try a silent direct token refresh. This verifies that the selected account
+            // still exists and that Google still accepts this installation. Cached profile data
+            // alone is never enough to restore authenticated UI state.
+            val direct = authorizeWithGoogleAuthUtil(identity)
+            if (direct.recoveryIntent != null) {
+                _account.value = null
+                _status.value = YoutubeAuthorizationStatus()
+                false
+            } else {
+                direct.profile != null && _status.value.youtubeAuthorized
+            }
+        }.recoverCatching {
             val builder = AuthorizationRequest.builder()
                 .setRequestedScopes(YOUTUBE_SCOPES)
             identity.email.takeIf { it.isNotBlank() }?.let {
@@ -226,25 +238,18 @@ class GoogleAccountSession private constructor(context: Context) {
                 .await()
 
             if (result.hasResolution()) {
+                _account.value = null
                 youtubeAccessToken = null
-                if (_account.value == null) _status.value = YoutubeAuthorizationStatus()
+                _status.value = YoutubeAuthorizationStatus()
                 false
             } else {
                 completeAuthorizationResult(result)
                 true
             }
         }.recover {
+            _account.value = null
             youtubeAccessToken = null
-            authorizedAndroidAccount = liveGoogle?.account
-            _status.value = if (_account.value != null) {
-                YoutubeAuthorizationStatus(
-                    YoutubeAuthorizationState.CONNECTED,
-                    "Google signed in",
-                    youtubeAuthorized = false
-                )
-            } else {
-                YoutubeAuthorizationStatus()
-            }
+            _status.value = YoutubeAuthorizationStatus()
             false
         }
     }
@@ -727,6 +732,17 @@ class GoogleAccountSession private constructor(context: Context) {
             .putString(KEY_NAME, identity.displayName)
             .putString(KEY_PHOTO, identity.photoUrl)
             .apply()
+    }
+
+    private fun loadCurrentInstallIdentity(): SignedInIdentity? {
+        val uniqueId = prefs.getString(KEY_UNIQUE_ID, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return SignedInIdentity(
+            uniqueId = uniqueId,
+            email = prefs.getString(KEY_EMAIL, "").orEmpty(),
+            displayName = prefs.getString(KEY_NAME, "").orEmpty(),
+            photoUrl = prefs.getString(KEY_PHOTO, null)
+        )
     }
 
     private fun normalizeClientId(value: String): String {

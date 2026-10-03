@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      GOOGLE_DEVICE_CLIENT_ID: ${{ secrets.GOOGLE_DEVICE_CLIENT_ID }}
+      GOOGLE_DEVICE_CLIENT_SECRET: ${{ secrets.GOOGLE_DEVICE_CLIENT_SECRET }}
     timeout-minutes: 65
 
     steps:

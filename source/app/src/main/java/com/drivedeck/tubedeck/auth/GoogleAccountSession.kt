@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Base64
 import androidx.activity.result.IntentSenderRequest
 import androidx.credentials.ClearCredentialStateRequest
@@ -163,6 +164,11 @@ class GoogleAccountSession private constructor(context: Context) {
             null,
             null
         )
+
+    fun googleAddAccountIntent(): Intent =
+        Intent(Settings.ACTION_ADD_ACCOUNT).apply {
+            putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
+        }
 
     fun completeGoogleAccountChooser(data: Intent?): Result<GoogleAccountProfile> =
         runCatching {

@@ -58,7 +58,6 @@ jobs:
           ! grep -Fq 'googleWebClientId' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
           ! grep -Fq 'Google OAuth client' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
           grep -Fq 'AuthorizationRequest.Prompt.SELECT_ACCOUNT' "$AUTH"
-          grep -Fq 'googlePlayServicesSignInIntent' "$AUTH"
           grep -Fq 'googleAccountChooserIntent' "$AUTH"
           grep -Fq 'AccountManager.newChooseAccountIntent' "$AUTH"
           grep -Fq 'googleAddAccountIntent' "$AUTH"
@@ -68,7 +67,7 @@ jobs:
           grep -Fq 'GoogleAuthUtil.getToken' "$AUTH"
           grep -Fq 'UserRecoverableAuthException' "$AUTH"
           grep -Fq 'youtubeAuthorized: Boolean = false' "$AUTH"
-          grep -Fq 'GoogleSignIn.getLastSignedInAccount' "$AUTH"
+          ! grep -Fq 'GoogleSignIn' "$AUTH"
           grep -Fq 'Fresh-install invariant' "$AUTH"
           grep -Fq 'googleAccountChooserIntent' "$MAIN"
           grep -Fq 'googleAccountChooserIntent' "$NATIVE"
@@ -372,7 +371,7 @@ jobs:
           - MainActivity is revealed by Android naturally underneath the PiP activity, removing the minimize/maximize race.
           - Cached Google profiles are migration data only and never create an authenticated UI state.
           - Credential Manager remains preferred when a real Web client ID exists.
-          - Google Play Services DEFAULT_SIGN_IN is the interactive fallback when no Web client ID is available.
+          - Without that client, MyTube uses Android's system Google-account chooser/Add Account flow rather than the deprecated GoogleSignInClient.
           - The Kotlin-compatible Google ID SDK 1.1.1 is retained; MyTube parses the signed ID token's standard sub/email claims directly to avoid deprecated/ambiguous identity fields.
           - YouTube Data API authorization is attempted only after a real Google identity is established.
 

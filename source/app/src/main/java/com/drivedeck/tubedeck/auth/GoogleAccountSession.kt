@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck.auth
 
 import android.accounts.Account
+import android.accounts.AccountManager
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -164,6 +165,40 @@ class GoogleAccountSession private constructor(context: Context) {
 
     fun googlePlayServicesSignInIntent(activity: Activity): Intent =
         GoogleSignIn.getClient(activity, basicGoogleSignInOptions()).signInIntent
+
+    fun googleAccountChooserIntent(): Intent =
+        AccountManager.newChooseAccountIntent(
+            null,
+            null,
+            arrayOf("com.google"),
+            null,
+            null,
+            null,
+            null
+        )
+
+    fun completeGoogleAccountChooser(data: Intent?): Result<GoogleAccountProfile> =
+        runCatching {
+            val intent = requireNotNull(data) { "Google account selection was cancelled" }
+            val name = intent.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+                ?.takeIf { it.isNotBlank() }
+                ?: error("Google account name was not returned")
+            val type = intent.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
+                ?.takeIf { it.isNotBlank() }
+                ?: "com.google"
+            require(type == "com.google") { "Selected account is not a Google account" }
+
+            val account = Account(name, type)
+            authorizedAndroidAccount = account
+            publishGoogleIdentity(
+                SignedInIdentity(
+                    uniqueId = name.lowercase(),
+                    email = name,
+                    displayName = name.substringBefore('@').ifBlank { "Google Account" },
+                    photoUrl = null
+                )
+            )
+        }.onFailure(::recordExplicitFailure)
 
     fun completeGooglePlayServicesSignIn(data: Intent?): Result<GoogleAccountProfile> =
         runCatching {
@@ -340,6 +375,15 @@ class GoogleAccountSession private constructor(context: Context) {
     }
 
     suspend fun signOut() {
+        youtubeAccessToken?.let { token ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    @Suppress("DEPRECATION")
+                    GoogleAuthUtil.clearToken(appContext, token)
+                }
+            }
+        }
+
         val request = RevokeAccessRequest.builder()
             .setScopes(YOUTUBE_SCOPES)
             .apply {

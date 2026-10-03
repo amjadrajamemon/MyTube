@@ -360,12 +360,12 @@ jobs:
           - CI also scans the compiled APKs for Google retry/auth and Keep PiP surfaces before publication.
 
           SmartTube-parity Back / PiP cycle:
-          - Native ExoPlayer stays owned by NativePlayerActivity while system PiP is active.
-          - MainActivity is restored underneath PiP and owns the next Back press.
-          - The second Back consistently offers Keep PiP, Audio only, or Close without recreating ExoPlayer.
-          - PiP remote actions target the parent UI and command the existing native session through an in-process bridge.
+          - Native ExoPlayer stays owned by NativePlayerActivity for foreground playback and system PiP.
+          - MainActivity only relays Back to the active native session; it never draws the native chooser.
+          - The native player expands itself and shows Keep PiP, Audio only, or Close directly over the video.
+          - PiP remote actions target NativePlayerActivity itself and therefore operate on the existing ExoPlayer session.
           - Closing or switching to audio-only finishes only the player activity instead of removing the whole MyTube task.
-          - Tapping the PiP window to expand resumes the same player without automatically forcing the exit chooser.
+          - System PiP X is a hard playback stop unless Audio-only was explicitly selected.
 
           Playback / PiP:
           - Active video playback keeps the screen awake in foreground and PiP.
@@ -404,12 +404,13 @@ jobs:
           - Return YouTube Dislike and DeArrow are intentionally not included.
 
           Google / YouTube authorization:
-          - Profile selection alone is never treated as a connected YouTube account.
-          - When GOOGLE_WEB_CLIENT_ID is configured, Credential Manager supplies the selected Google identity before YouTube authorization.
-          - Without that optional Web client ID, the app falls back to Android AuthorizationClient rather than blocking the APK build.
-          - Authorization requests youtube.readonly and is tied to the selected account when identity is known.
-          - Connected state is published only after an access token succeeds against both channels?mine=true and subscriptions?mine=true.
-          - The Android OAuth client is still mandatory: Google Cloud must register applicationId com.aistudio.tubedeck.kxmvd with the pinned signing SHA-1 and enable YouTube Data API v3.
+          - One GoogleAccountSession is shared by Web and Native/Exo playback modes.
+          - Cached profile data is migration-only and never creates a false authenticated state.
+          - Credential Manager is preferred when a valid Web client ID is available.
+          - If Credential Manager fails or no Web client ID exists, MyTube tries Google Play Services sign-in and then Android's system Google-account chooser.
+          - After a real identity is selected, MyTube requests youtube.readonly using AuthorizationClient and falls back to direct GoogleAuthUtil token acquisition with Google's recoverable consent intent.
+          - Full YouTube-connected state is published only after an access token succeeds against both channels?mine=true and subscriptions?mine=true.
+          - Google Cloud Android OAuth registration may still be required by Google for full YouTube authorization; the APK reports its exact package and signing SHA-1 for diagnosis.
           - The release includes MyTube-v1.4.2-OAuth-Registration.txt with the exact built APK identity.
 
           Build gates:

@@ -207,6 +207,34 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
+                val googleAccountChooserLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    if (result.resultCode == RESULT_OK) {
+                        googleSession.completeGoogleAccountChooser(result.data)
+                            .onSuccess {
+                                Toast.makeText(
+                                    this@NativePlayerActivity,
+                                    "Signed in with Google",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                lifecycleScope.launch {
+                                    googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                        .onSuccess { outcome ->
+                                            outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                            outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        }
+                                        .onFailure {
+                                            showGoogleAuthorizationProblem = true
+                                        }
+                                }
+                            }
+                            .onFailure {
+                                showGoogleAuthorizationProblem = true
+                            }
+                    }
+                }
+
                 val googlePlayServicesLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()
                 ) { result ->
@@ -231,12 +259,12 @@ class NativePlayerActivity : ComponentActivity() {
                                 }
                             }
                             .onFailure {
-                                showGoogleAuthorizationProblem = true
-                                Toast.makeText(
-                                    this@NativePlayerActivity,
-                                    it.message ?: "Google sign-in failed",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                // Final real-device identity fallback: Android's system Google
+                                // account chooser does not depend on Credential Manager or the
+                                // legacy GoogleSignInClient succeeding.
+                                googleAccountChooserLauncher.launch(
+                                    googleSession.googleAccountChooserIntent()
+                                )
                             }
                     }
                 }

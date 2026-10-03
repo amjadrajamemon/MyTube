@@ -286,7 +286,14 @@ fun SettingsScreen(
                 val statusLabel = when (youtubeAuthStatus.state) {
                     YoutubeAuthorizationState.SIGNED_OUT -> "Signed out"
                     YoutubeAuthorizationState.CONNECTING -> "Connecting…"
-                    YoutubeAuthorizationState.CONNECTED -> googleAccount?.displayName?.ifBlank { "Connected" } ?: "Connected"
+                    YoutubeAuthorizationState.CONNECTED -> when {
+                        youtubeAuthStatus.youtubeAuthorized ->
+                            googleAccount?.displayName?.ifBlank { "Google + YouTube connected" }
+                                ?: "Google + YouTube connected"
+                        else ->
+                            googleAccount?.displayName?.ifBlank { "Google signed in" }
+                                ?: "Google signed in"
+                    }
                     YoutubeAuthorizationState.CONFIGURATION_REQUIRED -> "Setup required"
                     YoutubeAuthorizationState.ERROR -> "Error"
                 }

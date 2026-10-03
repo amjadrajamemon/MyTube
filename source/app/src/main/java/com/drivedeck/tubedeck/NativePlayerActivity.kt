@@ -164,6 +164,7 @@ class NativePlayerActivity : ComponentActivity() {
                 val googleAuthStatus by googleSession.status.collectAsStateWithLifecycle()
                 var showGoogleAccountDialog by remember { mutableStateOf(false) }
                 var showGoogleAuthorizationProblem by remember { mutableStateOf(false) }
+                var triedExplicitGoogleAddAccount by remember { mutableStateOf(false) }
                 val youtubeAuthorizationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
@@ -230,10 +231,38 @@ class NativePlayerActivity : ComponentActivity() {
                                 }
                             }
                             .onFailure {
-                                showGoogleAuthorizationProblem = true
+                                if (!triedExplicitGoogleAddAccount) {
+                                    triedExplicitGoogleAddAccount = true
+                                } else {
+                                    showGoogleAuthorizationProblem = true
+                                }
                             }
+                    } else if (!triedExplicitGoogleAddAccount) {
+                        triedExplicitGoogleAddAccount = true
+                    } else {
+                        showGoogleAuthorizationProblem = true
                     }
                 }
+
+                val googleAddAccountLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) {
+                    // Android's account Settings activity does not consistently return RESULT_OK.
+                    // On any return, reopen the Google account picker once and continue from the
+                    // newly added account when present.
+                    googleAccountChooserLauncher.launch(
+                        googleSession.googleAccountChooserIntent()
+                    )
+                }
+
+                LaunchedEffect(triedExplicitGoogleAddAccount) {
+                    if (triedExplicitGoogleAddAccount) {
+                        googleAddAccountLauncher.launch(
+                            googleSession.googleAddAccountIntent()
+                        )
+                    }
+                }
+
 
                 val googlePlayServicesLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult()

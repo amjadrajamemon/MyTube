@@ -337,6 +337,16 @@ fun SettingsScreen(
                     Spacer(Modifier.width(6.dp))
                     Text(if (googleAccount == null) "Sign in with Google" else "Google account")
                 }
+                if (googleAccountSession.isDeviceCodeConfigured() && !youtubeAuthStatus.youtubeAuthorized) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { googleAccountSession.startDeviceCodeAuthorization() },
+                        enabled = youtubeAuthStatus.state != YoutubeAuthorizationState.CONNECTING,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Sign in with code")
+                    }
+                }
             }
 
             SettingsCard(title = "Download Engine") {

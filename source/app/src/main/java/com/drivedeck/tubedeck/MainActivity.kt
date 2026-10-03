@@ -38,6 +38,7 @@ import com.drivedeck.tubedeck.player.BackgroundAudioController
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
+import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchVideoId: String? = null
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
+    private var nativePipBackExitJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var pipChoicePending = false
     private var pendingChooserAfterPipExit = false
@@ -1117,16 +1119,58 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePlaybackBack() {
+        val now = SystemClock.elapsedRealtime()
+
         NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
-            // Native PiP remains owned by NativePlayerActivity. The parent only relays the
-            // second Back so the existing player expands and draws the chooser over the video.
-            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
+            val rapidCount = PlaybackBackSequenceTracker.record(now)
+            when {
+                rapidCount >= 3 -> {
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = null
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.PAUSE)
+                    PlaybackBackSequenceTracker.reset()
+                    // Triple Back is an intentional media command: pause the existing PiP
+                    // session and let the user leave MyTube without destroying that session.
+                    moveTaskToBack(true)
+                }
+
+                rapidCount == 2 -> {
+                    // Give a very short window for an intentional third press. If none arrives,
+                    // Back behaves normally: the main MyTube task goes away and PiP stays alive.
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = lifecycleScope.launch {
+                        delay(PlaybackBackSequenceTracker.rapidGapMs() + 50L)
+                        moveTaskToBack(true)
+                        PlaybackBackSequenceTracker.reset()
+                    }
+                }
+
+                else -> {
+                    // A slow press starts a fresh sequence. The user is navigating away rather
+                    // than issuing a triple-Back media command; keep the PiP session untouched.
+                    nativePipBackExitJob?.cancel()
+                    nativePipBackExitJob = null
+                    moveTaskToBack(true)
+                    PlaybackBackSequenceTracker.reset()
+                }
+            }
             return
         }
+
         if (!playerActive) return
+
+        val rapidCount = PlaybackBackSequenceTracker.record(now)
+        if (rapidCount >= 3) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            pauseActivePlayback()
+            PlaybackBackSequenceTracker.reset()
+            return
+        }
+
         dispatchPlaybackBackAction(
             playbackBackCoordinator.onBack(
-                nowMs = SystemClock.elapsedRealtime(),
+                nowMs = now,
                 isInPip = isPipMode
             )
         )
@@ -1166,11 +1210,27 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
+    private fun pauseActivePlayback() {
+        NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.PAUSE)
+            return
+        }
+        webViewInstance?.runCatching {
+            evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v){v.pause();return true;}return false;})()",
+                null
+            )
+        }
+    }
+
     private fun closeActivePlaybackCompletely() {
         pipChoicePending = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        nativePipBackExitJob?.cancel()
+        nativePipBackExitJob = null
         playbackBackCoordinator.reset()
+        PlaybackBackSequenceTracker.reset()
         BackgroundAudioController.stop(applicationContext)
         webViewInstance?.runCatching {
             evaluateJavascript(

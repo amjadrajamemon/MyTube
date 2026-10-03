@@ -75,6 +75,8 @@ data class TubeDeckSettings(
     
     // Player settings
     val playerMode: PlayerMode = PlayerMode.NATIVE,
+    // Preserved from the original v1.2.x Google sign-in implementation.
+    val googleWebClientId: String = "",
     // 0 = adaptive Auto. Positive values remember a fixed preferred height.
     val preferredPlaybackQualityHeight: Int = 0,
     val preferredPlaybackSpeed: Float = 1.0f,

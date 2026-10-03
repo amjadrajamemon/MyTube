@@ -288,11 +288,38 @@ class NativePlayerActivity : ComponentActivity() {
                 var showDownload by remember { mutableStateOf(false) }
                 var playlistMode by remember { mutableStateOf(false) }
                 val onGoogleAccountClick: () -> Unit = {
-                    if (googleAccount != null) {
-                        showGoogleAccountDialog = true
-                    } else {
-                        showGoogleAuthorizationProblem = false
-                        if (googleSession.isIdentityConfigured()) {
+                    when {
+                        googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
+                            showGoogleAuthorizationProblem = false
+                            lifecycleScope.launch {
+                                googleSession.authorizeYoutubeForCurrentIdentity(this@NativePlayerActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        if (
+                                            outcome.resolution == null &&
+                                            outcome.recoveryIntent == null &&
+                                            googleSession.status.value.youtubeAuthorized
+                                        ) {
+                                            Toast.makeText(
+                                                this@NativePlayerActivity,
+                                                "Google + YouTube connected",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                    .onFailure {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                            }
+                        }
+
+                        googleAccount != null -> {
+                            showGoogleAccountDialog = true
+                        }
+
+                        googleSession.isIdentityConfigured() -> {
+                            showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
                                 googleSession.beginYoutubeAuthorization(this@NativePlayerActivity)
                                     .onSuccess { outcome ->
@@ -307,15 +334,14 @@ class NativePlayerActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        // Credential Manager configuration can be stale or rejected.
-                                        // Fall back to the real Google Play Services account UI
-                                        // rather than presenting a cached/dummy profile.
                                         googlePlayServicesLauncher.launch(
                                             googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
                                         )
                                     }
                             }
-                        } else {
+                        }
+
+                        else -> {
                             googlePlayServicesLauncher.launch(
                                 googleSession.googlePlayServicesSignInIntent(this@NativePlayerActivity)
                             )

@@ -367,11 +367,38 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val onGoogleAccountClick: () -> Unit = {
-                    if (googleAccount != null) {
-                        showGoogleAccountDialog = true
-                    } else {
-                        showGoogleAuthorizationProblem = false
-                        if (googleSession.isIdentityConfigured()) {
+                    when {
+                        googleAccount != null && !googleAuthStatus.youtubeAuthorized -> {
+                            showGoogleAuthorizationProblem = false
+                            lifecycleScope.launch {
+                                googleSession.authorizeYoutubeForCurrentIdentity(this@MainActivity)
+                                    .onSuccess { outcome ->
+                                        outcome.resolution?.let(youtubeAuthorizationLauncher::launch)
+                                        outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
+                                        if (
+                                            outcome.resolution == null &&
+                                            outcome.recoveryIntent == null &&
+                                            googleSession.status.value.youtubeAuthorized
+                                        ) {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Google + YouTube connected",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                    .onFailure {
+                                        showGoogleAuthorizationProblem = true
+                                    }
+                            }
+                        }
+
+                        googleAccount != null -> {
+                            showGoogleAccountDialog = true
+                        }
+
+                        googleSession.isIdentityConfigured() -> {
+                            showGoogleAuthorizationProblem = false
                             lifecycleScope.launch {
                                 googleSession.beginYoutubeAuthorization(this@MainActivity)
                                     .onSuccess { outcome ->
@@ -386,15 +413,14 @@ class MainActivity : ComponentActivity() {
                                         outcome.recoveryIntent?.let(googleAuthRecoveryLauncher::launch)
                                     }
                                     .onFailure {
-                                        // Credential Manager configuration can be stale or rejected.
-                                        // Fall back to the real Google Play Services account UI
-                                        // rather than presenting a cached/dummy profile.
                                         googlePlayServicesLauncher.launch(
                                             googleSession.googlePlayServicesSignInIntent(this@MainActivity)
                                         )
                                     }
                             }
-                        } else {
+                        }
+
+                        else -> {
                             googlePlayServicesLauncher.launch(
                                 googleSession.googlePlayServicesSignInIntent(this@MainActivity)
                             )

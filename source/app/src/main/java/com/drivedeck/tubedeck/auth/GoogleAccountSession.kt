@@ -186,7 +186,7 @@ class GoogleAccountSession private constructor(context: Context) {
     ): Result<YoutubeAuthorizationOutcome> {
         _status.value = YoutubeAuthorizationStatus(YoutubeAuthorizationState.CONNECTING)
 
-        return runCatching {
+        return runCatching outer@{
             val clientId = effectiveWebClientId()
             var googleProfile: GoogleAccountProfile? = _account.value
 
@@ -211,7 +211,7 @@ class GoogleAccountSession private constructor(context: Context) {
             }.getOrElse { error ->
                 if (googleProfile != null) {
                     preserveGoogleIdentityAfterYoutubeFailure(error)
-                    return@runCatching YoutubeAuthorizationOutcome(profile = googleProfile)
+                    return@outer YoutubeAuthorizationOutcome(profile = googleProfile)
                 }
                 throw error
             }

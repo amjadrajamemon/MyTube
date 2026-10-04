@@ -814,13 +814,10 @@ class NativePlayerActivity : ComponentActivity() {
         }
         if (!closingPlayer && pipExitPendingStop) {
             // Reaching RESUMED means PiP was expanded, not dismissed by the system X.
+            // Expansion/resume is not itself a request for the 3-option chooser.
             pipExitPendingStop = false
+            pipChoicePending = false
             NativePipSessionBridge.clear(playbackSessionId)
-            if (pipChoicePending) {
-                pipChoicePending = false
-                playbackBackCoordinator.forceChooserVisible()
-                showPlaybackExitChoices = true
-            }
         }
         if (!closingPlayer && pendingFreshResumeFromPip) {
             pendingFreshResumeFromPip = false

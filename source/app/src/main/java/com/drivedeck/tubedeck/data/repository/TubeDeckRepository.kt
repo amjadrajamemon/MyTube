@@ -196,27 +196,89 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val now = System.currentTimeMillis()
         val region = detectHomeCountry()
         _homeCountry.value = region
-        val seed = _watchHistory.value.firstOrNull()?.url
-        if (current.homeSuggestionsEnabled && seed != null && homeSuggestionsJob?.isActive != true &&
-            (seed != prefs.getString("home_suggestions_seed", null) || HomeFeedPolicy.shouldRefresh(
+        val interestSeeds = _watchHistory.value
+            .asSequence()
+            .filter { it.videoId.isNotBlank() && YoutubeUrls.videoId(it.url) != null }
+            .distinctBy { it.videoId }
+            .take(3)
+            .toList()
+        val seedKey = interestSeeds.joinToString("|") { it.videoId }
+        if (current.homeSuggestionsEnabled && interestSeeds.isNotEmpty() && homeSuggestionsJob?.isActive != true &&
+            (seedKey != prefs.getString("home_suggestions_seed", null) || HomeFeedPolicy.shouldRefresh(
                 true, now, prefs.getLong("home_suggestions_updated", 0L), force))) {
             homeSuggestionsJob = scope.launch {
                 try {
-                    val items = YoutubeWatchNextClient.resolve(seed, YoutubeUrls.videoId(seed)!!).relatedVideos
+                    val suggestions = linkedMapOf<String, HomeVideo>()
+                    val watchedIds = interestSeeds.mapTo(mutableSetOf()) { it.videoId }
+
+                    fun addSuggestion(
+                        videoId: String,
+                        title: String,
+                        thumbnail: String,
+                        channel: String,
+                        durationSeconds: Long
+                    ) {
+                        if (videoId.isBlank() || videoId in watchedIds) return
+                        suggestions.putIfAbsent(
+                            videoId,
+                            HomeVideo(
+                                videoId = videoId,
+                                title = title.ifBlank { "YouTube video" },
+                                url = "https://www.youtube.com/watch?v=$videoId",
+                                thumbnailUrl = thumbnail.ifBlank { getVideoThumbnail(videoId) },
+                                channelTitle = channel.ifBlank { "YouTube" },
+                                durationText = formatDurationLabel(durationSeconds),
+                                watchedAt = 0L
+                            )
+                        )
+                    }
+
+                    // Blend several recent interests so Suggested is not tied to only the last video.
+                    for (seed in interestSeeds) {
+                        ensureActive()
+                        val videoId = YoutubeUrls.videoId(seed.url) ?: continue
+
+                        runCatching {
+                            YoutubeWatchNextClient.resolve(seed.url, videoId).relatedVideos
+                        }.getOrDefault(emptyList()).take(12).forEach { item ->
+                            addSuggestion(
+                                item.videoId, item.title, item.thumbnailUrl,
+                                item.uploader, item.durationSeconds
+                            )
+                        }
+
+                        // Independent fallback when YouTube changes the private Watch Next shape.
+                        if (suggestions.size < 24) {
+                            runCatching {
+                                YoutubeStreamResolver.resolve(context, seed.url).relatedVideos
+                            }.getOrDefault(emptyList()).take(12).forEach { item ->
+                                addSuggestion(
+                                    item.videoId, item.title, item.thumbnailUrl,
+                                    item.channelTitle, item.durationSeconds
+                                )
+                            }
+                        }
+                    }
+
                     ensureActive()
                     if (!_settings.value.homeSuggestionsEnabled) return@launch
-                    _homeSuggestions.value = items.distinctBy { it.videoId }.take(12).map { item ->
-                        HomeVideo(item.videoId, item.title, "https://www.youtube.com/watch?v=${item.videoId}",
-                            item.thumbnailUrl, item.uploader, formatDurationLabel(item.durationSeconds), 0L)
+                    if (suggestions.isNotEmpty()) {
+                        _homeSuggestions.value = suggestions.values.take(24)
+                        saveHomeVideos("home_suggestions_json", _homeSuggestions.value)
+                        prefs.edit().putString("home_suggestions_seed", seedKey)
+                            .putLong("home_suggestions_updated", now).apply()
+                    } else {
+                        // Do not cache an empty shelf for 30 minutes. Retry after two minutes.
+                        prefs.edit().remove("home_suggestions_seed")
+                            .putLong("home_suggestions_updated", now - HomeFeedPolicy.CACHE_MS + 120_000L)
+                            .apply()
                     }
-                    saveHomeVideos("home_suggestions_json", _homeSuggestions.value)
-                    prefs.edit().putString("home_suggestions_seed", seed)
-                        .putLong("home_suggestions_updated", now).apply()
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {
-                    // Back off failed requests too, retaining a useful cached shelf.
-                    prefs.edit().putLong("home_suggestions_updated", now).putString("home_suggestions_seed", seed).apply()
+                    prefs.edit().remove("home_suggestions_seed")
+                        .putLong("home_suggestions_updated", now - HomeFeedPolicy.CACHE_MS + 120_000L)
+                        .apply()
                 }
             }
         }

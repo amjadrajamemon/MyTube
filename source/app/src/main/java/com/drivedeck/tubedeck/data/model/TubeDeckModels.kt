@@ -15,7 +15,9 @@ enum class TaskStatus {
     DOWNLOADING,
     PAUSED,
     COMPLETED,
-    FAILED
+    FAILED,
+    CANCELLED,
+    RETRIED
 }
 
 data class DownloadTask(
@@ -36,7 +38,9 @@ data class DownloadTask(
     val status: TaskStatus = TaskStatus.QUEUED,
     val errorMessage: String? = null,
     val retryCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val sessionId: Long = createdAt,
+    val eventAt: Long = createdAt
 )
 
 data class OfflineMedia(

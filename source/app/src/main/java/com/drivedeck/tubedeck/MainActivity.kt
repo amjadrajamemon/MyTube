@@ -37,6 +37,7 @@ import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
+import com.drivedeck.tubedeck.player.BackgroundAudioPlaybackService
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.ParentPipBackAction
@@ -1229,6 +1230,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
+            BackgroundAudioPlaybackService.ACTION_RETURN_TO_VIDEO -> {
+                // User explicitly tapped the audio-only notification. Reuse the existing
+                // snapshot/position handback path so there is never a second audio session.
+                lastNativeLaunchAt = 0L
+                resumeAudioRequest += 1
+                return
+            }
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null

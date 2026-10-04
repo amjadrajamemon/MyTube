@@ -14,11 +14,24 @@ internal data class NavigationEntry(
 internal class NavigationCoordinator(initial: NavigationEntry) {
     private val backStack = ArrayDeque<NavigationEntry>()
     private val forwardStack = ArrayDeque<NavigationEntry>()
+    private var utilityReturn: NavigationEntry? = null
 
     var current: NavigationEntry = initial
         private set
 
     fun navigate(entry: NavigationEntry): NavigationEntry {
+        if (entry == current) return current
+        if (isUtility(entry.screen)) {
+            if (utilityReturn == null) utilityReturn = current
+            current = entry
+            return current
+        }
+        utilityReturn?.let { current = it }
+        utilityReturn = null
+        if (entry.screen == ActiveScreen.HOME || entry.screen == ActiveScreen.MIXES) {
+            reset(entry)
+            return current
+        }
         if (entry == current) return current
         backStack.addLast(current)
         current = entry
@@ -37,6 +50,15 @@ internal class NavigationCoordinator(initial: NavigationEntry) {
     }
 
     fun back(): NavigationEntry? {
+        utilityReturn?.let {
+            utilityReturn = null
+            current = it
+            return it
+        }
+        if (current.screen == ActiveScreen.MIXES) {
+            reset(NavigationEntry(ActiveScreen.HOME))
+            return current
+        }
         val previous = backStack.removeLastOrNull() ?: return null
         forwardStack.addLast(current)
         current = previous
@@ -52,14 +74,18 @@ internal class NavigationCoordinator(initial: NavigationEntry) {
         return current
     }
 
-    fun canGoBack(): Boolean = backStack.isNotEmpty()
+    fun canGoBack(): Boolean = utilityReturn != null || current.screen == ActiveScreen.MIXES || backStack.isNotEmpty()
     fun canGoForward(): Boolean = forwardStack.isNotEmpty()
 
     fun reset(entry: NavigationEntry) {
+        utilityReturn = null
         backStack.clear()
         forwardStack.clear()
         current = entry
     }
+
+    private fun isUtility(screen: ActiveScreen): Boolean =
+        screen == ActiveScreen.SETTINGS || screen == ActiveScreen.DOWNLOADS || screen == ActiveScreen.OFFLINE_VAULT
 
     private fun trim(stack: ArrayDeque<NavigationEntry>) {
         while (stack.size > MAX_HISTORY) stack.removeFirst()
@@ -69,3 +95,4 @@ internal class NavigationCoordinator(initial: NavigationEntry) {
         const val MAX_HISTORY = 80
     }
 }
+

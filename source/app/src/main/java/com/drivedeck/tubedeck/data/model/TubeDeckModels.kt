@@ -80,6 +80,8 @@ data class TubeDeckSettings(
     val preferredPlaybackSpeed: Float = 1.0f,
     val seekIntervalSeconds: Int = 10,
     val autoRotatePlayback: Boolean = true,
+    val homeSuggestionsEnabled: Boolean = true,
+    val homeTrendingEnabled: Boolean = true,
     
     // Movable browser buttons, stored in screen pixels.
     val fabInstantX: Float = 40f,

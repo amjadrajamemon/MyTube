@@ -42,6 +42,12 @@ fun DriveDeckScreen(
     onGoogleAccountClick: () -> Unit = {},
     watchHistory: List<HomeVideo> = emptyList(),
     suggestedVideos: List<HomeVideo> = emptyList(),
+    trendingVideos: List<HomeVideo> = emptyList(),
+    suggestionsEnabled: Boolean = true,
+    trendingEnabled: Boolean = true,
+    countryCode: String = "US",
+    trendingStatus: String = "",
+    onRefreshFeed: () -> Unit = {},
     onOpenVideo: (HomeVideo) -> Unit = {},
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -89,54 +95,52 @@ fun DriveDeckScreen(
                 }
             }
 
-            if (watchHistory.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title = "History",
-                        action = "Clear",
-                        onAction = onClearHistory
-                    )
-                }
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(watchHistory.take(12), key = { "history-${it.videoId}" }) { video ->
-                            CompactVideoCard(video = video, onClick = { onOpenVideo(video) })
-                        }
-                    }
-                }
-            }
-
             item {
-                SectionHeader(
-                    title = if (suggestedVideos.isEmpty()) "Recommended" else "Recommended for you"
-                )
+                HomeShelf("History", watchHistory.take(12), onOpenVideo,
+                    action = if (watchHistory.isNotEmpty()) "Clear" else null, onAction = onClearHistory)
             }
+            item {
+                HomeShelf("Suggested", if (suggestionsEnabled) suggestedVideos else emptyList(), onOpenVideo,
+                    enabled = suggestionsEnabled, action = if (suggestionsEnabled) "Refresh" else null,
+                    onAction = onRefreshFeed)
+            }
+            item {
+                HomeShelf("Trending · $countryCode", if (trendingEnabled) trendingVideos else emptyList(), onOpenVideo,
+                    enabled = trendingEnabled, loading = trendingStatus == "Loading",
+                    action = if (!trendingEnabled) null else if (trendingStatus == "Connect YouTube") "Connect" else "Refresh",
+                    onAction = if (trendingStatus == "Connect YouTube") onGoogleAccountClick else onRefreshFeed)
+            }
+        }
+    }
+}
 
-            if (suggestedVideos.isEmpty()) {
-                item {
-                    Surface(
-                        color = TubeDeckSurfaceVariant,
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(18.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.SmartDisplay, null, tint = TubeDeckAccentCyan, modifier = Modifier.size(38.dp))
-                            Spacer(Modifier.width(14.dp))
-                            Column {
-                                Text("Your feed will appear here", color = TubeDeckTextPrimary, fontWeight = FontWeight.Bold)
-                            }
-                        }
+@Composable
+private fun HomeShelf(
+    title: String,
+    videos: List<HomeVideo>,
+    onOpenVideo: (HomeVideo) -> Unit,
+    enabled: Boolean = true,
+    loading: Boolean = false,
+    action: String? = null,
+    onAction: () -> Unit = {}
+) {
+    Surface(
+        color = TubeDeckSurface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+    ) {
+        Column(Modifier.padding(bottom = 12.dp)) {
+            SectionHeader(title, action, onAction)
+            if (videos.isNotEmpty()) {
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(videos, key = { it.videoId }) { video ->
+                        CompactVideoCard(video, onClick = { onOpenVideo(video) })
                     }
                 }
             } else {
-                items(suggestedVideos, key = { "suggested-${it.videoId}" }) { video ->
-                    StandardVideoCard(video = video, onClick = { onOpenVideo(video) })
+                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                    if (loading && enabled) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    else Text(if (enabled) "—" else "Off", color = TubeDeckTextSecondary)
                 }
             }
         }
@@ -185,45 +189,6 @@ private fun CompactVideoCard(video: HomeVideo, onClick: () -> Unit) {
         Spacer(Modifier.height(7.dp))
         Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
         Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
-    }
-}
-
-@Composable
-private fun StandardVideoCard(video: HomeVideo, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(bottom = 8.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = video.title,
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                contentScale = ContentScale.Crop
-            )
-            if (video.durationText.isNotBlank()) {
-                Surface(
-                    color = Color.Black.copy(alpha = .82f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp)
-                ) {
-                    Text(video.durationText, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
-                }
-            }
-        }
-        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Surface(shape = CircleShape, color = TubeDeckSurfaceVariant, modifier = Modifier.size(38.dp)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Person, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(20.dp))
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
-                Spacer(Modifier.height(3.dp))
-                Text(video.channelTitle, color = TubeDeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
-            }
-            Icon(Icons.Default.MoreVert, null, tint = TubeDeckTextSecondary)
-        }
     }
 }
 
@@ -284,3 +249,4 @@ fun DriveDeckTopHeader(
         }
     }
 }
+

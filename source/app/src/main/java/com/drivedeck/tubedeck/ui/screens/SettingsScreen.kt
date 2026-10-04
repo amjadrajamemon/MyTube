@@ -89,6 +89,8 @@ fun SettingsScreen(
     var playlistMode by remember { mutableStateOf(currentSettings.playlistMode) }
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
     
+    var homeSuggestionsEnabled by remember { mutableStateOf(currentSettings.homeSuggestionsEnabled) }
+    var homeTrendingEnabled by remember { mutableStateOf(currentSettings.homeTrendingEnabled) }
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
@@ -420,11 +422,6 @@ fun SettingsScreen(
 
             SettingsCard(title = "Playback") {
                 ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
-                Text(
-                    "Rotate the player when you tilt your phone, even when Android rotation is locked.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 12.sp
-                )
                 HorizontalDivider()
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
@@ -473,33 +470,9 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "Enhanced Player") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(
-                        "Adaptive network",
-                        "Seek preview",
-                        "Chapters",
-                        "Sponsor markers",
-                        "Long-press actions",
-                        "Gestures"
-                    ).forEach { label ->
-                        AssistChip(onClick = {}, label = { Text(label) })
-                    }
-                }
-                if (playerMode == PlayerMode.WEB) {
-                    Spacer(Modifier.height(6.dp))
-                    FilledTonalButton(
-                        onClick = { playerMode = PlayerMode.NATIVE },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.PlayCircle, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Use enhanced native player")
-                    }
-                }
+            SettingsCard(title = "Home") {
+                ToggleRow("Suggested videos", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
+                ToggleRow("Local trending", homeTrendingEnabled) { homeTrendingEnabled = it }
             }
 
             // Blocking Toggle
@@ -530,6 +503,8 @@ fun SettingsScreen(
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,
                             autoRotatePlayback = autoRotatePlayback,
+                            homeSuggestionsEnabled = homeSuggestionsEnabled,
+                            homeTrendingEnabled = homeTrendingEnabled,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,
                             blockBannerAds = blockBannerAds,

@@ -3,6 +3,8 @@ package com.drivedeck.tubedeck
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Intent
+import android.net.Uri
+import com.drivedeck.tubedeck.data.repository.FileClipboard
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -79,6 +81,8 @@ class MainActivity : ComponentActivity() {
     private var webPlaybackActive by mutableStateOf(false)
     private var webPlaybackPositionMs by mutableLongStateOf(0L)
     private var inboundUrl by mutableStateOf<String?>(null)
+    private var resumeAudioRequest by mutableIntStateOf(0)
+    private var homeRefreshRequest by mutableIntStateOf(0)
     private var openDownloadsQueueRequest by mutableStateOf(false)
     private var lastNativeLaunchVideoId: String? = null
     private var lastNativeLaunchAt = 0L
@@ -267,10 +271,40 @@ class MainActivity : ComponentActivity() {
                         repository.refreshDownloadNotification()
                     }
                 }
+                var fileOperationBusy by remember { mutableStateOf(false) }
+                var pendingFileTransfer by remember { mutableStateOf<FileClipboard?>(null) }
+                val fileClipboard by repository.fileClipboard.collectAsStateWithLifecycle()
+                val destinationFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                    val request = pendingFileTransfer
+                    pendingFileTransfer = null
+                    if (uri != null && request != null && !fileOperationBusy) {
+                        runCatching { contentResolver.takePersistableUriPermission(uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+                        lifecycleScope.launch {
+                            fileOperationBusy = true
+                            try {
+                                val result = repository.transferOfflineFiles(request.ids, uri, request.move)
+                                Toast.makeText(this@MainActivity,
+                                    "${result.succeeded} ${if (request.move) "moved" else "copied"}" +
+                                        if (result.failed > 0) " · ${result.failed} failed: ${result.detail}" else "",
+                                    Toast.LENGTH_LONG).show()
+                            } finally { fileOperationBusy = false }
+                        }
+                    }
+                }
+                fun chooseFileDestination(request: FileClipboard) {
+                    if (request.ids.isEmpty() || fileOperationBusy) return
+                    pendingFileTransfer = request
+                    destinationFolderLauncher.launch(null)
+                }
+
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val homeSuggestions by repository.homeSuggestions.collectAsStateWithLifecycle()
+                val homeTrending by repository.homeTrending.collectAsStateWithLifecycle()
+                val homeCountry by repository.homeCountry.collectAsStateWithLifecycle()
+                val homeTrendingStatus by repository.homeTrendingStatus.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val blockedAdsCount by repository.blockedAdsCount.collectAsStateWithLifecycle()
 
@@ -382,6 +416,26 @@ class MainActivity : ComponentActivity() {
                             navigateTo(ActiveScreen.BROWSER, targetUrl)
                         }
                     }
+                }
+
+                LaunchedEffect(currentScreen, homeRefreshRequest, settings.homeSuggestionsEnabled,
+                    settings.homeTrendingEnabled, googleAuthStatus.youtubeAuthorized) {
+                    if (currentScreen == ActiveScreen.HOME) {
+                        repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken())
+                    }
+                }
+
+                LaunchedEffect(resumeAudioRequest) {
+                    if (resumeAudioRequest == 0 || NativePipSessionBridge.isActive()) return@LaunchedEffect
+                    val audio = BackgroundAudioController.snapshot() ?: return@LaunchedEffect
+                    lastNativeLaunchAt = 0L
+                    openOnlineMedia(OfflineMedia(
+                        id = UUID.randomUUID().toString(),
+                        title = audio.title,
+                        videoId = YoutubeUrls.videoId(audio.sourceUrl).orEmpty(),
+                        thumbnailUrl = audio.artworkUrl,
+                        mediaUri = audio.sourceUrl
+                    ))
                 }
 
                 val onGoogleAccountClick: () -> Unit = {
@@ -663,12 +717,13 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     val contentPadding = if (isPipMode || currentScreen == ActiveScreen.PLAYER || isBrowserFullscreen) PaddingValues(0.dp) else innerPadding
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(contentPadding)
                             .consumeWindowInsets(contentPadding)
                     ) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
                         when (currentScreen) {
                             ActiveScreen.HOME, ActiveScreen.MIXES -> {
                                 DriveDeckScreen(
@@ -692,6 +747,12 @@ class MainActivity : ComponentActivity() {
                                     onGoogleAccountClick = onGoogleAccountClick,
                                     watchHistory = watchHistory,
                                     suggestedVideos = homeSuggestions,
+                                    trendingVideos = homeTrending,
+                                    suggestionsEnabled = settings.homeSuggestionsEnabled,
+                                    trendingEnabled = settings.homeTrendingEnabled,
+                                    countryCode = homeCountry,
+                                    trendingStatus = homeTrendingStatus,
+                                    onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
                                     onOpenVideo = { item ->
                                         val media = OfflineMedia(
                                             id = UUID.randomUUID().toString(),
@@ -772,7 +833,23 @@ class MainActivity : ComponentActivity() {
                                     onDeleteAllTasks = { repository.deleteAllQueueTasks() },
                                     onClearFinished = { repository.clearFinished() },
                                     onClearHistory = { repository.clearHistory() },
-                                    onDeleteOfflineMedia = { repository.deleteOfflineMedia(it) },
+                                    clipboardCount = fileClipboard?.ids?.size ?: 0,
+                                    fileOperationBusy = fileOperationBusy,
+                                    onCopyFiles = { ids, move ->
+                                        repository.copyFilesToClipboard(ids, move)
+                                        Toast.makeText(this@MainActivity, "${ids.size} files ready to paste", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onPasteFiles = { fileClipboard?.let { chooseFileDestination(it) } },
+                                    onMoveFiles = { chooseFileDestination(FileClipboard(it, true)) },
+                                    onDeleteFiles = { ids ->
+                                        if (!fileOperationBusy) lifecycleScope.launch {
+                                            fileOperationBusy = true
+                                            try {
+                                                val result = repository.deleteOfflineFiles(ids)
+                                                Toast.makeText(this@MainActivity, "${result.succeeded} deleted · ${result.failed} failed", Toast.LENGTH_SHORT).show()
+                                            } finally { fileOperationBusy = false }
+                                        }
+                                    },
                                     onPlayMedia = { media ->
                                         playingMedia = media
                                         navigateTo(ActiveScreen.PLAYER)
@@ -951,6 +1028,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        }
                         if (showPlaybackExitChoices && !isPipMode) {
                             val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
@@ -991,7 +1069,7 @@ class MainActivity : ComponentActivity() {
                                     playbackBackCoordinator.onChooserDismissed()
                                 },
                                 pipLabel = if (bridgedSession != null) "Keep PiP" else "PiP",
-                                modifier = Modifier.align(Alignment.BottomCenter)
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
                             )
                         }
                     }
@@ -1061,6 +1139,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        homeRefreshRequest += 1
+        if (BackgroundAudioController.snapshot() != null && !NativePipSessionBridge.isActive()) {
+            resumeAudioRequest += 1
+        }
         legacyPlaybackBackCallback.isEnabled = playerActive || NativePipSessionBridge.isActive()
         if (playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1151,9 +1233,9 @@ class MainActivity : ComponentActivity() {
                     moveTaskToBack(true)
                 }
                 ParentPipBackAction.SHOW_CHOICES -> {
-                    // MainActivity owns Back while NativePlayerActivity remains in PiP.
-                    // Show choices here without expanding or recreating the native player.
-                    showPlaybackExitChoices = true
+                    // Bring the existing player forward so its choices sit below the video.
+                    showPlaybackExitChoices = false
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
                 }
             }
             return

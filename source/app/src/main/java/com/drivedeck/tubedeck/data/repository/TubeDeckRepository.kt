@@ -3,6 +3,9 @@ package com.drivedeck.tubedeck.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.telephony.TelephonyManager
+import java.util.Locale
+import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
@@ -36,6 +39,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var sponsorJob: Job? = null
     private var activeSponsorId: String? = null
     private var homeSuggestionsJob: Job? = null
+    private var homeTrendingJob: Job? = null
     @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -46,21 +50,27 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadQueue: StateFlow<List<DownloadTask>> = _downloadQueue.asStateFlow()
     private val _offlineMediaList = MutableStateFlow(loadOfflineMedia())
     val offlineMediaList: StateFlow<List<OfflineMedia>> = _offlineMediaList.asStateFlow()
+    private val _fileClipboard = MutableStateFlow<FileClipboard?>(null)
+    val fileClipboard: StateFlow<FileClipboard?> = _fileClipboard.asStateFlow()
     private val _downloadHistory = MutableStateFlow(loadHistory())
     val downloadHistory: StateFlow<List<DownloadTask>> = _downloadHistory.asStateFlow()
     private val _watchHistory = MutableStateFlow(loadWatchHistory())
     val watchHistory: StateFlow<List<HomeVideo>> = _watchHistory.asStateFlow()
     private val _homeSuggestions = MutableStateFlow(loadHomeSuggestions())
     val homeSuggestions: StateFlow<List<HomeVideo>> = _homeSuggestions.asStateFlow()
+    private val _homeTrending = MutableStateFlow<List<HomeVideo>>(emptyList())
+    val homeTrending: StateFlow<List<HomeVideo>> = _homeTrending.asStateFlow()
+    private val _homeCountry = MutableStateFlow(detectHomeCountry())
+    val homeCountry: StateFlow<String> = _homeCountry.asStateFlow()
+    private val _homeTrendingStatus = MutableStateFlow("")
+    val homeTrendingStatus: StateFlow<String> = _homeTrendingStatus.asStateFlow()
+
     private val _currentSponsorSegments = MutableStateFlow<List<SponsorSegment>>(emptyList())
     val currentSponsorSegments: StateFlow<List<SponsorSegment>> = _currentSponsorSegments.asStateFlow()
 
     init {
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
-        if (_settings.value.autoLoadUpNext) {
-            _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
-        }
     }
 
     fun updateSettings(value: TubeDeckSettings) {
@@ -78,6 +88,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
             putBoolean("autoRotatePlayback", next.autoRotatePlayback)
+            putBoolean("homeSuggestionsEnabled", next.homeSuggestionsEnabled)
+            putBoolean("homeTrendingEnabled", next.homeTrendingEnabled)
             putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
             putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
             putBoolean("adBlockEnabled", next.adBlockEnabled); putBoolean("blockVideoAds", next.blockVideoAds)
@@ -93,11 +105,16 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putLong("themeTextArgb", next.themeTextArgb)
             apply()
         }
-        if (previous.autoLoadUpNext && !next.autoLoadUpNext) {
+        if (!next.homeSuggestionsEnabled) {
             homeSuggestionsJob?.cancel()
-            homeSuggestionsJob = null
-        } else if (!previous.autoLoadUpNext && next.autoLoadUpNext) {
-            _watchHistory.value.firstOrNull()?.let { refreshHomeSuggestions(it.url) }
+            _homeSuggestions.value = emptyList()
+        } else if (!previous.homeSuggestionsEnabled) {
+            _homeSuggestions.value = loadHomeSuggestions()
+        }
+        if (!next.homeTrendingEnabled) {
+            homeTrendingJob?.cancel()
+            _homeTrendingStatus.value = ""
+            _homeTrending.value = emptyList()
         }
         processQueue()
     }
@@ -116,6 +133,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
         preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 2.0f),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
         autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
+        homeSuggestionsEnabled = prefs.getBoolean("homeSuggestionsEnabled", true),
+        homeTrendingEnabled = prefs.getBoolean("homeTrendingEnabled", true),
         fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
         fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),
         adBlockEnabled = prefs.getBoolean("adBlockEnabled", true),
@@ -153,41 +172,80 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(40)
         _watchHistory.value = next
         saveHomeVideos("watch_history_json", next)
-        if (_settings.value.autoLoadUpNext) {
-            refreshHomeSuggestions(media.mediaUri)
-        }
     }
 
     fun clearWatchHistory() {
+        homeSuggestionsJob?.cancel()
         _watchHistory.value = emptyList()
-        prefs.edit().remove("watch_history_json").apply()
+        _homeSuggestions.value = emptyList()
+        prefs.edit().remove("watch_history_json").remove("home_suggestions_json")
+            .remove("home_suggestions_seed").remove("home_suggestions_updated").apply()
     }
 
-    fun refreshHomeSuggestions(seedUrl: String? = _watchHistory.value.firstOrNull()?.url) {
-        val url = seedUrl?.takeIf { YoutubeUrls.videoId(it) != null } ?: return
-        homeSuggestionsJob?.cancel()
-        homeSuggestionsJob = scope.launch {
-            try {
-                val resolved = YoutubeStreamResolver.resolve(context, url)
-                val suggestions = resolved.relatedVideos.map { item ->
-                    HomeVideo(
-                        videoId = item.videoId,
-                        title = item.title,
-                        url = item.url,
-                        thumbnailUrl = item.thumbnailUrl,
-                        channelTitle = item.channelTitle,
-                        durationText = formatDurationLabel(item.durationSeconds),
-                        watchedAt = 0L
-                    )
-                }.distinctBy { it.videoId }.take(30)
-                if (suggestions.isNotEmpty()) {
-                    _homeSuggestions.value = suggestions
-                    saveHomeVideos("home_suggestions_json", suggestions)
+    private fun detectHomeCountry(): String {
+        val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        return HomeFeedPolicy.country(
+            runCatching { telephony?.networkCountryIso }.getOrNull(),
+            runCatching { telephony?.simCountryIso }.getOrNull(),
+            Locale.getDefault().country
+        )
+    }
+
+    fun refreshHomeFeed(accessToken: String?, force: Boolean = false) {
+        val current = _settings.value
+        val now = System.currentTimeMillis()
+        val region = detectHomeCountry()
+        _homeCountry.value = region
+        val seed = _watchHistory.value.firstOrNull()?.url
+        if (current.homeSuggestionsEnabled && seed != null && homeSuggestionsJob?.isActive != true &&
+            (seed != prefs.getString("home_suggestions_seed", null) || HomeFeedPolicy.shouldRefresh(
+                true, now, prefs.getLong("home_suggestions_updated", 0L), force))) {
+            homeSuggestionsJob = scope.launch {
+                try {
+                    val items = YoutubeWatchNextClient.resolve(seed, YoutubeUrls.videoId(seed)!!).relatedVideos
+                    ensureActive()
+                    if (!_settings.value.homeSuggestionsEnabled) return@launch
+                    _homeSuggestions.value = items.distinctBy { it.videoId }.take(12).map { item ->
+                        HomeVideo(item.videoId, item.title, "https://www.youtube.com/watch?v=${item.videoId}",
+                            item.thumbnailUrl, item.uploader, formatDurationLabel(item.durationSeconds), 0L)
+                    }
+                    saveHomeVideos("home_suggestions_json", _homeSuggestions.value)
+                    prefs.edit().putString("home_suggestions_seed", seed)
+                        .putLong("home_suggestions_updated", now).apply()
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    // Back off failed requests too, retaining a useful cached shelf.
+                    prefs.edit().putLong("home_suggestions_updated", now).putString("home_suggestions_seed", seed).apply()
                 }
+            }
+        }
+        if (!current.homeTrendingEnabled) return
+        val cacheKey = "home_trending_$region"
+        if (_homeTrending.value.isEmpty() || region != prefs.getString("home_trending_region", null)) {
+            _homeTrending.value = loadHomeVideos(cacheKey)
+        }
+        if (accessToken.isNullOrBlank()) {
+            _homeTrendingStatus.value = "Connect YouTube"
+            return
+        }
+        if (homeTrendingJob?.isActive == true || !HomeFeedPolicy.shouldRefresh(
+                true, now, prefs.getLong("${cacheKey}_updated", 0L), force)) return
+        homeTrendingJob = scope.launch {
+            _homeTrendingStatus.value = "Loading"
+            try {
+                val items = YoutubeHomeFeedClient.trending(accessToken, region)
+                ensureActive()
+                if (!_settings.value.homeTrendingEnabled) return@launch
+                _homeTrending.value = items
+                saveHomeVideos(cacheKey, items)
+                prefs.edit().putLong("${cacheKey}_updated", now).putString("home_trending_region", region).apply()
+                _homeTrendingStatus.value = ""
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (_: Throwable) {
-                // Keep the last cached recommendation shelf when YouTube extraction is unavailable.
+            } catch (_: Exception) {
+                prefs.edit().putLong("${cacheKey}_updated", now).apply()
+                _homeTrendingStatus.value = "Retry"
             }
         }
     }
@@ -694,6 +752,51 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
     }.getOrDefault(emptyList())
 
+    fun copyFilesToClipboard(ids: Set<String>, move: Boolean = false) {
+        _fileClipboard.value = FileClipboard(ids.intersect(_offlineMediaList.value.mapTo(mutableSetOf()) { it.id }), move)
+    }
+
+    suspend fun transferOfflineFiles(ids: Set<String>, destination: Uri, move: Boolean): FileOperationResult = withContext(Dispatchers.IO) {
+        val sources = synchronized(lock) { _offlineMediaList.value.filter { it.id in ids } }
+        var succeeded = 0
+        var failed = ids.size - sources.size
+        var detail = ""
+        for (source in sources) {
+            ensureActive()
+            try {
+                val transferred = DownloadedFileManager.transfer(context, source, destination, move)
+                synchronized(lock) {
+                    val retained = if (move) _offlineMediaList.value.filterNot { it.id == source.id } else _offlineMediaList.value
+                    _offlineMediaList.value = retained + transferred
+                    saveOfflineMedia(_offlineMediaList.value)
+                }
+                succeeded++
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                failed++
+                detail = error.message ?: "File unavailable"
+            }
+        }
+        if (move && failed == 0 && _fileClipboard.value?.ids == ids) _fileClipboard.value = null
+        FileOperationResult(succeeded, failed, detail)
+    }
+
+    suspend fun deleteOfflineFiles(ids: Set<String>): FileOperationResult = withContext(Dispatchers.IO) {
+        var succeeded = 0
+        ids.forEach { id ->
+            val source = synchronized(lock) { _offlineMediaList.value.firstOrNull { it.id == id } }
+            if (source != null && runCatching { MediaDownloader.deleteOutput(context, source) }.getOrDefault(false)) {
+                synchronized(lock) {
+                    _offlineMediaList.value = _offlineMediaList.value.filterNot { it.id == id }
+                    saveOfflineMedia(_offlineMediaList.value)
+                }
+                succeeded++
+            }
+        }
+        FileOperationResult(succeeded, ids.size - succeeded, "")
+    }
+
     fun deleteOfflineMedia(id: String) {
         synchronized(lock) {
             val media = _offlineMediaList.value.firstOrNull { it.id == id } ?: return
@@ -815,3 +918,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 }
 
+
+data class FileClipboard(val ids: Set<String>, val move: Boolean)
+data class FileOperationResult(val succeeded: Int, val failed: Int, val detail: String)

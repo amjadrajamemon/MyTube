@@ -49,7 +49,12 @@ fun DownloadsScreen(
     onDeleteAllTasks: () -> Unit,
     onClearFinished: () -> Unit,
     onClearHistory: () -> Unit,
-    onDeleteOfflineMedia: (String) -> Unit,
+    clipboardCount: Int,
+    fileOperationBusy: Boolean,
+    onCopyFiles: (Set<String>, Boolean) -> Unit,
+    onPasteFiles: () -> Unit,
+    onMoveFiles: (Set<String>) -> Unit,
+    onDeleteFiles: (Set<String>) -> Unit,
     onPlayMedia: (OfflineMedia) -> Unit,
     onCustomDownload: (String) -> Unit,
     onClose: () -> Unit,
@@ -62,6 +67,11 @@ fun DownloadsScreen(
     var selectedTaskIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteSelected by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmDeleteFiles by remember { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(offlineMediaList) {
+        selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
+    }
 
     LaunchedEffect(downloadQueue) {
         val validIds = downloadQueue.mapTo(mutableSetOf()) { it.id }
@@ -206,6 +216,15 @@ fun DownloadsScreen(
                             }
                             matchesType
                         }
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { selectedFileIds = if (selectedFileIds.containsAll(filteredList.map { it.id })) emptySet() else filteredList.mapTo(mutableSetOf()) { it.id } }, enabled = !fileOperationBusy && filteredList.isNotEmpty()) { Text("Select all") }
+                            TextButton(onClick = { onCopyFiles(selectedFileIds, false) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Copy") }
+                            TextButton(onClick = { onCopyFiles(selectedFileIds, true) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Cut") }
+                            TextButton(onClick = onPasteFiles, enabled = !fileOperationBusy && clipboardCount > 0) { Text("Paste ($clipboardCount)") }
+                            TextButton(onClick = { onMoveFiles(selectedFileIds) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Move") }
+                            TextButton(onClick = { confirmDeleteFiles = selectedFileIds }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Delete", color = TubeDeckError) }
+                        }
+                        if (fileOperationBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (filteredList.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text("No media found", color = TubeDeckTextSecondary)
@@ -217,7 +236,15 @@ fun DownloadsScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 items(filteredList) { media ->
-                                    OfflineMediaCard(media = media, onPlay = { onPlayMedia(media) }, onDelete = { onDeleteOfflineMedia(media.id) })
+                                    OfflineMediaCard(
+                                        media = media, selected = media.id in selectedFileIds, enabled = !fileOperationBusy,
+                                        onSelectedChange = { selectedFileIds = if (it) selectedFileIds + media.id else selectedFileIds - media.id },
+                                        onPlay = { onPlayMedia(media) },
+                                        onCopy = { onCopyFiles(setOf(media.id), false) },
+                                        onCut = { onCopyFiles(setOf(media.id), true) },
+                                        onMove = { onMoveFiles(setOf(media.id)) },
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                    )
                                 }
                             }
                         }
@@ -416,6 +443,17 @@ fun DownloadsScreen(
         )
     }
 
+    if (confirmDeleteFiles.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteFiles = emptySet() },
+            title = { Text("Delete ${confirmDeleteFiles.size} files?") },
+            confirmButton = { TextButton(onClick = {
+                onDeleteFiles(confirmDeleteFiles)
+                confirmDeleteFiles = emptySet()
+            }) { Text("Delete", color = TubeDeckError) } },
+            dismissButton = { TextButton(onClick = { confirmDeleteFiles = emptySet() }) { Text("Cancel") } }
+        )
+    }
     if (confirmDeleteAll) {
         AlertDialog(
             onDismissRequest = { confirmDeleteAll = false },
@@ -436,7 +474,9 @@ fun DownloadsScreen(
     }
 }
 @Composable
-fun OfflineMediaCard(media: OfflineMedia, onPlay: () -> Unit, onDelete: () -> Unit) {
+fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, onSelectedChange: (Boolean) -> Unit,
+                     onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).clickable { onPlay() },
         color = TubeDeckSurfaceVariant
@@ -452,7 +492,16 @@ fun OfflineMediaCard(media: OfflineMedia, onPlay: () -> Unit, onDelete: () -> Un
             Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(media.qualityLabel, fontSize = 10.sp, color = TubeDeckTextSecondary)
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.DeleteOutline, null, tint = TubeDeckTextSecondary, modifier = Modifier.size(16.dp)) }
+                Checkbox(checked = selected, onCheckedChange = onSelectedChange, enabled = enabled, modifier = Modifier.size(32.dp))
+                Box {
+                    IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "File actions", tint = TubeDeckTextSecondary) }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Copy") }, onClick = { menuOpen = false; onCopy() })
+                        DropdownMenuItem(text = { Text("Cut") }, onClick = { menuOpen = false; onCut() })
+                        DropdownMenuItem(text = { Text("Move") }, onClick = { menuOpen = false; onMove() })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
+                    }
+                }
             }
         }
     }
@@ -572,3 +621,4 @@ fun HistoryItemCard(item: DownloadTask) {
         }
     }
 }
+

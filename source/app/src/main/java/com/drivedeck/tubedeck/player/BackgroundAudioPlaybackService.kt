@@ -109,7 +109,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying && startupPending) {
                         startupPending = false
-                        BackgroundAudioController.markStarted(sourceUrl)
+                        BackgroundAudioController.markStarted(sourceUrl, currentTitle, currentArtwork)
                         BackgroundAudioController.markPosition(sourceUrl, player.currentPosition)
                         BackgroundAudioController.startup.ready(requestId)
                     }
@@ -275,7 +275,9 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
 data class BackgroundAudioSnapshot(
     val sourceUrl: String,
-    val positionMs: Long
+    val positionMs: Long,
+    val title: String = "Now Playing",
+    val artworkUrl: String = ""
 )
 
 object BackgroundAudioController {
@@ -284,8 +286,12 @@ object BackgroundAudioController {
     private var activeSourceUrl: String? = null
     @Volatile
     private var activePositionMs: Long = 0L
+    private var activeTitle = "Now Playing"
+    private var activeArtwork = ""
 
-    internal fun markStarted(sourceUrl: String) {
+    internal fun markStarted(sourceUrl: String, title: String, artworkUrl: String?) {
+        activeTitle = title
+        activeArtwork = artworkUrl.orEmpty()
         activeSourceUrl = sourceUrl.takeIf { it.isNotBlank() }
         activePositionMs = 0L
     }
@@ -307,7 +313,7 @@ object BackgroundAudioController {
 
     fun snapshot(): BackgroundAudioSnapshot? =
         activeSourceUrl?.takeIf { it.isNotBlank() }?.let {
-            BackgroundAudioSnapshot(it, activePositionMs.coerceAtLeast(0L))
+            BackgroundAudioSnapshot(it, activePositionMs.coerceAtLeast(0L), activeTitle, activeArtwork)
         }
 
     fun takeSnapshotAndStop(context: Context): BackgroundAudioSnapshot? {

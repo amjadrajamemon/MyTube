@@ -20,6 +20,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -390,7 +392,8 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
                 key(media.id) {
                 PlayerScreen(
                     media = media,
@@ -482,6 +485,7 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
 
+                }
                 if (showPlaybackExitChoices && !isPipMode) {
                     PlaybackBackChoiceOverlay(
                         onCloseVideo = {
@@ -502,7 +506,7 @@ class NativePlayerActivity : ComponentActivity() {
                             playbackBackCoordinator.onChooserDismissed()
                         },
                         pipLabel = "Keep PiP",
-                        modifier = Modifier.align(Alignment.BottomCenter).zIndex(100f)
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                 }
 
@@ -715,6 +719,7 @@ class NativePlayerActivity : ComponentActivity() {
                 playerActive = false
                 NativePipSessionBridge.clear(playbackSessionId)
                 PlaybackSessionRegistry.close(playbackSessionId)
+                moveTaskToBack(true)
                 finish()
             }.onFailure {
                 Toast.makeText(

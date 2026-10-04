@@ -861,8 +861,11 @@ class MainActivity : ComponentActivity() {
                                     clipboardCount = fileClipboard?.ids?.size ?: 0,
                                     fileOperationBusy = fileOperationBusy,
                                     onCopyFiles = { ids, move ->
+                                        val request = FileClipboard(ids, move)
                                         repository.copyFilesToClipboard(ids, move)
-                                        Toast.makeText(this@MainActivity, "${ids.size} files ready to paste", Toast.LENGTH_SHORT).show()
+                                        // Copy/Cut is immediately followed by Android's folder browser so the
+                                        // user can choose internal storage, SD card or USB destination directly.
+                                        chooseFileDestination(request)
                                     },
                                     onPasteFiles = { fileClipboard?.let { chooseFileDestination(it) } },
                                     onMoveFiles = { chooseFileDestination(FileClipboard(it, true)) },

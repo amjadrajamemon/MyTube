@@ -456,6 +456,7 @@ fun NativeExoPlayer(
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
     var autoStableSamples by remember(media.id) { mutableIntStateOf(0) }
+    var autoUpgradeCount by remember(media.id) { mutableIntStateOf(0) }
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
@@ -833,18 +834,25 @@ fun NativeExoPlayer(
 
             val urgentDownshift = recommended < current &&
                 (bufferedAheadMs < 8_000L || exoPlayer.playbackState == Player.STATE_BUFFERING)
-            val stableUpgrade = recommended > current && bufferedAheadMs >= 20_000L
+            val stableUpgrade =
+                autoUpgradeCount < 1 &&
+                    recommended > current &&
+                    bufferedAheadMs >= 30_000L &&
+                    exoPlayer.isPlaying
 
             if (stableUpgrade) autoStableSamples += 1 else autoStableSamples = 0
 
-            val canSwitch = now - lastAutoSwitchMs >= 12_000L
-            if (canSwitch && (urgentDownshift || autoStableSamples >= 3)) {
+            val canSwitch = now - lastAutoSwitchMs >= 15_000L
+            val upgradeReady = autoStableSamples >= 6
+            if (canSwitch && (urgentDownshift || upgradeReady)) {
+                val isUpgrade = recommended > current
                 loadResolvedStream(
                     sourceMedia = source,
                     requestedHeight = recommended,
                     autoSelected = true,
                     preservePosition = true
                 )
+                if (isUpgrade) autoUpgradeCount += 1
                 lastAutoSwitchMs = now
                 autoStableSamples = 0
             }

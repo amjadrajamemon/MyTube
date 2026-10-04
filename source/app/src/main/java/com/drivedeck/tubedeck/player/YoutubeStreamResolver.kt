@@ -313,6 +313,26 @@ object YoutubeStreamResolver {
             ?: media.progressiveUrl
             ?: media.options.firstOrNull()?.videoUrl
 
+    /**
+     * Returning from audio-only is a continuation, not a fresh open. Promote a recent handoff
+     * entry back into the normal five-minute cache so the video can recreate Media3 immediately.
+     * Any genuinely expired CDN URL is still covered by the player's forced-refresh recovery.
+     */
+    fun promoteForHandoffResume(url: String, maxAgeMs: Long = 30 * 60 * 1000L): Boolean {
+        if (YoutubeUrls.videoId(url) == null) return false
+        val key = resolutionKey(url)
+        val now = android.os.SystemClock.elapsedRealtime()
+        return synchronized(resolutionLock) {
+            val cached = resolutionCache[key] ?: return@synchronized false
+            if (now - cached.cachedAtMs > maxAgeMs) {
+                false
+            } else {
+                resolutionCache[key] = cached.copy(cachedAtMs = now)
+                true
+            }
+        }
+    }
+
     fun invalidate(url: String) {
         val key = resolutionKey(url)
         synchronized(resolutionLock) {

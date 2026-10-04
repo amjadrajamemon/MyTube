@@ -45,6 +45,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <receiver
+            android:name=".player.PlaybackPipActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".player.BackgroundAudioPlaybackService"
             android:exported="false"

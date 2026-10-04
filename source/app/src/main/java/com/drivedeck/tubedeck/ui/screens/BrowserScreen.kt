@@ -43,6 +43,7 @@ fun BrowserScreen(
     webViewRef: (WebView?) -> Unit,
     onPlaybackStateChanged: (isPlaying: Boolean, positionMs: Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
+    isActive: Boolean = true,
     onFullscreenChanged: (Boolean) -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -54,6 +55,7 @@ fun BrowserScreen(
     val currentOnAdBlocked by rememberUpdatedState(onAdBlocked)
     val currentOnPlaybackStateChanged by rememberUpdatedState(onPlaybackStateChanged)
     val currentSettings by rememberUpdatedState(settings)
+    val currentIsActive by rememberUpdatedState(isActive)
     val latestUrl by rememberUpdatedState(currentUrl)
     var lastObservedVideoId by remember { mutableStateOf<String?>(null) }
     var lastNativeRequestAt by remember { mutableLongStateOf(0L) }
@@ -281,6 +283,22 @@ fun BrowserScreen(
         }
     }
 
+    // Keep this WebView/session alive while other MyTube screens are shown. Pausing the view
+    // preserves DOM, scroll position, SPA history and search results without letting hidden media
+    // continue playing underneath another screen.
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            persistentWebView.onResume()
+        } else {
+            persistentWebView.evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                null
+            )
+            persistentWebView.onPause()
+            currentOnPlaybackStateChanged(false, 0L)
+        }
+    }
+
     LaunchedEffect(tubeDeckInjectedScript) {
         if (persistentWebView.url?.let { YoutubeUrls.isYoutubePage(it) } == true) {
             persistentWebView.evaluateJavascript(tubeDeckInjectedScript, null)
@@ -290,7 +308,10 @@ fun BrowserScreen(
     LaunchedEffect(persistentWebView, lifecycleOwner) {
         while (true) {
             delay(1500)
-            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (
+                !currentIsActive ||
+                !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            ) {
                 continue
             }
             persistentWebView.evaluateJavascript("location.href") { result ->
@@ -319,6 +340,8 @@ fun BrowserScreen(
     }
 
     LaunchedEffect(currentUrl) {
+        // currentUrl is the single authoritative external navigation input. WebView callbacks
+        // update state after navigation but must never cause a second load of the same page.
         if (persistentWebView.url != currentUrl && currentUrl.startsWith("https://")) {
             persistentWebView.loadUrl(currentUrl)
         }

@@ -767,6 +767,7 @@ class MainActivity : ComponentActivity() {
                                     onSearchQueryChange = { deckSearchQuery = it },
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
+                                            repository.recordSearch(query)
                                             val destination = if (currentScreen == ActiveScreen.MIXES) {
                                                 "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8") + "&sp=EgIQAw%253D%253D"
                                             } else {

@@ -540,7 +540,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
                 outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM",
                 createdAt = now, sessionId = sessionId, eventAt = now
-            ).also { setQueue(_downloadQueue.value + it) }
+            ).also { newTask ->
+                val retained = _downloadQueue.value.filterNot {
+                    it.status == TaskStatus.COMPLETED && it.sessionId != sessionId
+                }
+                setQueue(retained + newTask)
+            }
         }
         processQueue()
         return task.id
@@ -562,7 +567,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     createdAt = now, sessionId = sessionId, eventAt = now
                 )
             }.also { newTasks ->
-                if (newTasks.isNotEmpty()) setQueue(_downloadQueue.value + newTasks)
+                if (newTasks.isNotEmpty()) {
+                    val retained = _downloadQueue.value.filterNot {
+                        it.status == TaskStatus.COMPLETED && it.sessionId != sessionId
+                    }
+                    setQueue(retained + newTasks)
+                }
             }
         }
         if (tasks.isEmpty()) return

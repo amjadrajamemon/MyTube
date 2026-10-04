@@ -2008,11 +2008,13 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (resolveError == null && !playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
+                    if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            // This companion panel exists only below the compact portrait player,
+                            // whose center Play/Pause outer diameter is exactly 52 dp.
                             CircularProgressIndicator(
-                                modifier = Modifier.size(centerControlDiameter),
-                                strokeWidth = if (compactPortrait) 4.dp else 5.dp,
+                                modifier = Modifier.size(52.dp),
+                                strokeWidth = 4.dp,
                                 color = TubeDeckAccentCyan,
                                 trackColor = Color.White.copy(alpha = .26f)
                             )

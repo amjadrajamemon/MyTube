@@ -295,6 +295,186 @@ object YoutubeStreamResolver {
     private fun resolutionKey(url: String): String =
         YoutubeUrls.videoId(url) ?: url
 
+    /**
+     * Offline downloads deliberately prefer the bundled Download Engine. Playback keeps the
+     * faster NewPipe path, while downloads get yt-dlp's frequently updated YouTube extraction.
+     * If the installed engine has become stale, update it once and retry before falling back.
+     */
+    suspend fun resolveForDownload(context: Context, url: String): ResolvedMedia =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
+            val app = context.applicationContext
+
+            val firstAttempt = runCatching { resolveWithDownloadEngine(app, url) }
+            firstAttempt.getOrNull()?.let { return@withContext it }
+
+            // A YouTube extractor change commonly presents as a sudden download failure.
+            // Refresh the stable yt-dlp payload once, then retry with the new engine.
+            YtDlpUpdateManager.updateNow(app)
+
+            val secondAttempt = runCatching { resolveWithDownloadEngine(app, url) }
+            secondAttempt.getOrNull()?.let { return@withContext it }
+
+            // Keep NewPipe as a genuine independent fallback rather than a single point of failure.
+            runCatching { resolve(app, url, forceRefresh = true) }.getOrElse { extractorError ->
+                val engineError = secondAttempt.exceptionOrNull() ?: firstAttempt.exceptionOrNull()
+                throw IOException(
+                    listOfNotNull(
+                        "Could not resolve downloadable media",
+                        engineError?.message?.takeIf { it.isNotBlank() }?.let { "Download Engine: " + it },
+                        extractorError.message?.takeIf { it.isNotBlank() }?.let { "Extractor: " + it }
+                    ).joinToString(" • "),
+                    engineError ?: extractorError
+                )
+            }
+        }
+
+    private suspend fun resolveWithDownloadEngine(context: Context, url: String): ResolvedMedia {
+        YtDlpUpdateManager.ensureInitialized(context)
+
+        val request = YoutubeDLRequest(url)
+            .addOption("--dump-single-json")
+            .addOption("--no-playlist")
+            .addOption("--no-warnings")
+
+        val response = YoutubeDL.execute(request)
+        val output = response.out.trim()
+        if (output.isBlank()) throw IOException("Download Engine returned no media data")
+
+        val root = JSONObject(output)
+        val formats = root.optJSONArray("formats")
+            ?: throw IOException("Download Engine returned no formats")
+
+        val progressive = mutableListOf<VideoOption>()
+        val videoOnly = mutableListOf<VideoOption>()
+        val audioOptions = mutableListOf<AudioOption>()
+
+        for (index in 0 until formats.length()) {
+            currentCoroutineContext().ensureActive()
+            val item = formats.optJSONObject(index) ?: continue
+            val mediaUrl = item.optString("url").trim()
+            if (!mediaUrl.startsWith("https://")) continue
+
+            val vcodec = item.optString("vcodec", "none")
+            val acodec = item.optString("acodec", "none")
+            val hasVideo = vcodec.isNotBlank() && !vcodec.equals("none", ignoreCase = true)
+            val hasAudio = acodec.isNotBlank() && !acodec.equals("none", ignoreCase = true)
+            val ext = item.optString("ext").lowercase(Locale.US)
+
+            if (hasVideo) {
+                val height = item.optInt("height", 0)
+                if (height <= 0) continue
+                val videoMime = when (ext) {
+                    "mp4", "m4v" -> "video/mp4"
+                    "webm" -> "video/webm"
+                    else -> null
+                } ?: continue
+                val option = VideoOption(
+                    label = "${height}p",
+                    height = height,
+                    videoUrl = mediaUrl,
+                    audioUrl = null,
+                    videoMimeType = videoMime,
+                    audioMimeType = null
+                )
+                if (hasAudio) progressive += option else videoOnly += option
+            } else if (hasAudio) {
+                val audioMime = when (ext) {
+                    "m4a", "mp4" -> "audio/mp4"
+                    "webm" -> "audio/webm"
+                    else -> null
+                } ?: continue
+                val bitrate = item.optDouble(
+                    "abr",
+                    item.optDouble("tbr", 0.0)
+                ).toInt().coerceAtLeast(0)
+                audioOptions += AudioOption(
+                    url = mediaUrl,
+                    mimeType = audioMime,
+                    bitrate = bitrate
+                )
+            }
+        }
+
+        val distinctAudio = audioOptions
+            .distinctBy { it.url }
+            .sortedByDescending { it.bitrate }
+
+        val adaptive = videoOnly.map { video ->
+            val preferredAudioMime = when (video.videoMimeType) {
+                "video/mp4" -> "audio/mp4"
+                "video/webm" -> "audio/webm"
+                else -> null
+            }
+            val audio = distinctAudio.firstOrNull { it.mimeType == preferredAudioMime }
+                ?: distinctAudio.firstOrNull()
+            video.copy(
+                audioUrl = audio?.url,
+                audioMimeType = audio?.mimeType
+            )
+        }
+
+        val allVideoOptions = (progressive + adaptive)
+            .groupBy { it.height }
+            .mapNotNull { (_, candidates) ->
+                candidates.firstOrNull { it.audioUrl == null }
+                    ?: candidates.firstOrNull { it.audioUrl != null }
+            }
+            .sortedByDescending { it.height }
+
+        val downloadOptions = (progressive + adaptive.filter { it.audioUrl != null })
+            .groupBy { it.height }
+            .mapNotNull { (_, candidates) ->
+                candidates.minWithOrNull(
+                    compareBy<VideoOption> { if (it.audioUrl == null) 0 else 1 }
+                        .thenBy { if (it.videoMimeType == "video/mp4") 0 else 1 }
+                )
+            }
+            .sortedByDescending { it.height }
+
+        if (downloadOptions.isEmpty() && distinctAudio.isEmpty()) {
+            throw IOException("Download Engine found no downloadable streams")
+        }
+
+        val chapters = buildList {
+            val values = root.optJSONArray("chapters") ?: return@buildList
+            for (index in 0 until values.length()) {
+                val item = values.optJSONObject(index) ?: continue
+                val title = item.optString("title").trim()
+                val start = item.optDouble("start_time", -1.0).toInt()
+                if (title.isNotBlank() && start >= 0) {
+                    add(Chapter(title, start, null))
+                }
+            }
+        }
+
+        val bestProgressive = progressive.maxByOrNull { it.height }
+        return ResolvedMedia(
+            title = root.optString("title").ifBlank { "YouTube video" },
+            description = root.optString("description"),
+            descriptionIsHtml = false,
+            uploaderName = root.optString("uploader")
+                .ifBlank { root.optString("channel") }
+                .ifBlank { "YouTube" },
+            viewCount = root.optLong("view_count", 0L),
+            uploadDateText = root.optString("upload_date"),
+            durationSeconds = root.optDouble("duration", 0.0).toLong().coerceAtLeast(0L),
+            progressiveUrl = bestProgressive?.videoUrl,
+            progressiveMimeType = bestProgressive?.videoMimeType,
+            progressiveOptions = progressive
+                .filter { it.videoMimeType == "video/mp4" }
+                .distinctBy { it.height }
+                .sortedByDescending { it.height },
+            downloadOptions = downloadOptions,
+            audioOptions = distinctAudio,
+            options = allVideoOptions,
+            subtitles = emptyList(),
+            chapters = chapters,
+            previewStoryboard = null,
+            relatedVideos = emptyList()
+        )
+    }
+
     private suspend fun resolveUncached(url: String): ResolvedMedia =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             ensureInitialized()

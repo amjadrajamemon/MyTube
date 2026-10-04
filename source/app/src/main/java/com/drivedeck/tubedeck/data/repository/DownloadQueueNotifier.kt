@@ -59,21 +59,24 @@ internal object DownloadQueueNotifier {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (manager != null) createChannel(manager)
 
-        val active = tasks.count { it.status == TaskStatus.DOWNLOADING }
-        val queued = tasks.count { it.status == TaskStatus.QUEUED }
-        val finished = tasks.count { it.status == TaskStatus.COMPLETED }
-        val paused = tasks.count { it.status == TaskStatus.PAUSED }
-        val failed = tasks.count { it.status == TaskStatus.FAILED }
-        val retrying = tasks.count {
-            it.retryCount > 0 &&
-                (it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED)
-        }
-        val retriedTasks = tasks.count { it.retryCount > 0 }
-        val totalRetryAttempts = tasks.sumOf { it.retryCount }
+        val sessionTasks = DownloadQueuePolicy.currentSessionTasks(tasks)
+        val active = sessionTasks.count { it.status == TaskStatus.DOWNLOADING }
+        val queued = sessionTasks.count { it.status == TaskStatus.QUEUED }
+        val finished = sessionTasks.count { it.status == TaskStatus.COMPLETED }
+        val paused = sessionTasks.count { it.status == TaskStatus.PAUSED }
+        val failed = sessionTasks.count { it.status == TaskStatus.FAILED }
+        val retriedTasks = sessionTasks.count { it.retryCount > 0 }
 
-        val known = tasks.filter { it.totalBytes > 0L }
-        val totalBytes = known.sumOf { it.totalBytes }
-        val downloadedBytes = known.sumOf { task ->
+        val knownPending = sessionTasks.filter {
+            it.totalBytes > 0L &&
+                (
+                    it.status == TaskStatus.DOWNLOADING ||
+                        it.status == TaskStatus.QUEUED ||
+                        it.status == TaskStatus.PAUSED
+                )
+        }
+        val totalBytes = knownPending.sumOf { it.totalBytes }
+        val downloadedBytes = knownPending.sumOf { task ->
             task.downloadedBytes.coerceIn(0L, task.totalBytes)
         }
         val progressPercent = if (totalBytes > 0L) {
@@ -84,18 +87,14 @@ internal object DownloadQueueNotifier {
             0
         }
 
-        val elapsedStart = tasks
-            .filter { it.status != TaskStatus.COMPLETED }
-            .minOfOrNull { it.createdAt }
-            ?: tasks.minOfOrNull { it.createdAt }
-            ?: now
+        val elapsedStart = sessionTasks.minOfOrNull { it.createdAt } ?: now
         val elapsed = (now - elapsedStart).coerceAtLeast(0L)
 
-        val bytesPerSecond = tasks
+        val bytesPerSecond = sessionTasks
             .filter { it.status == TaskStatus.DOWNLOADING }
             .sumOf { parseBytesPerSecond(it.speed) }
 
-        val remainingKnownBytes = known.sumOf { task ->
+        val remainingKnownBytes = knownPending.sumOf { task ->
             (task.totalBytes - task.downloadedBytes).coerceAtLeast(0L)
         }
         val etaMillis = if (bytesPerSecond > 1.0 && remainingKnownBytes > 0L) {

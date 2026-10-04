@@ -904,7 +904,9 @@ class NativePlayerActivity : ComponentActivity() {
         foregroundPlaybackAllowed = false
         NativePipSessionBridge.clear(playbackSessionId)
         PlaybackSessionRegistry.close(playbackSessionId)
-        YoutubeStreamResolver.invalidate(url)
+        // Preserve the resolved native stream metadata. Switching presentation hosts is not a
+        // stream failure; if the user switches back to Native shortly afterward, reuse the cache.
+        YoutubeStreamResolver.promoteForHandoffResume(url)
 
         val resumeUrl = YoutubeUrls.withStartPosition(
             url,

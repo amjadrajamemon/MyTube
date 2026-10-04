@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -349,6 +350,7 @@ class MainActivity : ComponentActivity() {
                 var browserSessionCreated by rememberSaveable {
                     mutableStateOf(currentScreen == ActiveScreen.BROWSER)
                 }
+                val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
                     NavigationCoordinator(
                         NavigationEntry(
@@ -833,6 +835,7 @@ class MainActivity : ComponentActivity() {
                                     onFullscreenChanged = { isBrowserFullscreen = it }
                                 )
                         }
+                        screenStateHolder.SaveableStateProvider(currentScreen.name) {
                         when (currentScreen) {
                             ActiveScreen.HOME, ActiveScreen.MIXES -> {
                                 DriveDeckScreen(
@@ -1008,6 +1011,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
+                        }
                         }
 
                         if (showDownloadModal) {

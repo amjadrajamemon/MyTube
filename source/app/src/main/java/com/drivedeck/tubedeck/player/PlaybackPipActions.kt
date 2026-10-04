@@ -44,9 +44,11 @@ internal object PlaybackPipActions {
             actionIntent(context, ACTION_CLOSE, 7102)
         )
 
+        // Android already renders the PiP close/X affordance. Do not also place our
+        // Close RemoteAction in the action row, otherwise users see two close symbols.
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(aspectRatio)
-            .setActions(listOf(keepAction, audioAction, closeAction))
+            .setActions(listOf(keepAction, audioAction))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(false)

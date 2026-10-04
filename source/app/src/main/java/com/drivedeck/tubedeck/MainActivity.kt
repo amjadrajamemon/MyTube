@@ -350,6 +350,7 @@ class MainActivity : ComponentActivity() {
                 var browserSessionCreated by rememberSaveable {
                     mutableStateOf(currentScreen == ActiveScreen.BROWSER)
                 }
+                var browserHistoryResetGeneration by rememberSaveable { mutableIntStateOf(0) }
                 val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
                     NavigationCoordinator(
@@ -588,6 +589,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         } else {
+                            browserHistoryResetGeneration += 1
                             navigateTo(ActiveScreen.BROWSER, it)
                         }
                         inboundUrl = null
@@ -827,6 +829,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     isActive = currentScreen == ActiveScreen.BROWSER,
+                                    historyResetGeneration = browserHistoryResetGeneration,
                                     modifier = if (currentScreen == ActiveScreen.BROWSER) {
                                         Modifier.fillMaxSize()
                                     } else {
@@ -844,6 +847,7 @@ class MainActivity : ComponentActivity() {
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
                                             repository.recordSearch(query)
+                                            browserHistoryResetGeneration += 1
                                             val destination = YoutubeSearchPolicy.buildSearchUrl(
                                                 query = query,
                                                 playlistOnly = currentScreen == ActiveScreen.MIXES

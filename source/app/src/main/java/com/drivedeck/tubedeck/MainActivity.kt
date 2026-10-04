@@ -346,6 +346,9 @@ class MainActivity : ComponentActivity() {
                 // inserted into NavigationCoordinator history.
                 var browserReturnUrl by rememberSaveable { mutableStateOf("https://www.youtube.com/") }
                 var deckSearchQuery by rememberSaveable { mutableStateOf("") }
+                var browserSessionCreated by rememberSaveable {
+                    mutableStateOf(currentScreen == ActiveScreen.BROWSER)
+                }
                 val navigation = remember {
                     NavigationCoordinator(
                         NavigationEntry(
@@ -368,6 +371,7 @@ class MainActivity : ComponentActivity() {
                     }
                     currentScreen = entry.screen
                     if (entry.screen == ActiveScreen.BROWSER) {
+                        browserSessionCreated = true
                         entry.browserUrl?.let { url ->
                             currentUrl = url
                             if (repository.extractVideoId(url) == null) browserReturnUrl = url
@@ -630,12 +634,17 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             currentScreen == ActiveScreen.BROWSER -> {
-                                val destination = browserReturnUrl.ifBlank { "https://www.youtube.com/" }
-                                currentUrl = destination
-                                replaceCurrentRoute(ActiveScreen.BROWSER, destination)
-                                webViewInstance?.stopLoading()
-                                if (webViewInstance?.url != destination) {
-                                    webViewInstance?.loadUrl(destination)
+                                val web = webViewInstance
+                                if (web?.canGoBack() == true) {
+                                    // Preserve the actual search page DOM, scroll position and
+                                    // WebView history. Do not synthesize a fresh search request.
+                                    web.goBack()
+                                } else {
+                                    val destination = browserReturnUrl.ifBlank {
+                                        "https://www.youtube.com/"
+                                    }
+                                    currentUrl = destination
+                                    replaceCurrentRoute(ActiveScreen.BROWSER, destination)
                                 }
                             }
                             else -> Unit
@@ -717,7 +726,6 @@ class MainActivity : ComponentActivity() {
                                             YoutubeSearchPolicy.buildSearchUrl(input)
                                         }
                                         navigateTo(ActiveScreen.BROWSER, destination)
-                                        webViewInstance?.loadUrl(destination)
                                     },
                                     onOpenShield = { showAdBlockSheet = true },
                                     onOpenDownloads = {
@@ -764,51 +772,8 @@ class MainActivity : ComponentActivity() {
                             .consumeWindowInsets(contentPadding)
                     ) {
                         Box(Modifier.weight(1f).fillMaxWidth()) {
-                        when (currentScreen) {
-                            ActiveScreen.HOME, ActiveScreen.MIXES -> {
-                                DriveDeckScreen(
-                                    searchQuery = deckSearchQuery,
-                                    onSearchQueryChange = { deckSearchQuery = it },
-                                    onExecuteSearch = { query ->
-                                        if (query.isNotBlank()) {
-                                            repository.recordSearch(query)
-                                            val destination = YoutubeSearchPolicy.buildSearchUrl(
-                                                query = query,
-                                                playlistOnly = currentScreen == ActiveScreen.MIXES
-                                            )
-                                            navigateTo(ActiveScreen.BROWSER, destination)
-                                        }
-                                    },
-                                    onOpenDownloads = {
-                                        downloadsInitialTab = 1
-                                        navigateTo(ActiveScreen.DOWNLOADS)
-                                    },
-                                    googleAccount = googleAccount,
-                                    onGoogleAccountClick = onGoogleAccountClick,
-                                    watchHistory = watchHistory,
-                                    suggestedVideos = homeSuggestions,
-                                    trendingVideos = homeTrending,
-                                    suggestionsEnabled = settings.homeSuggestionsEnabled,
-                                    trendingEnabled = settings.homeTrendingEnabled,
-                                    countryCode = homeCountry,
-                                    trendingStatus = homeTrendingStatus,
-                                    onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
-                                    onOpenVideo = { item ->
-                                        val media = OfflineMedia(
-                                            id = UUID.randomUUID().toString(),
-                                            title = item.title,
-                                            videoId = item.videoId,
-                                            thumbnailUrl = item.thumbnailUrl,
-                                            mediaUri = item.url
-                                        )
-                                        openOnlineMedia(media)
-                                    },
-                                    onClearHistory = { repository.clearWatchHistory() }
-                                )
-                            }
-
-                            ActiveScreen.BROWSER -> {
-                                BrowserScreen(
+                        if (browserSessionCreated) {
+                            BrowserScreen(
                                     currentUrl = currentUrl,
                                     onUrlChanged = {
                                         currentUrl = it
@@ -859,10 +824,59 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     },
+                                    isActive = currentScreen == ActiveScreen.BROWSER,
+                                    modifier = if (currentScreen == ActiveScreen.BROWSER) {
+                                        Modifier.fillMaxSize()
+                                    } else {
+                                        Modifier.size(0.dp)
+                                    },
                                     onFullscreenChanged = { isBrowserFullscreen = it }
+                                )
+                        }
+                        when (currentScreen) {
+                            ActiveScreen.HOME, ActiveScreen.MIXES -> {
+                                DriveDeckScreen(
+                                    searchQuery = deckSearchQuery,
+                                    onSearchQueryChange = { deckSearchQuery = it },
+                                    onExecuteSearch = { query ->
+                                        if (query.isNotBlank()) {
+                                            repository.recordSearch(query)
+                                            val destination = YoutubeSearchPolicy.buildSearchUrl(
+                                                query = query,
+                                                playlistOnly = currentScreen == ActiveScreen.MIXES
+                                            )
+                                            navigateTo(ActiveScreen.BROWSER, destination)
+                                        }
+                                    },
+                                    onOpenDownloads = {
+                                        downloadsInitialTab = 1
+                                        navigateTo(ActiveScreen.DOWNLOADS)
+                                    },
+                                    googleAccount = googleAccount,
+                                    onGoogleAccountClick = onGoogleAccountClick,
+                                    watchHistory = watchHistory,
+                                    suggestedVideos = homeSuggestions,
+                                    trendingVideos = homeTrending,
+                                    suggestionsEnabled = settings.homeSuggestionsEnabled,
+                                    trendingEnabled = settings.homeTrendingEnabled,
+                                    countryCode = homeCountry,
+                                    trendingStatus = homeTrendingStatus,
+                                    onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
+                                    onOpenVideo = { item ->
+                                        val media = OfflineMedia(
+                                            id = UUID.randomUUID().toString(),
+                                            title = item.title,
+                                            videoId = item.videoId,
+                                            thumbnailUrl = item.thumbnailUrl,
+                                            mediaUri = item.url
+                                        )
+                                        openOnlineMedia(media)
+                                    },
+                                    onClearHistory = { repository.clearWatchHistory() }
                                 )
                             }
 
+                            ActiveScreen.BROWSER -> Unit
                             ActiveScreen.DOWNLOADS, ActiveScreen.OFFLINE_VAULT -> {
                                 key(currentScreen) { DownloadsScreen(
                                     downloadQueue = downloadQueue,

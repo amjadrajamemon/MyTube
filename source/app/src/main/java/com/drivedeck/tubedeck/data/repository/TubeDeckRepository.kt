@@ -159,6 +159,44 @@ class TubeDeckRepository private constructor(private val context: Context) {
     fun extractVideoId(url: String): String? = YoutubeUrls.videoId(url)
     fun getVideoThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
+    fun recordSearch(query: String) {
+        val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
+        if (clean.length < 2 || clean.equals("Playlist", ignoreCase = true)) return
+        val current = loadRecentSearches()
+        val next = (listOf(clean) + current.filterNot { it.equals(clean, ignoreCase = true) }).take(8)
+        val array = JSONArray()
+        next.forEach(array::put)
+        prefs.edit()
+            .putString("recent_searches_json", array.toString())
+            .remove("home_suggestions_seed")
+            .putLong("home_suggestions_updated", 0L)
+            .apply()
+    }
+
+    private fun loadRecentSearches(): List<String> = runCatching {
+        val array = JSONArray(prefs.getString("recent_searches_json", "[]"))
+        List(array.length()) { index -> array.optString(index).trim() }
+            .filter { it.length >= 2 }
+            .distinct()
+            .take(8)
+    }.getOrDefault(emptyList())
+
+    private suspend fun publicTrending(region: String, limit: Int = 12): List<HomeVideo> {
+        val countryName = Locale("", region).displayCountry.ifBlank { region }
+        return YoutubeStreamResolver.searchVideos("popular trending videos $countryName", limit)
+            .map { item ->
+                HomeVideo(
+                    videoId = item.videoId,
+                    title = item.title,
+                    url = item.url,
+                    thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
+                    channelTitle = item.channelTitle.ifBlank { "YouTube" },
+                    durationText = formatDurationLabel(item.durationSeconds),
+                    watchedAt = 0L
+                )
+            }
+    }
+
     fun recordWatch(media: OfflineMedia) {
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isBlank() || YoutubeUrls.videoId(media.mediaUri) == null) return
@@ -196,16 +234,33 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val now = System.currentTimeMillis()
         val region = detectHomeCountry()
         _homeCountry.value = region
+
         val interestSeeds = _watchHistory.value
             .asSequence()
             .filter { it.videoId.isNotBlank() && YoutubeUrls.videoId(it.url) != null }
             .distinctBy { it.videoId }
             .take(3)
             .toList()
-        val seedKey = interestSeeds.joinToString("|") { it.videoId }
-        if (current.homeSuggestionsEnabled && interestSeeds.isNotEmpty() && homeSuggestionsJob?.isActive != true &&
-            (seedKey != prefs.getString("home_suggestions_seed", null) || HomeFeedPolicy.shouldRefresh(
-                true, now, prefs.getLong("home_suggestions_updated", 0L), force))) {
+        val recentSearches = loadRecentSearches().take(3)
+        val seedKey = buildString {
+            append(interestSeeds.joinToString("|") { it.videoId })
+            append("::")
+            append(recentSearches.joinToString("|"))
+            append("::").append(region)
+            append(if (accessToken.isNullOrBlank()) "::anon" else "::auth")
+        }
+
+        if (
+            current.homeSuggestionsEnabled &&
+            homeSuggestionsJob?.isActive != true &&
+            (
+                _homeSuggestions.value.isEmpty() ||
+                    seedKey != prefs.getString("home_suggestions_seed", null) ||
+                    HomeFeedPolicy.shouldRefresh(
+                        true, now, prefs.getLong("home_suggestions_updated", 0L), force
+                    )
+            )
+        ) {
             homeSuggestionsJob = scope.launch {
                 try {
                     val suggestions = linkedMapOf<String, HomeVideo>()
@@ -233,30 +288,66 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         )
                     }
 
-                    // Blend several recent interests so Suggested is not tied to only the last video.
                     for (seed in interestSeeds) {
                         ensureActive()
                         val videoId = YoutubeUrls.videoId(seed.url) ?: continue
-
                         runCatching {
                             YoutubeWatchNextClient.resolve(seed.url, videoId).relatedVideos
-                        }.getOrDefault(emptyList()).take(12).forEach { item ->
+                        }.getOrDefault(emptyList()).take(10).forEach { item ->
                             addSuggestion(
                                 item.videoId, item.title, item.thumbnailUrl,
                                 item.uploader, item.durationSeconds
                             )
                         }
-
-                        // Independent fallback when YouTube changes the private Watch Next shape.
                         if (suggestions.size < 24) {
                             runCatching {
                                 YoutubeStreamResolver.resolve(context, seed.url).relatedVideos
-                            }.getOrDefault(emptyList()).take(12).forEach { item ->
+                            }.getOrDefault(emptyList()).take(10).forEach { item ->
                                 addSuggestion(
                                     item.videoId, item.title, item.thumbnailUrl,
                                     item.channelTitle, item.durationSeconds
                                 )
                             }
+                        }
+                    }
+
+                    for (query in recentSearches) {
+                        ensureActive()
+                        runCatching { YoutubeStreamResolver.searchVideos(query, 8) }
+                            .getOrDefault(emptyList())
+                            .forEach { item ->
+                                addSuggestion(
+                                    item.videoId, item.title, item.thumbnailUrl,
+                                    item.channelTitle, item.durationSeconds
+                                )
+                            }
+                        if (suggestions.size >= 24) break
+                    }
+
+                    if (!accessToken.isNullOrBlank() && suggestions.size < 24) {
+                        val channels = runCatching {
+                            YoutubeHomeFeedClient.subscriptionTitles(accessToken)
+                        }.getOrDefault(emptyList())
+                        for (channel in channels.take(3)) {
+                            ensureActive()
+                            runCatching {
+                                YoutubeStreamResolver.searchVideos("$channel latest videos", 6)
+                            }.getOrDefault(emptyList()).forEach { item ->
+                                addSuggestion(
+                                    item.videoId, item.title, item.thumbnailUrl,
+                                    item.channelTitle, item.durationSeconds
+                                )
+                            }
+                            if (suggestions.size >= 24) break
+                        }
+                    }
+
+                    if (suggestions.size < 12) {
+                        publicTrending(region, 18).forEach { item ->
+                            addSuggestion(
+                                item.videoId, item.title, item.thumbnailUrl,
+                                item.channelTitle, 0L
+                            )
                         }
                     }
 
@@ -268,46 +359,63 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         prefs.edit().putString("home_suggestions_seed", seedKey)
                             .putLong("home_suggestions_updated", now).apply()
                     } else {
-                        // Do not cache an empty shelf for 30 minutes. Retry after two minutes.
                         prefs.edit().remove("home_suggestions_seed")
-                            .putLong("home_suggestions_updated", now - HomeFeedPolicy.CACHE_MS + 120_000L)
-                            .apply()
+                            .putLong(
+                                "home_suggestions_updated",
+                                now - HomeFeedPolicy.CACHE_MS + 120_000L
+                            ).apply()
                     }
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {
                     prefs.edit().remove("home_suggestions_seed")
-                        .putLong("home_suggestions_updated", now - HomeFeedPolicy.CACHE_MS + 120_000L)
-                        .apply()
+                        .putLong(
+                            "home_suggestions_updated",
+                            now - HomeFeedPolicy.CACHE_MS + 120_000L
+                        ).apply()
                 }
             }
         }
+
         if (!current.homeTrendingEnabled) return
         val cacheKey = "home_trending_$region"
         if (_homeTrending.value.isEmpty() || region != prefs.getString("home_trending_region", null)) {
             _homeTrending.value = loadHomeVideos(cacheKey)
         }
-        if (accessToken.isNullOrBlank()) {
-            _homeTrendingStatus.value = "Connect YouTube"
-            return
-        }
-        if (homeTrendingJob?.isActive == true || !HomeFeedPolicy.shouldRefresh(
-                true, now, prefs.getLong("${cacheKey}_updated", 0L), force)) return
+        if (
+            homeTrendingJob?.isActive == true ||
+            !HomeFeedPolicy.shouldRefresh(
+                true, now, prefs.getLong("${cacheKey}_updated", 0L), force
+            )
+        ) return
+
         homeTrendingJob = scope.launch {
             _homeTrendingStatus.value = "Loading"
             try {
-                val items = YoutubeHomeFeedClient.trending(accessToken, region)
+                val items = if (!accessToken.isNullOrBlank()) {
+                    runCatching { YoutubeHomeFeedClient.trending(accessToken, region) }
+                        .getOrNull()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: publicTrending(region)
+                } else {
+                    publicTrending(region)
+                }
+                check(items.isNotEmpty()) { "Trending unavailable" }
                 ensureActive()
                 if (!_settings.value.homeTrendingEnabled) return@launch
-                _homeTrending.value = items
-                saveHomeVideos(cacheKey, items)
-                prefs.edit().putLong("${cacheKey}_updated", now).putString("home_trending_region", region).apply()
-                _homeTrendingStatus.value = ""
+                _homeTrending.value = items.take(12)
+                saveHomeVideos(cacheKey, _homeTrending.value)
+                prefs.edit().putLong("${cacheKey}_updated", now)
+                    .putString("home_trending_region", region).apply()
+                _homeTrendingStatus.value = if (accessToken.isNullOrBlank()) "Local" else ""
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (_: Exception) {
-                prefs.edit().putLong("${cacheKey}_updated", now).apply()
                 _homeTrendingStatus.value = "Retry"
+                prefs.edit().putLong(
+                    "${cacheKey}_updated",
+                    now - HomeFeedPolicy.CACHE_MS + 120_000L
+                ).apply()
             }
         }
     }
@@ -392,6 +500,30 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
     }
 
+    private fun currentOrNewSessionIdLocked(now: Long = System.currentTimeMillis()): Long {
+        val activeSession = _downloadQueue.value
+            .filter {
+                it.status == TaskStatus.QUEUED ||
+                    it.status == TaskStatus.DOWNLOADING ||
+                    it.status == TaskStatus.PAUSED
+            }
+            .maxByOrNull { it.createdAt }
+            ?.sessionId
+            ?.takeIf { it > 0L }
+        if (activeSession != null) return activeSession
+
+        val previous = prefs.getLong("download_session_counter", 0L)
+        val next = maxOf(now, previous + 1L)
+        prefs.edit().putLong("download_session_counter", next).apply()
+        return next
+    }
+
+    private fun appendHistoryLocked(task: DownloadTask) {
+        val event = task.copy(eventAt = System.currentTimeMillis())
+        _downloadHistory.value = (listOf(event) + _downloadHistory.value).take(200)
+        saveHistory(_downloadHistory.value)
+    }
+
     fun enqueueDownload(
         url: String, title: String? = null,
         mode: DownloadMode = _settings.value.instantMode,
@@ -399,31 +531,41 @@ class TubeDeckRepository private constructor(private val context: Context) {
     ): String {
         require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
         val videoId = YoutubeUrls.videoId(url) ?: throw IllegalArgumentException("Open a valid YouTube video first")
-        val task = DownloadTask(
-            id = UUID.randomUUID().toString(), url = url, videoId = videoId,
-            title = title ?: "Video $videoId", thumbnailUrl = getVideoThumbnail(videoId),
-            mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
-            outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM"
-        )
-        synchronized(lock) { setQueue(_downloadQueue.value + task) }
+        val now = System.currentTimeMillis()
+        val task = synchronized(lock) {
+            val sessionId = currentOrNewSessionIdLocked(now)
+            DownloadTask(
+                id = UUID.randomUUID().toString(), url = url, videoId = videoId,
+                title = title ?: "Video $videoId", thumbnailUrl = getVideoThumbnail(videoId),
+                mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
+                outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM",
+                createdAt = now, sessionId = sessionId, eventAt = now
+            ).also { setQueue(_downloadQueue.value + it) }
+        }
         processQueue()
         return task.id
     }
 
     fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String) {
         require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
-        val tasks = items.filter { it.isSelected }.mapNotNull { item ->
-            val url = "https://www.youtube.com/watch?v=${item.videoId}"
-            val videoId = YoutubeUrls.videoId(url) ?: return@mapNotNull null
-            DownloadTask(
-                id = UUID.randomUUID().toString(), url = url, videoId = videoId,
-                title = item.title, thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
-                mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
-                outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM"
-            )
+        val now = System.currentTimeMillis()
+        val tasks = synchronized(lock) {
+            val sessionId = currentOrNewSessionIdLocked(now)
+            items.filter { it.isSelected }.mapNotNull { item ->
+                val url = "https://www.youtube.com/watch?v=${item.videoId}"
+                val videoId = YoutubeUrls.videoId(url) ?: return@mapNotNull null
+                DownloadTask(
+                    id = UUID.randomUUID().toString(), url = url, videoId = videoId,
+                    title = item.title, thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
+                    mode = mode, quality = if (mode == DownloadMode.AUDIO) "Best" else quality,
+                    outputFormat = if (mode == DownloadMode.AUDIO) "M4A/WebM" else "MP4/WebM",
+                    createdAt = now, sessionId = sessionId, eventAt = now
+                )
+            }.also { newTasks ->
+                if (newTasks.isNotEmpty()) setQueue(_downloadQueue.value + newTasks)
+            }
         }
         if (tasks.isEmpty()) return
-        synchronized(lock) { setQueue(_downloadQueue.value + tasks) }
         processQueue()
     }
 
@@ -508,9 +650,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         _offlineMediaList.value =
                             listOf(media) + _offlineMediaList.value.filterNot { it.id == media.id }
                         saveOfflineMedia(_offlineMediaList.value)
-                        _downloadHistory.value =
-                            (listOf(complete) + _downloadHistory.value).take(100)
-                        saveHistory(_downloadHistory.value)
+                        appendHistoryLocked(complete)
                         true
                     } else {
                         false
@@ -532,23 +672,40 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
                 if (!recoverable) {
                     synchronized(lock) {
-                        updateTask(id) {
-                            if (it.status == TaskStatus.DOWNLOADING) {
-                                it.copy(
-                                    status = TaskStatus.FAILED,
-                                    speed = "Needs attention",
-                                    errorMessage = error.message ?: "Download cannot continue automatically"
-                                )
-                            } else {
-                                it
-                            }
+                        val current = _downloadQueue.value.firstOrNull { it.id == id }
+                        if (current?.status == TaskStatus.DOWNLOADING) {
+                            val failed = current.copy(
+                                status = TaskStatus.FAILED,
+                                speed = "Needs attention",
+                                errorMessage = error.message ?: "Download cannot continue automatically"
+                            )
+                            updateTask(id) { failed }
+                            appendHistoryLocked(failed)
                         }
                     }
                     return
                 }
 
-                retryAttempt += 1
-                val waitSeconds = retryDelaySeconds(retryAttempt)
+                val nextRetry = retryAttempt + 1
+                if (!DownloadRetryPolicy.shouldAutoRetry(nextRetry)) {
+                    synchronized(lock) {
+                        val current = _downloadQueue.value.firstOrNull { it.id == id }
+                        if (current?.status == TaskStatus.DOWNLOADING) {
+                            val failed = current.copy(
+                                status = TaskStatus.FAILED,
+                                speed = "Retry limit reached",
+                                retryCount = DownloadRetryPolicy.MAX_AUTO_RETRIES,
+                                errorMessage = "Automatic retry limit reached after ${DownloadRetryPolicy.MAX_AUTO_RETRIES} retries. Tap Retry to try again."
+                            )
+                            updateTask(id) { failed }
+                            appendHistoryLocked(failed)
+                        }
+                    }
+                    return
+                }
+
+                retryAttempt = nextRetry
+                val waitSeconds = DownloadRetryPolicy.delaySeconds(retryAttempt)
                 synchronized(lock) {
                     updateTask(id) {
                         if (it.status == TaskStatus.DOWNLOADING) {
@@ -594,15 +751,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 // the retained .part file using HTTP Range when supported.
             }
         }
-    }
-
-    private fun retryDelaySeconds(attempt: Int): Long = when {
-        attempt <= 1 -> 3L
-        attempt == 2 -> 5L
-        attempt == 3 -> 10L
-        attempt == 4 -> 20L
-        attempt == 5 -> 30L
-        else -> 60L
     }
 
     /**
@@ -658,7 +806,32 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
     fun resumeTask(id: String) {
         synchronized(lock) {
-            updateTask(id) { if (it.status == TaskStatus.PAUSED || it.status == TaskStatus.FAILED) it.copy(status = TaskStatus.QUEUED, errorMessage = null) else it }
+            val current = _downloadQueue.value.firstOrNull { it.id == id } ?: return@synchronized
+            when (current.status) {
+                TaskStatus.FAILED -> {
+                    appendHistoryLocked(
+                        current.copy(
+                            status = TaskStatus.RETRIED,
+                            speed = "Manual retry",
+                            errorMessage = null
+                        )
+                    )
+                    val sessionId = currentOrNewSessionIdLocked()
+                    updateTask(id) {
+                        it.copy(
+                            status = TaskStatus.QUEUED,
+                            speed = "Queued",
+                            errorMessage = null,
+                            retryCount = 0,
+                            sessionId = sessionId
+                        )
+                    }
+                }
+                TaskStatus.PAUSED -> updateTask(id) {
+                    it.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                }
+                else -> Unit
+            }
         }
         processQueue()
     }
@@ -667,6 +840,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val job = synchronized(lock) {
             val running = activeJobs[id]
             running?.cancel()
+            _downloadQueue.value.firstOrNull { it.id == id }?.let { task ->
+                if (task.status != TaskStatus.COMPLETED) {
+                    appendHistoryLocked(
+                        task.copy(
+                            status = TaskStatus.CANCELLED,
+                            speed = "Cancelled",
+                            errorMessage = null
+                        )
+                    )
+                }
+            }
             setQueue(_downloadQueue.value.filterNot { it.id == id })
             running
         }
@@ -700,11 +884,32 @@ class TubeDeckRepository private constructor(private val context: Context) {
         if (ids.isEmpty()) return
         synchronized(lock) {
             val targets = ids.toSet()
+            var retrySessionId: Long? = null
             val updated = _downloadQueue.value.map { task ->
-                if (task.id in targets && (task.status == TaskStatus.PAUSED || task.status == TaskStatus.FAILED)) {
-                    task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
-                } else {
-                    task
+                when {
+                    task.id !in targets -> task
+                    task.status == TaskStatus.FAILED -> {
+                        appendHistoryLocked(
+                            task.copy(
+                                status = TaskStatus.RETRIED,
+                                speed = "Manual retry",
+                                errorMessage = null
+                            )
+                        )
+                        val sessionId = retrySessionId ?: currentOrNewSessionIdLocked().also {
+                            retrySessionId = it
+                        }
+                        task.copy(
+                            status = TaskStatus.QUEUED,
+                            speed = "Queued",
+                            errorMessage = null,
+                            retryCount = 0,
+                            sessionId = sessionId
+                        )
+                    }
+                    task.status == TaskStatus.PAUSED ->
+                        task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                    else -> task
                 }
             }
             setQueue(updated)
@@ -736,6 +941,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 MediaDownloader.cancel(id)
                 activeJobs[id]?.also { it.cancel() }?.let { id to it }
             }
+            _downloadQueue.value.filter { it.id in targets }.forEach { task ->
+                if (task.status != TaskStatus.COMPLETED) {
+                    appendHistoryLocked(
+                        task.copy(
+                            status = TaskStatus.CANCELLED,
+                            speed = "Cancelled",
+                            errorMessage = null
+                        )
+                    )
+                }
+            }
             setQueue(_downloadQueue.value.filterNot { it.id in targets })
             running
         }
@@ -747,7 +963,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun deleteAllQueueTasks() {
-        deleteTasks(_downloadQueue.value.mapTo(mutableSetOf()) { it.id })
+        deleteTasks(
+            DownloadQueuePolicy.pendingTasks(_downloadQueue.value)
+                .mapTo(mutableSetOf()) { it.id }
+        )
     }
 
     fun clearFinished() = synchronized(lock) {
@@ -778,7 +997,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("progress", task.progress.toDouble()); put("downloadedBytes", task.downloadedBytes)
                 put("totalBytes", task.totalBytes); put("status", task.status.name)
                 put("retryCount", task.retryCount)
-                put("createdAt", task.createdAt); put("errorMessage", task.errorMessage)
+                put("createdAt", task.createdAt); put("sessionId", task.sessionId)
+                put("eventAt", task.eventAt); put("errorMessage", task.errorMessage)
             })
         }
         prefs.edit().putString("queue_json", json.toString()).apply()
@@ -791,6 +1011,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
             val status = enumValue(item.optString("status"), TaskStatus.QUEUED)
             val persistedError = item.optString("errorMessage")
                 .takeIf { it.isNotBlank() && it != "null" }
+            val persistedRetryCount = item.optInt("retryCount", 0)
+            val createdAt = item.optLong("createdAt", System.currentTimeMillis())
             val systemTimedOut =
                 status == TaskStatus.PAUSED && persistedError == SYSTEM_TIMEOUT_MESSAGE
             DownloadTask(
@@ -805,15 +1027,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     status == TaskStatus.DOWNLOADING -> TaskStatus.QUEUED
                     status == TaskStatus.FAILED -> {
                         if (
-                            persistedError == null ||
-                            DownloadFailureClassifier.isRecoverable(IllegalStateException(persistedError))
+                            persistedRetryCount < DownloadRetryPolicy.MAX_AUTO_RETRIES &&
+                            (persistedError == null ||
+                                DownloadFailureClassifier.isRecoverable(IllegalStateException(persistedError)))
                         ) TaskStatus.QUEUED else TaskStatus.FAILED
                     }
+                    TaskStatus.CANCELLED, TaskStatus.RETRIED -> TaskStatus.FAILED
                     else -> status
                 },
                 errorMessage = if (systemTimedOut) null else persistedError,
-                retryCount = item.optInt("retryCount", 0),
-                createdAt = item.optLong("createdAt", System.currentTimeMillis())
+                retryCount = persistedRetryCount,
+                createdAt = createdAt,
+                sessionId = item.optLong("sessionId", createdAt),
+                eventAt = item.optLong("eventAt", createdAt)
             )
         }
     }.getOrDefault(emptyList())
@@ -918,6 +1144,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("mode", task.mode.name); put("quality", task.quality)
                 put("outputFormat", task.outputFormat); put("totalBytes", task.totalBytes)
                 put("status", task.status.name); put("createdAt", task.createdAt)
+                put("sessionId", task.sessionId); put("eventAt", task.eventAt)
+                put("retryCount", task.retryCount); put("errorMessage", task.errorMessage)
             })
         }
         prefs.edit().putString("history_json", array.toString()).apply()
@@ -932,8 +1160,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 thumbnailUrl = item.optString("thumbnailUrl"),
                 mode = enumValue(item.optString("mode"), DownloadMode.VIDEO),
                 quality = item.optString("quality"), outputFormat = item.optString("outputFormat"),
-                totalBytes = item.optLong("totalBytes"), status = TaskStatus.COMPLETED,
-                createdAt = item.optLong("createdAt")
+                totalBytes = item.optLong("totalBytes"),
+                status = enumValue(item.optString("status"), TaskStatus.COMPLETED),
+                errorMessage = item.optString("errorMessage").takeIf { it.isNotBlank() && it != "null" },
+                retryCount = item.optInt("retryCount", 0),
+                createdAt = item.optLong("createdAt"),
+                sessionId = item.optLong("sessionId", item.optLong("createdAt")),
+                eventAt = item.optLong("eventAt", item.optLong("createdAt"))
             )
         }
     }.getOrDefault(emptyList())

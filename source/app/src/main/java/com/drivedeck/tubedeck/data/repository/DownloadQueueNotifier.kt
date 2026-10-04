@@ -105,41 +105,17 @@ internal object DownloadQueueNotifier {
         }
 
         val hasActive = active > 0 || queued > 0
-        val title = when {
-            active > 0 -> "MyTube downloads • $active active"
-            queued > 0 -> "MyTube downloads • $queued queued"
-            paused > 0 -> "MyTube downloads • paused"
-            failed > 0 -> "MyTube downloads need attention"
-            else -> "MyTube downloads finished"
-        }
-
+        val currentQueue = active + queued + paused
+        val title = "Downloads"
         val compact = buildString {
-            append("Queued ").append(queued)
-            append(" • Done ").append(finished)
-            append(" • Active ").append(active)
-            if (retrying > 0) append(" • Retrying ").append(retrying)
-            if (failed > 0) append(" • Failed ").append(failed)
+            append("Q").append(currentQueue)
+            append("  ✓").append(finished)
+            append("  F").append(failed)
+            append("  R").append(retriedTasks)
+            append("  ⏱").append(formatDurationShort(elapsed))
+            append("  ⏳").append(etaMillis?.let(::formatDurationShort) ?: "—")
         }
-
-        val expanded = buildString {
-            append("Queued: ").append(queued)
-            append("   Active: ").append(active)
-            append("   Finished: ").append(finished)
-            append("   Paused: ").append(paused)
-            append("   Failed: ").append(failed)
-            append("\nRetried downloads: ").append(retriedTasks)
-            append("   Retry attempts: ").append(totalRetryAttempts)
-            append("\nElapsed: ").append(formatDuration(elapsed))
-            append("   Remaining: ")
-            append(etaMillis?.let(::formatDuration) ?: "calculating…")
-            if (totalBytes > 0L) {
-                append("\nProgress: ").append(progressPercent).append("%")
-                append("   ")
-                append(formatBytes(downloadedBytes))
-                append(" / ")
-                append(formatBytes(totalBytes))
-            }
-        }
+        val expanded = compact
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -196,14 +172,18 @@ internal object DownloadQueueNotifier {
 
     private fun parseBytesPerSecond(speed: String): Double {
         val normalized = speed.trim().lowercase(Locale.ROOT)
-        return when {
-            normalized.endsWith("mb/s") ->
-                normalized.removeSuffix("mb/s").trim().toDoubleOrNull()?.times(1_048_576.0) ?: 0.0
-            normalized.endsWith("kb/s") ->
-                normalized.removeSuffix("kb/s").trim().toDoubleOrNull()?.times(1_024.0) ?: 0.0
-            normalized.endsWith("b/s") ->
-                normalized.removeSuffix("b/s").trim().toDoubleOrNull() ?: 0.0
-            else -> 0.0
+        val token = Regex("""([0-9]+(?:\.[0-9]+)?)\s*(gib|mib|kib|gb|mb|kb|b)/s""")
+            .find(normalized)
+            ?: return 0.0
+        val value = token.groupValues[1].toDoubleOrNull() ?: return 0.0
+        return when (token.groupValues[2]) {
+            "gib" -> value * 1024.0 * 1024.0 * 1024.0
+            "mib" -> value * 1024.0 * 1024.0
+            "kib" -> value * 1024.0
+            "gb" -> value * 1_000_000_000.0
+            "mb" -> value * 1_000_000.0
+            "kb" -> value * 1_000.0
+            else -> value
         }
     }
 
@@ -216,6 +196,17 @@ internal object DownloadQueueNotifier {
             hours > 0 -> "${hours}h ${minutes}m"
             minutes > 0 -> "${minutes}m ${seconds}s"
             else -> "${seconds}s"
+        }
+    }
+
+    private fun formatDurationShort(milliseconds: Long): String {
+        val totalSeconds = (milliseconds / 1_000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        return when {
+            hours > 0 -> "${hours}h${minutes}m"
+            minutes > 0 -> "${minutes}m"
+            else -> "${totalSeconds}s"
         }
     }
 

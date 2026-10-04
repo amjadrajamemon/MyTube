@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -527,6 +528,7 @@ fun NativeExoPlayer(
         }
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         isPreparing = true
+        firstFrameRendered = false
         exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -567,7 +569,8 @@ fun NativeExoPlayer(
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
-                    isPreparing = false
+                    // READY can arrive before the decoder has rendered a visible frame.
+                    // Keep the central loading indicator until onRenderedFirstFrame().
                     duration = exoPlayer.duration.coerceAtLeast(1L)
                     playbackRecoveryAttempts = 0
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
@@ -720,6 +723,7 @@ fun NativeExoPlayer(
             val targetUri = Uri.parse(media.mediaUri)
             val subtitleConfigurations = emptyList<SubtitleConfiguration>()
             isPreparing = true
+            firstFrameRendered = false
             exoPlayer.setMediaItem(
                 MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build(),
                 initialPositionMs.coerceAtLeast(0L)
@@ -1121,19 +1125,24 @@ fun NativeExoPlayer(
                 )
             }
 
-            if ((isPreparing || isBuffering || playbackRecoveryActive) &&
+            if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive) &&
                 resolveError == null && !inPictureInPicture) {
                 Surface(
-                    color = Color.Black.copy(alpha = .54f),
+                    color = Color.Black.copy(alpha = .68f),
                     shape = CircleShape,
-                    modifier = Modifier.align(Alignment.Center).size(64.dp)
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .zIndex(50f)
+                        .size(78.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(42.dp),
-                            strokeWidth = 4.dp,
+                            modifier = Modifier.size(50.dp),
+                            strokeWidth = 5.dp,
                             color = TubeDeckAccentCyan,
-                            trackColor = Color.White.copy(alpha = .18f)
+                            trackColor = Color.White.copy(alpha = .26f)
                         )
                     }
                 }

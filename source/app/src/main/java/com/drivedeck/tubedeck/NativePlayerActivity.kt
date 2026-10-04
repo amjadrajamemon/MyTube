@@ -57,6 +57,7 @@ import com.drivedeck.tubedeck.player.PlaybackPipActions
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
+import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -95,6 +96,8 @@ class NativePlayerActivity : ComponentActivity() {
     private var pipExitPendingStop = false
     private var explicitAudioHandoff = false
     private var pendingFreshResumeFromPip = false
+    private val playbackBackStack = ArrayDeque<OfflineMedia>()
+    private val playbackForwardStack = ArrayDeque<OfflineMedia>()
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -434,6 +437,12 @@ class NativePlayerActivity : ComponentActivity() {
                         { playlistMode = true; showDownload = true }
                     } else null,
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
+                    onPreviousItem = if (playbackBackStack.isNotEmpty()) {
+                        { playPreviousItem() }
+                    } else null,
+                    onNextItem = if (playbackForwardStack.isNotEmpty()) {
+                        { playForwardItem() }
+                    } else null,
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
@@ -549,9 +558,38 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun launchRelatedPlayer(media: OfflineMedia) {
         if (closingPlayer) return
+        if (currentMedia.mediaUri.isNotBlank() && currentMedia.mediaUri != media.mediaUri) {
+            playbackBackStack.addLast(currentMedia)
+            while (playbackBackStack.size > 40) playbackBackStack.removeFirst()
+            playbackForwardStack.clear()
+        }
         com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)
         replaceMedia(media, recordWatch = true)
+    }
+
+    private fun playPreviousItem() {
+        if (closingPlayer || playbackBackStack.isEmpty()) return
+        val target = playbackBackStack.removeLast()
+        if (currentMedia.mediaUri.isNotBlank()) {
+            playbackForwardStack.addLast(currentMedia)
+            while (playbackForwardStack.size > 40) playbackForwardStack.removeFirst()
+        }
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(target.mediaUri)
+        YoutubeStreamResolver.prefetch(applicationContext, target.mediaUri)
+        replaceMedia(target, recordWatch = true)
+    }
+
+    private fun playForwardItem() {
+        if (closingPlayer || playbackForwardStack.isEmpty()) return
+        val target = playbackForwardStack.removeLast()
+        if (currentMedia.mediaUri.isNotBlank()) {
+            playbackBackStack.addLast(currentMedia)
+            while (playbackBackStack.size > 40) playbackBackStack.removeFirst()
+        }
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(target.mediaUri)
+        YoutubeStreamResolver.prefetch(applicationContext, target.mediaUri)
+        replaceMedia(target, recordWatch = true)
     }
 
     override fun onNewIntent(intent: Intent) {

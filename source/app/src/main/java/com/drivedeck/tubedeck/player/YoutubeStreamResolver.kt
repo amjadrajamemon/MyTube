@@ -11,6 +11,7 @@ import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 import org.schabi.newpipe.extractor.comments.CommentsInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
@@ -216,7 +217,9 @@ object YoutubeStreamResolver {
         val subtitles: List<Subtitle>,
         val chapters: List<Chapter> = emptyList(),
         val previewStoryboard: PreviewStoryboard? = null,
-        val relatedVideos: List<RelatedVideo> = emptyList()
+        val relatedVideos: List<RelatedVideo> = emptyList(),
+        val isLive: Boolean = false,
+        val liveManifestUrl: String? = null
     )
 
     suspend fun resolve(
@@ -348,6 +351,7 @@ object YoutubeStreamResolver {
         val progressive = mutableListOf<VideoOption>()
         val videoOnly = mutableListOf<VideoOption>()
         val audioOptions = mutableListOf<AudioOption>()
+        val hlsLiveCandidates = mutableListOf<Pair<Int, String>>()
 
         for (index in 0 until formats.length()) {
             currentCoroutineContext().ensureActive()
@@ -360,6 +364,11 @@ object YoutubeStreamResolver {
             val hasVideo = vcodec.isNotBlank() && !vcodec.equals("none", ignoreCase = true)
             val hasAudio = acodec.isNotBlank() && !acodec.equals("none", ignoreCase = true)
             val ext = item.optString("ext").lowercase(Locale.US)
+            val protocol = item.optString("protocol").lowercase(Locale.US)
+
+            if (hasVideo && hasAudio && protocol.contains("m3u8")) {
+                hlsLiveCandidates += item.optInt("height", 0).coerceAtLeast(0) to mediaUrl
+            }
 
             if (hasVideo) {
                 val height = item.optInt("height", 0)
@@ -449,6 +458,18 @@ object YoutubeStreamResolver {
         }
 
         val bestProgressive = progressive.maxByOrNull { it.height }
+        val engineIsLive =
+            root.optBoolean("is_live", false) ||
+                root.optString("live_status").equals("is_live", ignoreCase = true)
+        val engineLiveManifest = if (engineIsLive) {
+            hlsLiveCandidates.maxByOrNull { it.first }?.second
+                ?: root.optString("url").takeIf { url ->
+                    url.startsWith("https://") &&
+                        root.optString("protocol").contains("m3u8", ignoreCase = true)
+                }
+        } else {
+            null
+        }
         return ResolvedMedia(
             title = root.optString("title").ifBlank { "YouTube video" },
             description = root.optString("description"),
@@ -471,7 +492,9 @@ object YoutubeStreamResolver {
             subtitles = emptyList(),
             chapters = chapters,
             previewStoryboard = null,
-            relatedVideos = emptyList()
+            relatedVideos = emptyList(),
+            isLive = engineIsLive,
+            liveManifestUrl = engineLiveManifest
         )
     }
 
@@ -507,6 +530,14 @@ object YoutubeStreamResolver {
             require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
             val canonicalUrl = YoutubeUrls.canonicalVideoUrl(url) ?: url
             val info = StreamInfo.getInfo(canonicalUrl)
+            val isLive =
+                info.streamType == StreamType.LIVE_STREAM ||
+                    info.streamType == StreamType.AUDIO_LIVE_STREAM
+            val liveManifestUrl = if (isLive) {
+                info.hlsUrl.takeIf { it.startsWith("https://") }
+            } else {
+                null
+            }
 
             val progressive = info.videoStreams
                 .filter { it.isUrl() && it.getContent().startsWith("https://") }
@@ -654,7 +685,9 @@ object YoutubeStreamResolver {
                 subtitles = subtitles,
                 chapters = chapters,
                 previewStoryboard = previewStoryboard,
-                relatedVideos = relatedVideos
+                relatedVideos = relatedVideos,
+                isLive = isLive,
+                liveManifestUrl = liveManifestUrl
             )
         }
 

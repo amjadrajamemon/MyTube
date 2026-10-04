@@ -509,6 +509,7 @@ fun NativeExoPlayer(
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
+    val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
 
     fun loadResolvedStream(
         sourceMedia: YoutubeStreamResolver.ResolvedMedia,
@@ -622,13 +623,21 @@ fun NativeExoPlayer(
                     error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
-                if (retryable && youtubeVideo && playbackRecoveryAttempts < 3 && !playbackRecoveryActive) {
+                val decoderFailure =
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+
+                if ((retryable || decoderFailure) && youtubeVideo && playbackRecoveryAttempts < 3 && !playbackRecoveryActive) {
                     playbackRecoveryAttempts += 1
                     playbackRecoveryActive = true
                     resolveError = null
+                    isPreparing = true
                     playbackScope.launch {
                         try {
-                            delay(350)
+                            delay(if (decoderFailure) 120L else 350L)
                             val fresh = YoutubeStreamResolver.resolve(
                                 context,
                                 media.mediaUri,
@@ -636,17 +645,32 @@ fun NativeExoPlayer(
                             )
                             resolved = fresh
                             hasCaptions = fresh.subtitles.isNotEmpty()
-                            val target = if (autoQuality) {
-                                chooseAutoHeight(context, fresh.options.map { it.height }, bandwidthMeter.bitrateEstimate)
-                            } else {
-                                selectedHeight.takeIf { it > 0 }
+
+                            val decoderSafeHeight = fresh.progressiveOptions
+                                .filter { it.videoMimeType == "video/mp4" && it.height <= 720 }
+                                .maxByOrNull { it.height }
+                                ?.height
+                                ?: fresh.progressiveOptions
+                                    .filter { it.videoMimeType == "video/mp4" }
+                                    .minByOrNull { it.height }
+                                    ?.height
+
+                            val target = when {
+                                decoderFailure && decoderSafeHeight != null -> decoderSafeHeight
+                                autoQuality -> chooseAutoHeight(
+                                    context,
+                                    fresh.options.map { it.height },
+                                    bandwidthMeter.bitrateEstimate
+                                )
+                                else -> selectedHeight.takeIf { it > 0 }
                                     ?: fresh.options.maxOfOrNull { it.height }
                                     ?: 720
                             }
+
                             loadResolvedStream(
                                 sourceMedia = fresh,
                                 requestedHeight = target,
-                                autoSelected = autoQuality,
+                                autoSelected = if (decoderFailure) false else autoQuality,
                                 preservePosition = true
                             )
                         } catch (cancel: CancellationException) {
@@ -783,8 +807,10 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(firstFrameRendered, autoQuality, resolved) {
-        if (!firstFrameRendered || !autoQuality || !youtubeVideo) return@LaunchedEffect
+    LaunchedEffect(firstFrameRendered, autoQuality, resolved, inPictureInPicture) {
+        // Never switch representations while Android is shrinking/holding the decoder in PiP.
+        // Several OEM codec stacks fail a decoder re-init during that surface transition.
+        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture) return@LaunchedEffect
         // SmartTube-style resilience for extracted progressive/DASH URLs: continuously reassess
         // the sustainable representation. Downshifts are fast; upgrades require repeated stable
         // samples so fluctuating mobile links do not bounce between qualities.
@@ -1135,11 +1161,11 @@ fun NativeExoPlayer(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .zIndex(50f)
-                        .size(if (compactPortrait) 52.dp else 60.dp)
+                        .size(centerControlDiameter)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(if (compactPortrait) 52.dp else 60.dp),
+                            modifier = Modifier.size(centerControlDiameter),
                             strokeWidth = if (compactPortrait) 4.dp else 5.dp,
                             color = TubeDeckAccentCyan,
                             trackColor = Color.White.copy(alpha = .26f)
@@ -1248,7 +1274,7 @@ fun NativeExoPlayer(
                             onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                             shape = CircleShape,
                             color = TubeDeckAccentCyan,
-                            modifier = Modifier.size(if (compactPortrait) 52.dp else 60.dp)
+                            modifier = Modifier.size(centerControlDiameter)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -1982,9 +2008,14 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
+                    if (resolveError == null && !playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(centerControlDiameter),
+                                strokeWidth = if (compactPortrait) 4.dp else 5.dp,
+                                color = TubeDeckAccentCyan,
+                                trackColor = Color.White.copy(alpha = .26f)
+                            )
                         }
                     } else if (!autoLoadEpisodes && !autoLoadUpNext) {
                         Box(Modifier.fillMaxSize())

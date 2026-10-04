@@ -44,11 +44,17 @@ fun DriveDeckScreen(
     watchHistory: List<HomeVideo> = emptyList(),
     suggestedVideos: List<HomeVideo> = emptyList(),
     trendingVideos: List<HomeVideo> = emptyList(),
+    liveNowVideos: List<HomeVideo> = emptyList(),
+    liveNowStatus: String = "",
+    liveSearchResults: List<HomeVideo> = emptyList(),
+    liveSearchQuery: String = "",
+    liveSearchStatus: String = "",
     suggestionsEnabled: Boolean = true,
     trendingEnabled: Boolean = true,
     countryCode: String = "US",
     trendingStatus: String = "",
     onRefreshFeed: () -> Unit = {},
+    onClearLiveSearch: () -> Unit = {},
     onOpenVideo: (HomeVideo) -> Unit = {},
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -73,6 +79,28 @@ fun DriveDeckScreen(
             contentPadding = PaddingValues(bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (liveSearchQuery.isNotBlank()) {
+                item {
+                    HomeShelf(
+                        "Live results · $liveSearchQuery",
+                        liveSearchResults,
+                        onOpenVideo,
+                        loading = liveSearchStatus == "Loading",
+                        action = "Clear",
+                        onAction = onClearLiveSearch
+                    )
+                }
+            }
+            item {
+                HomeShelf(
+                    "Live now · $countryCode",
+                    liveNowVideos,
+                    onOpenVideo,
+                    loading = liveNowStatus == "Loading",
+                    action = "Refresh",
+                    onAction = onRefreshFeed
+                )
+            }
             item {
                 HomeShelf("History", watchHistory.take(12), onOpenVideo,
                     action = if (watchHistory.isNotEmpty()) "Clear" else null, onAction = onClearHistory)
@@ -156,7 +184,7 @@ private fun CompactVideoCard(video: HomeVideo, onClick: () -> Unit) {
             )
             if (video.durationText.isNotBlank()) {
                 Surface(
-                    color = Color.Black.copy(alpha = .82f),
+                    color = if (video.durationText == "LIVE") Color.Red else Color.Black.copy(alpha = .82f),
                     shape = RoundedCornerShape(4.dp),
                     modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
                 ) {

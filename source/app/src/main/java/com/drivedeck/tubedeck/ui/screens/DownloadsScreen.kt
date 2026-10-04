@@ -29,7 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.*
+import com.drivedeck.tubedeck.data.repository.DownloadQueuePolicy
 import com.drivedeck.tubedeck.ui.theme.*
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun DownloadsScreen(
@@ -72,16 +75,22 @@ fun DownloadsScreen(
     var vaultListView by remember { mutableStateOf(true) }
     var queueListView by remember { mutableStateOf(true) }
     var finishedActionsOpen by remember { mutableStateOf(false) }
+    var showNewDownload by remember { mutableStateOf(false) }
+    val pendingQueue = remember(downloadQueue) { DownloadQueuePolicy.pendingTasks(downloadQueue) }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
     }
 
-    LaunchedEffect(downloadQueue) {
-        val validIds = downloadQueue.mapTo(mutableSetOf()) { it.id }
+    LaunchedEffect(pendingQueue) {
+        val validIds = pendingQueue.mapTo(mutableSetOf()) { it.id }
         selectedTaskIds = selectedTaskIds.intersect(validIds)
     }
 
-    val tabs = listOf("Finished/Completed (${offlineMediaList.size})", "Pending/Queue (${downloadQueue.size})", "History (${downloadHistory.size})")
+    val tabs = listOf(
+        "Finished/Completed (${offlineMediaList.size})",
+        "Pending/Queue (${pendingQueue.size})",
+        "Activity/History (${downloadHistory.size})"
+    )
 
     Column(
         modifier = modifier
@@ -114,54 +123,66 @@ fun DownloadsScreen(
                             color = TubeDeckTextPrimary
                         )
                     }
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TubeDeckTextSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { showNewDownload = !showNewDownload }) {
+                            Icon(
+                                if (showNewDownload) Icons.Default.ExpandLess else Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(if (showNewDownload) "Hide" else "New download", fontSize = 11.sp)
+                        }
+                        IconButton(onClick = onClose) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TubeDeckTextSecondary)
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Custom Download Box
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = customUrl,
-                        onValueChange = { customUrl = it },
-                        placeholder = { Text("Paste YouTube URL", fontSize = 12.sp, color = TubeDeckTextSecondary) },
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TubeDeckTextPrimary,
-                            unfocusedTextColor = TubeDeckTextPrimary,
-                            focusedBorderColor = TubeDeckAccentCyan,
-                            unfocusedBorderColor = TubeDeckBorder,
-                            focusedContainerColor = TubeDeckSurfaceVariant,
-                            unfocusedContainerColor = TubeDeckSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            if (customUrl.isNotBlank()) {
-                                onCustomDownload(customUrl)
-                                customUrl = ""
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = TubeDeckBackground),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.height(48.dp)
+                if (showNewDownload) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Download", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = customUrl,
+                            onValueChange = { customUrl = it },
+                            placeholder = { Text("Paste YouTube URL", fontSize = 12.sp, color = TubeDeckTextSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TubeDeckTextPrimary,
+                                unfocusedTextColor = TubeDeckTextPrimary,
+                                focusedBorderColor = TubeDeckAccentCyan,
+                                unfocusedBorderColor = TubeDeckBorder,
+                                focusedContainerColor = TubeDeckSurfaceVariant,
+                                unfocusedContainerColor = TubeDeckSurfaceVariant
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        Button(
+                            onClick = {
+                                if (customUrl.isNotBlank()) {
+                                    onCustomDownload(customUrl)
+                                    customUrl = ""
+                                    showNewDownload = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = TubeDeckAccentCyan,
+                                contentColor = TubeDeckBackground
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Text("Download", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 ScrollableTabRow(
                     selectedTabIndex = selectedTab,
@@ -383,8 +404,8 @@ fun DownloadsScreen(
                 }
                 1 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        val allSelected = downloadQueue.isNotEmpty() &&
-                            selectedTaskIds.size == downloadQueue.size
+                        val allSelected = pendingQueue.isNotEmpty() &&
+                            selectedTaskIds.size == pendingQueue.size
                         val selectedCount = selectedTaskIds.size
 
                         Row(
@@ -401,7 +422,7 @@ fun DownloadsScreen(
                                 )
                                 Text(
                                     if (selectedCount > 0) "$selectedCount selected"
-                                    else "${downloadQueue.size} tasks",
+                                    else "${pendingQueue.size} tasks",
                                     fontSize = 10.sp,
                                     color = if (selectedCount > 0) TubeDeckAccentCyan else TubeDeckTextSecondary
                                 )
@@ -443,10 +464,10 @@ fun DownloadsScreen(
                                     selectedTaskIds = if (allSelected) {
                                         emptySet()
                                     } else {
-                                        downloadQueue.mapTo(mutableSetOf()) { it.id }
+                                        pendingQueue.mapTo(mutableSetOf()) { it.id }
                                     }
                                 },
-                                enabled = downloadQueue.isNotEmpty(),
+                                enabled = pendingQueue.isNotEmpty(),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                             ) {
                                 Icon(Icons.Default.SelectAll, null, modifier = Modifier.size(15.dp))
@@ -468,7 +489,7 @@ fun DownloadsScreen(
                                 QueueBatchAction(
                                     label = "Pause all",
                                     icon = Icons.Default.Pause,
-                                    enabled = downloadQueue.any {
+                                    enabled = pendingQueue.any {
                                         it.status == TaskStatus.DOWNLOADING ||
                                             it.status == TaskStatus.QUEUED
                                     },
@@ -477,22 +498,16 @@ fun DownloadsScreen(
                                 QueueBatchAction(
                                     label = "Resume / retry all",
                                     icon = Icons.Default.Refresh,
-                                    enabled = downloadQueue.any {
+                                    enabled = pendingQueue.any {
                                         it.status == TaskStatus.PAUSED ||
                                             it.status == TaskStatus.FAILED
                                     },
                                     onClick = onResumeOrRetryAllTasks
                                 ),
                                 QueueBatchAction(
-                                    label = "Clear finished",
-                                    icon = Icons.Default.DoneAll,
-                                    enabled = downloadQueue.any { it.status == TaskStatus.COMPLETED },
-                                    onClick = onClearFinished
-                                ),
-                                QueueBatchAction(
                                     label = "Delete all",
                                     icon = Icons.Default.Delete,
-                                    enabled = downloadQueue.isNotEmpty(),
+                                    enabled = pendingQueue.isNotEmpty(),
                                     destructive = true,
                                     onClick = { confirmDeleteAll = true }
                                 )
@@ -507,7 +522,7 @@ fun DownloadsScreen(
                                     label = "Pause selected",
                                     icon = Icons.Default.Pause,
                                     enabled = selectedTaskIds.isNotEmpty() &&
-                                        downloadQueue.any {
+                                        pendingQueue.any {
                                             it.id in selectedTaskIds &&
                                                 (it.status == TaskStatus.DOWNLOADING ||
                                                     it.status == TaskStatus.QUEUED)
@@ -518,7 +533,7 @@ fun DownloadsScreen(
                                     label = "Resume / retry selected",
                                     icon = Icons.Default.Refresh,
                                     enabled = selectedTaskIds.isNotEmpty() &&
-                                        downloadQueue.any {
+                                        pendingQueue.any {
                                             it.id in selectedTaskIds &&
                                                 (it.status == TaskStatus.PAUSED ||
                                                     it.status == TaskStatus.FAILED)
@@ -537,7 +552,7 @@ fun DownloadsScreen(
 
                         Spacer(Modifier.height(8.dp))
 
-                        if (downloadQueue.isEmpty()) {
+                        if (pendingQueue.isEmpty()) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
@@ -546,7 +561,7 @@ fun DownloadsScreen(
                             }
                         } else if (queueListView) {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(downloadQueue, key = { it.id }) { task ->
+                                items(pendingQueue, key = { it.id }) { task ->
                                     QueueTaskCard(
                                         task = task,
                                         selected = task.id in selectedTaskIds,
@@ -570,7 +585,7 @@ fun DownloadsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                items(downloadQueue, key = { it.id }) { task ->
+                                items(pendingQueue, key = { it.id }) { task ->
                                     QueueTaskCard(
                                         task = task,
                                         selected = task.id in selectedTaskIds,
@@ -594,7 +609,7 @@ fun DownloadsScreen(
                 2 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Download History", fontSize = 13.sp, color = TubeDeckTextSecondary, fontWeight = FontWeight.SemiBold)
+                            Text("Download activity", fontSize = 13.sp, color = TubeDeckTextSecondary, fontWeight = FontWeight.SemiBold)
                             TextButton(onClick = onClearHistory) {
                                 Text("Clear history", fontSize = 12.sp, color = TubeDeckError)
                             }
@@ -819,7 +834,7 @@ fun QueueTaskCard(
                         IconButton(onClick = onRetry, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Refresh, "Retry", tint = TubeDeckTextPrimary)
                         }
-                    TaskStatus.COMPLETED -> Unit
+                    TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.RETRIED -> Unit
                 }
                 IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Close, null, tint = TubeDeckTextSecondary) }
             }
@@ -877,12 +892,70 @@ private fun QueueBatchControls(actions: List<QueueBatchAction>) {
 
 @Composable
 fun HistoryItemCard(item: DownloadTask) {
-    Surface(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(10.dp)), color = TubeDeckSurfaceVariant) {
-        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AsyncImage(model = item.thumbnailUrl, contentDescription = null, modifier = Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop)
-            Text(item.title, fontSize = 12.sp, color = TubeDeckTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("Done", fontSize = 10.sp, color = TubeDeckSuccess, fontWeight = FontWeight.Bold)
+    val statusLabel = when (item.status) {
+        TaskStatus.COMPLETED -> "Completed"
+        TaskStatus.FAILED -> "Failed"
+        TaskStatus.CANCELLED -> "Cancelled"
+        TaskStatus.RETRIED -> "Retried"
+        TaskStatus.PAUSED -> "Paused"
+        TaskStatus.DOWNLOADING -> "Downloading"
+        TaskStatus.QUEUED -> "Queued"
+    }
+    val statusColor = when (item.status) {
+        TaskStatus.COMPLETED -> TubeDeckSuccess
+        TaskStatus.FAILED, TaskStatus.CANCELLED -> TubeDeckError
+        TaskStatus.RETRIED -> TubeDeckAccentCyan
+        else -> TubeDeckTextSecondary
+    }
+    val eventText = remember(item.eventAt) {
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.eventAt))
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, TubeDeckBorder, RoundedCornerShape(10.dp)),
+        color = TubeDeckSurfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            AsyncImage(
+                model = item.thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(4.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    item.title,
+                    fontSize = 12.sp,
+                    color = TubeDeckTextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    buildString {
+                        append(eventText)
+                        if (item.retryCount > 0) append(" · retries ").append(item.retryCount)
+                    },
+                    fontSize = 9.5.sp,
+                    color = TubeDeckTextSecondary,
+                    maxLines = 1
+                )
+                item.errorMessage?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        fontSize = 9.5.sp,
+                        color = TubeDeckTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Text(statusLabel, fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold)
         }
     }
 }
-

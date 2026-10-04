@@ -83,6 +83,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MediaItem.SubtitleConfiguration
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.text.CueGroup
@@ -524,6 +525,31 @@ fun NativeExoPlayer(
         autoSelected: Boolean,
         preservePosition: Boolean
     ) {
+        val liveManifest = sourceMedia.liveManifestUrl
+            ?.takeIf { sourceMedia.isLive && it.startsWith("https://") }
+        if (liveManifest != null) {
+            PlaybackStartupTelemetry.markPrepare(media.mediaUri)
+            isPreparing = true
+            firstFrameRendered = false
+            exoPlayer.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(Uri.parse(liveManifest))
+                    .setMimeType(MimeTypes.APPLICATION_M3U8)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(sourceMedia.title)
+                            .build()
+                    )
+                    .build()
+            )
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+            selectedHeight = 0
+            autoQuality = true
+            qualityLabel = "LIVE"
+            return
+        }
+
         val option = sourceMedia.options
             .filter { it.height <= requestedHeight }
             .maxByOrNull { it.height }
@@ -547,6 +573,10 @@ fun NativeExoPlayer(
 
     fun switchQuality(height: Int?) {
         val sourceMedia = resolved ?: return
+        if (sourceMedia.isLive && !sourceMedia.liveManifestUrl.isNullOrBlank()) {
+            controlsVisible = true
+            return
+        }
         if (height == null) {
             val target = chooseAutoHeight(context, sourceMedia.options.map { it.height }, bandwidthMeter.bitrateEstimate)
             loadResolvedStream(sourceMedia, target, autoSelected = true, preservePosition = true)

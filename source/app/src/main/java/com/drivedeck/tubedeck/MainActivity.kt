@@ -1176,10 +1176,10 @@ class MainActivity : ComponentActivity() {
             // Reaching RESUMED means PiP was expanded rather than dismissed.
             pipExitPendingStop = false
         }
-        if (pendingChooserAfterPipExit && playerActive) {
+        if (pendingChooserAfterPipExit) {
+            // A normal PiP expansion/resume must never summon the playback chooser by itself.
+            // The chooser is reserved for an explicit second Back / explicit PiP action.
             pendingChooserAfterPipExit = false
-            playbackBackCoordinator.forceChooserVisible()
-            showPlaybackExitChoices = true
         }
     }
 
@@ -1464,23 +1464,11 @@ class MainActivity : ComponentActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
 
-        if (
-            PlaybackPipExitPolicy.shouldRestoreChoices(
-                wasInPip = wasInPip,
-                isInPip = isInPictureInPictureMode,
-                choicePending = pipChoicePending,
-                playerActive = playerActive,
-                closing = false
-            )
-        ) {
-            // Never relaunch the Activity while Android is finishing PiP exit. Wait for onResume.
-            pipChoicePending = false
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            pendingChooserAfterPipExit = true
-        }
         if (wasInPip && !isInPictureInPictureMode && playerActive) {
-            // onResume clears this for a normal expansion; onStop consumes it for an X/dismiss.
+            // PiP exit alone is not a request to show the 3-option chooser. onResume means a
+            // normal expansion; onStop means the PiP window was dismissed and must hard-stop.
+            pipChoicePending = false
+            pendingChooserAfterPipExit = false
             pipExitPendingStop = true
         }
     }

@@ -31,6 +31,7 @@ import com.drivedeck.tubedeck.data.model.HomeVideo
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.theme.*
+import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 
 @Composable
 fun DriveDeckScreen(
@@ -203,9 +204,20 @@ fun DriveDeckTopHeader(
                 placeholder = { Text("Search YouTube", color = Color.Gray, fontSize = 15.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = TubeDeckTextSecondary) },
                 trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(Icons.Default.Close, null, tint = Color.LightGray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (YoutubeSearchPolicy.isLiveIntent(searchQuery)) {
+                            Text(
+                                "LIVE",
+                                color = Color.Red,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Spacer(Modifier.width(2.dp))
+                        }
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchQueryChange("") }) {
+                                Icon(Icons.Default.Close, null, tint = Color.LightGray)
+                            }
                         }
                     }
                 },

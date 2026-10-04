@@ -463,6 +463,12 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ?.let { YoutubeUrls.withStartPosition(media.mediaUri, it.positionMs) }
                                     ?: media.mediaUri
+                            if (currentScreen != ActiveScreen.BROWSER) {
+                                // A video launched from Home/external intent starts its own Web
+                                // session. A video clicked inside Browser keeps the results page
+                                // as its real Back destination.
+                                browserHistoryResetGeneration += 1
+                            }
                             navigateTo(ActiveScreen.BROWSER, targetUrl)
                         }
                     }

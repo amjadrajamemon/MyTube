@@ -695,6 +695,7 @@ fun NativeExoPlayer(
                     exoPlayer.playWhenReady = true
                 } else {
                     resolveError = "Media3 playback error: ${error.errorCodeName}"
+                    if (youtubeVideo) onWebFallback()
                 }
             }
         }
@@ -745,6 +746,7 @@ fun NativeExoPlayer(
                 isPreparing = false
                 isBuffering = false
                 resolveError = "Could not resolve video stream: ${t.message ?: t.javaClass.simpleName}"
+                onWebFallback()
             }
         } else {
             if (media.mediaUri.isBlank()) {

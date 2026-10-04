@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
     private var autoPipEnabled = true
     private var webPlaybackActive by mutableStateOf(false)
     private var webPlaybackPositionMs by mutableLongStateOf(0L)
+    private var lastWebResolverWarmVideoId: String? = null
     private var inboundUrl by mutableStateOf<String?>(null)
     private var resumeAudioRequest by mutableIntStateOf(0)
     private var homeRefreshRequest by mutableIntStateOf(0)
@@ -849,6 +850,14 @@ class MainActivity : ComponentActivity() {
                                     onPlaybackStateChanged = { playing, positionMs ->
                                         webPlaybackActive = playing
                                         webPlaybackPositionMs = positionMs
+                                        if (playing) {
+                                            val warmUrl = webViewInstance?.url ?: currentUrl
+                                            val warmVideoId = YoutubeUrls.videoId(warmUrl)
+                                            if (warmVideoId != null && warmVideoId != lastWebResolverWarmVideoId) {
+                                                lastWebResolverWarmVideoId = warmVideoId
+                                                YoutubeStreamResolver.prefetch(applicationContext, warmUrl)
+                                            }
+                                        }
                                     },
                                     onFullscreenChanged = { isBrowserFullscreen = it }
                                 )
@@ -1137,16 +1146,15 @@ class MainActivity : ComponentActivity() {
         lastNativeLaunchVideoId = videoId.takeIf { it.isNotBlank() }
         lastNativeLaunchAt = now
 
-        // A foreground video supersedes explicit audio-only playback. If it is the same video,
-        // discard the resolver entry created before/during the audio handoff so signed CDN URLs
-        // cannot poison the new foreground session.
+        // Audio-only -> video is a continuation of the same media. Keep the resolver entry
+        // warm so returning to the visible player does not perform another YouTube extraction.
         val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
         val resumeFromAudio =
             previousAudio?.takeIf {
                 YoutubeUrls.videoId(it.sourceUrl) == YoutubeUrls.videoId(media.mediaUri)
             }
         if (resumeFromAudio != null) {
-            YoutubeStreamResolver.invalidate(media.mediaUri)
+            YoutubeStreamResolver.promoteForHandoffResume(media.mediaUri)
         }
 
         // Start the measurable tap-to-first-frame path before extraction or Activity launch.

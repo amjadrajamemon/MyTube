@@ -46,6 +46,7 @@ import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
+import com.drivedeck.tubedeck.player.PlaybackPipCommandBus
 import com.drivedeck.tubedeck.player.PlaybackPipExitPolicy
 import com.drivedeck.tubedeck.player.PlaybackSessionRegistry
 import com.drivedeck.tubedeck.ui.components.AdBlockShieldSheet
@@ -107,6 +108,29 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+
+        lifecycleScope.launch {
+            PlaybackPipCommandBus.commands.collect { action ->
+                // Native PiP is owned by NativePlayerActivity and handled through its session bridge.
+                if (NativePipSessionBridge.isActive() || !playerActive) return@collect
+                when (action) {
+                    PlaybackPipCommandBus.Action.KEEP_PIP -> {
+                        showPlaybackExitChoices = false
+                        PlaybackBackSequenceTracker.reset()
+                        moveTaskToBack(true)
+                    }
+                    PlaybackPipCommandBus.Action.AUDIO_ONLY -> {
+                        pipChoicePending = false
+                        handoffActivePlaybackToAudio()
+                    }
+                    PlaybackPipCommandBus.Action.CLOSE -> {
+                        pipChoicePending = false
+                        closeActivePlaybackCompletely()
+                    }
+                }
+            }
+        }
+
         onBackPressedDispatcher.addCallback(this, legacyPlaybackBackCallback)
         YoutubeStreamResolver.prewarm()
         YtDlpUpdateManager.scheduleWeekly(applicationContext)

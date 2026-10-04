@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,19 +64,19 @@ fun DownloadsScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
-    var customUrl by remember { mutableStateOf("") }
-    var filterType by remember { mutableStateOf("All") }
-    var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
+    var customUrl by rememberSaveable { mutableStateOf("") }
+    var filterType by rememberSaveable { mutableStateOf("All") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedTaskIds by remember { mutableStateOf(setOf<String>()) }
-    var confirmDeleteSelected by remember { mutableStateOf(false) }
-    var confirmDeleteAll by remember { mutableStateOf(false) }
+    var confirmDeleteSelected by rememberSaveable { mutableStateOf(false) }
+    var confirmDeleteAll by rememberSaveable { mutableStateOf(false) }
     var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteFiles by remember { mutableStateOf(setOf<String>()) }
-    var vaultListView by remember { mutableStateOf(true) }
-    var queueListView by remember { mutableStateOf(true) }
-    var finishedActionsOpen by remember { mutableStateOf(false) }
-    var showNewDownload by remember { mutableStateOf(false) }
+    var vaultListView by rememberSaveable { mutableStateOf(true) }
+    var queueListView by rememberSaveable { mutableStateOf(true) }
+    var finishedActionsOpen by rememberSaveable { mutableStateOf(false) }
+    var showNewDownload by rememberSaveable { mutableStateOf(false) }
     val pendingQueue = remember(downloadQueue) { DownloadQueuePolicy.pendingTasks(downloadQueue) }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })

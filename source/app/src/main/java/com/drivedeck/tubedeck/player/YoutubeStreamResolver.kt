@@ -1285,22 +1285,132 @@ object YoutubeStreamResolver {
             val info = SearchInfo.getInfo(service, handler)
             info.relatedItems
                 .filterIsInstance<StreamInfoItem>()
-                .mapNotNull { item ->
-                    val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
-                    RelatedVideo(
-                        videoId = id,
-                        title = item.name,
-                        url = YoutubeUrls.canonicalVideoUrl(item.url)
-                            ?: "https://www.youtube.com/watch?v=$id",
-                        thumbnailUrl = item.thumbnails.firstOrNull()?.url
-                            ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
-                        channelTitle = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                        durationSeconds = item.duration.coerceAtLeast(0L)
-                    )
-                }
+                .mapNotNull(::relatedVideoFromSearchItem)
                 .distinctBy { it.videoId }
                 .take(limit.coerceIn(1, 50))
         }
+
+    /**
+     * Active-live discovery must not depend on YouTube's web `sp=` filter. That filter is
+     * frequently changed server-side and can return an empty page even while broadcasts exist.
+     * Search natively first, then use Download Engine's ytsearch metadata as an independent
+     * fallback and keep only entries explicitly marked as currently live.
+     */
+    suspend fun searchLiveVideos(
+        context: Context,
+        query: String,
+        limit: Int = 20
+    ): List<RelatedVideo> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val clean = query.trim()
+        if (clean.isBlank()) return@withContext emptyList()
+        val wanted = limit.coerceIn(1, 30)
+        val found = linkedMapOf<String, RelatedVideo>()
+
+        runCatching {
+            ensureInitialized()
+            val service = NewPipe.getService("YouTube")
+            val handler = service.searchQHFactory.fromQuery(clean, listOf("videos"), "")
+            val info = SearchInfo.getInfo(service, handler)
+            info.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .filter(::isActiveLiveSearchItem)
+                .mapNotNull(::relatedVideoFromSearchItem)
+        }.getOrDefault(emptyList()).forEach { found.putIfAbsent(it.videoId, it) }
+
+        if (found.size < wanted) {
+            runCatching {
+                searchLiveWithDownloadEngine(context, clean, wanted.coerceAtLeast(12))
+            }.getOrDefault(emptyList()).forEach { found.putIfAbsent(it.videoId, it) }
+        }
+
+        found.values.take(wanted)
+    }
+
+    private fun relatedVideoFromSearchItem(item: StreamInfoItem): RelatedVideo? {
+        val id = YoutubeUrls.videoId(item.url) ?: return null
+        return RelatedVideo(
+            videoId = id,
+            title = item.name,
+            url = YoutubeUrls.canonicalVideoUrl(item.url)
+                ?: "https://www.youtube.com/watch?v=$id",
+            thumbnailUrl = item.thumbnails.firstOrNull()?.url
+                ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            channelTitle = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+            durationSeconds = item.duration.coerceAtLeast(0L)
+        )
+    }
+
+    private fun isActiveLiveSearchItem(item: StreamInfoItem): Boolean {
+        // Reflection keeps this compatible across NewPipe Extractor versions where the
+        // StreamInfoItem live-type accessor has changed name/signature.
+        val streamType = runCatching {
+            item.javaClass.methods
+                .firstOrNull { method ->
+                    method.parameterCount == 0 &&
+                        (method.name == "getStreamType" || method.name == "streamType")
+                }
+                ?.invoke(item)
+                ?.toString()
+                .orEmpty()
+        }.getOrDefault("")
+        return streamType.contains("LIVE", ignoreCase = true)
+    }
+
+    private suspend fun searchLiveWithDownloadEngine(
+        context: Context,
+        query: String,
+        limit: Int
+    ): List<RelatedVideo> {
+        YtDlpUpdateManager.ensureInitialized(context)
+        val requestCount = (limit * 3).coerceIn(20, 60)
+        val request = YoutubeDLRequest("ytsearch$requestCount:$query")
+            .addOption("--flat-playlist")
+            .addOption("--skip-download")
+            .addOption("--dump-single-json")
+            .addOption("--no-warnings")
+        val response = YoutubeDL.execute(request)
+        val root = JSONObject(response.out.trim())
+        val entries = root.optJSONArray("entries") ?: return emptyList()
+
+        return buildList {
+            for (index in 0 until entries.length()) {
+                currentCoroutineContext().ensureActive()
+                val item = entries.optJSONObject(index) ?: continue
+                val liveStatus = item.optString("live_status")
+                val isLive = item.optBoolean("is_live", false) ||
+                    liveStatus.equals("is_live", ignoreCase = true)
+                if (!isLive) continue
+
+                val id = item.optString("id").trim()
+                if (id.isBlank()) continue
+                val rawUrl = item.optString("webpage_url")
+                    .ifBlank { item.optString("url") }
+                val url = YoutubeUrls.canonicalVideoUrl(rawUrl)
+                    ?: "https://www.youtube.com/watch?v=$id"
+                val thumbnail = item.optString("thumbnail").ifBlank {
+                    item.optJSONArray("thumbnails")
+                        ?.optJSONObject(0)
+                        ?.optString("url")
+                        .orEmpty()
+                }
+                add(
+                    RelatedVideo(
+                        videoId = id,
+                        title = item.optString("title").ifBlank { "Live stream" },
+                        url = url,
+                        thumbnailUrl = thumbnail.ifBlank {
+                            "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+                        },
+                        channelTitle = item.optString("channel")
+                            .ifBlank { item.optString("uploader") }
+                            .ifBlank { "YouTube" },
+                        durationSeconds = 0L
+                    )
+                )
+                if (size >= limit) break
+            }
+        }.distinctBy { it.videoId }.take(limit)
+    }
 
     suspend fun playlistItems(url: String): List<org.schabi.newpipe.extractor.stream.StreamInfoItem> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

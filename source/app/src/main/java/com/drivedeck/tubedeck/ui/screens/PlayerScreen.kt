@@ -1135,12 +1135,12 @@ fun NativeExoPlayer(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .zIndex(50f)
-                        .size(78.dp)
+                        .size(if (compactPortrait) 52.dp else 60.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(50.dp),
-                            strokeWidth = 5.dp,
+                            modifier = Modifier.size(if (compactPortrait) 52.dp else 60.dp),
+                            strokeWidth = if (compactPortrait) 4.dp else 5.dp,
                             color = TubeDeckAccentCyan,
                             trackColor = Color.White.copy(alpha = .26f)
                         )

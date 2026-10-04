@@ -69,6 +69,7 @@ fun DownloadsScreen(
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteFiles by remember { mutableStateOf(setOf<String>()) }
+    var vaultListView by remember { mutableStateOf(false) }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
     }
@@ -188,21 +189,63 @@ fun DownloadsScreen(
             when (selectedTab) {
                 0 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("All", "Videos", "Audio").forEach { filter ->
-                                val isSelected = filterType == filter
-                                Surface(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { filterType = filter }
-                                        .border(1.dp, if (isSelected) TubeDeckAccentMint else TubeDeckBorder, RoundedCornerShape(8.dp)),
-                                    color = if (isSelected) TubeDeckAccentMint.copy(alpha = 0.2f) else TubeDeckSurfaceVariant
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("All", "Videos", "Audio").forEach { filter ->
+                                    val isSelected = filterType == filter
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { filterType = filter }
+                                            .border(1.dp, if (isSelected) TubeDeckAccentMint else TubeDeckBorder, RoundedCornerShape(8.dp)),
+                                        color = if (isSelected) TubeDeckAccentMint.copy(alpha = 0.2f) else TubeDeckSurfaceVariant
+                                    ) {
+                                        Text(
+                                            filter,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            fontSize = 11.sp,
+                                            color = if (isSelected) TubeDeckAccentMint else TubeDeckTextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                TextButton(
+                                    onClick = { vaultListView = false },
+                                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
                                 ) {
+                                    Icon(
+                                        Icons.Default.GridView,
+                                        contentDescription = "Tile view",
+                                        modifier = Modifier.size(17.dp),
+                                        tint = if (!vaultListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                    Spacer(Modifier.width(3.dp))
                                     Text(
-                                        filter,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        fontSize = 11.sp,
-                                        color = if (isSelected) TubeDeckAccentMint else TubeDeckTextSecondary
+                                        "Tiles",
+                                        fontSize = 10.sp,
+                                        color = if (!vaultListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { vaultListView = true },
+                                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ViewList,
+                                        contentDescription = "List view",
+                                        modifier = Modifier.size(17.dp),
+                                        tint = if (vaultListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(
+                                        "List",
+                                        fontSize = 10.sp,
+                                        color = if (vaultListView) TubeDeckAccentCyan else TubeDeckTextSecondary
                                     )
                                 }
                             }
@@ -229,13 +272,31 @@ fun DownloadsScreen(
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text("No media found", color = TubeDeckTextSecondary)
                             }
+                        } else if (vaultListView) {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(filteredList, key = { it.id }) { media ->
+                                    OfflineMediaListRow(
+                                        media = media,
+                                        selected = media.id in selectedFileIds,
+                                        enabled = !fileOperationBusy,
+                                        onSelectedChange = {
+                                            selectedFileIds = if (it) selectedFileIds + media.id else selectedFileIds - media.id
+                                        },
+                                        onPlay = { onPlayMedia(media) },
+                                        onCopy = { onCopyFiles(setOf(media.id), false) },
+                                        onCut = { onCopyFiles(setOf(media.id), true) },
+                                        onMove = { onMoveFiles(setOf(media.id)) },
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                    )
+                                }
+                            }
                         } else {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 160.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                items(filteredList) { media ->
+                                items(filteredList, key = { it.id }) { media ->
                                     OfflineMediaCard(
                                         media = media, selected = media.id in selectedFileIds, enabled = !fileOperationBusy,
                                         onSelectedChange = { selectedFileIds = if (it) selectedFileIds + media.id else selectedFileIds - media.id },
@@ -501,6 +562,80 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                         DropdownMenuItem(text = { Text("Move") }, onClick = { menuOpen = false; onMove() })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfflineMediaListRow(
+    media: OfflineMedia,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+    onPlay: () -> Unit,
+    onCopy: () -> Unit,
+    onCut: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, if (selected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onPlay),
+        color = if (selected) TubeDeckAccentCyan.copy(alpha = 0.07f) else TubeDeckSurfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = onSelectedChange,
+                enabled = enabled,
+                modifier = Modifier.size(28.dp)
+            )
+            AsyncImage(
+                model = media.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(92.dp, 54.dp).clip(RoundedCornerShape(6.dp))
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    media.title,
+                    color = TubeDeckTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    listOf(media.qualityLabel, media.format)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · "),
+                    color = TubeDeckTextSecondary,
+                    fontSize = 10.sp
+                )
+            }
+            IconButton(onClick = onPlay, enabled = enabled, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = TubeDeckAccentMint)
+            }
+            Box {
+                IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "File actions", tint = TubeDeckTextSecondary)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("Copy to…") }, onClick = { menuOpen = false; onCopy() })
+                    DropdownMenuItem(text = { Text("Cut / move to…") }, onClick = { menuOpen = false; onCut() })
+                    DropdownMenuItem(text = { Text("Move to…") }, onClick = { menuOpen = false; onMove() })
+                    DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                 }
             }
         }

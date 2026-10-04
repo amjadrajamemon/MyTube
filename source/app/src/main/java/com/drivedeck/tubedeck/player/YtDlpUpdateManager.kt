@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.ffmpeg.FFmpeg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -113,6 +114,7 @@ object YtDlpUpdateManager {
         initMutex.withLock {
             if (_state.value.initialized) return@withLock
             YoutubeDL.init(app)
+            FFmpeg.init(app)
             val version = YoutubeDL.versionName(app) ?: YoutubeDL.version(app)
             _state.value = _state.value.copy(
                 initialized = true,

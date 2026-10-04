@@ -20,6 +20,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -104,8 +105,18 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 .setChannelId(CHANNEL_ID)
                 .build()
         )
+        val fastAudioLoadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                1_000,
+                20_000,
+                250,
+                500
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
         player = ExoPlayer.Builder(this)
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setLoadControl(fastAudioLoadControl)
             .build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
@@ -244,9 +255,8 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             .setMediaMetadata(metadata)
             .build()
 
-        player.setMediaItem(item)
+        player.setMediaItem(item, positionMs.coerceAtLeast(0L))
         player.prepare()
-        if (positionMs > 0L) player.seekTo(positionMs)
         player.playWhenReady = true
     }
 
@@ -265,8 +275,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                         originalUrl,
                         forceRefresh = true
                     )
-                    resolved.audioOptions.maxByOrNull { it.bitrate }?.url
-                        ?: resolved.progressiveUrl
+                    YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
                         ?: error("No refreshed audio stream is available.")
                 }
             }
@@ -364,20 +373,18 @@ object BackgroundAudioController {
             ?: return Result.failure(IllegalStateException("Audio playback is already starting"))
         var serviceRequested = false
         val result = runCatching {
-            val playUrl = withContext(Dispatchers.IO) {
-                if (YoutubeUrls.videoId(sourceUrl) != null) {
-                    YoutubeStreamResolver.invalidate(sourceUrl)
-                    val resolved = YoutubeStreamResolver.resolve(
+            val playUrl = if (YoutubeUrls.videoId(sourceUrl) != null) {
+                val cached = YoutubeStreamResolver.peekForHandoff(sourceUrl)
+                val resolved = cached ?: withContext(Dispatchers.IO) {
+                    YoutubeStreamResolver.resolve(
                         context.applicationContext,
-                        sourceUrl,
-                        forceRefresh = true
+                        sourceUrl
                     )
-                    resolved.audioOptions.maxByOrNull { it.bitrate }?.url
-                        ?: resolved.progressiveUrl
-                        ?: error("No playable audio stream is available for this video.")
-                } else {
-                    sourceUrl
                 }
+                YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
+                    ?: error("No playable audio stream is available for this video.")
+            } else {
+                sourceUrl
             }
 
             check(startup.isCurrent(request.id)) { "Audio playback was cancelled" }

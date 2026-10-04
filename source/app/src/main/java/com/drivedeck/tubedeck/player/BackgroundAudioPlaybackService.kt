@@ -318,6 +318,7 @@ object BackgroundAudioController {
 
     fun takeSnapshotAndStop(context: Context): BackgroundAudioSnapshot? {
         val snapshot = snapshot()
+        startup.cancelPending("Audio playback was stopped")
         activeSourceUrl = null
         activePositionMs = 0L
         BackgroundAudioPlaybackService.stop(context)
@@ -354,6 +355,7 @@ object BackgroundAudioController {
                 }
             }
 
+            check(startup.isCurrent(request.id)) { "Audio playback was cancelled" }
             BackgroundAudioPlaybackService.start(
                 context = context.applicationContext,
                 sourceUrl = sourceUrl,
@@ -364,6 +366,7 @@ object BackgroundAudioController {
                 requestId = request.id
             )
             serviceRequested = true
+            check(startup.isCurrent(request.id)) { "Audio playback was cancelled" }
             // Keep the video host alive until audio actually plays, or return a recoverable failure.
             withTimeout(20_000L) { request.ready.await().getOrThrow() }
         }

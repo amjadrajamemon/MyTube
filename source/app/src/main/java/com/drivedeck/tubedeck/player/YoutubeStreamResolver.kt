@@ -54,7 +54,7 @@ object YoutubeStreamResolver {
         val cachedAtMs: Long
     )
 
-    private const val RESOLUTION_CACHE_TTL_MS = 5 * 60 * 1000L
+    private const val RESOLUTION_CACHE_TTL_MS = 30 * 60 * 1000L
     private const val MAX_RESOLUTION_CACHE_ENTRIES = 12
 
     fun prewarm() {
@@ -315,7 +315,7 @@ object YoutubeStreamResolver {
 
     /**
      * Returning from audio-only is a continuation, not a fresh open. Promote a recent handoff
-     * entry back into the normal five-minute cache so the video can recreate Media3 immediately.
+     * entry back into the normal resolver cache so the video can recreate Media3 immediately.
      * Any genuinely expired CDN URL is still covered by the player's forced-refresh recovery.
      */
     fun promoteForHandoffResume(url: String, maxAgeMs: Long = 30 * 60 * 1000L): Boolean {

@@ -813,11 +813,12 @@ fun NativeExoPlayer(
         val positionBeforeRefresh = exoPlayer.currentPosition.coerceAtLeast(0L)
         resolveError = null
         try {
-            YoutubeStreamResolver.invalidate(media.mediaUri)
+            // A UI/lifecycle resume is not a stream failure. Reuse the existing resolver entry
+            // and let the normal playback-error recovery perform a forced refresh only if needed.
+            YoutubeStreamResolver.promoteForHandoffResume(media.mediaUri)
             val fresh = YoutubeStreamResolver.resolve(
                 context,
-                media.mediaUri,
-                forceRefresh = true
+                media.mediaUri
             )
             resolved = fresh
             hasCaptions = fresh.subtitles.isNotEmpty()

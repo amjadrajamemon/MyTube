@@ -372,10 +372,14 @@ fun BrowserScreen(
         // Only an explicit MyTube navigation command may call loadUrl(). URL observations from
         // WebView/YouTube SPA history update currentUrl in MainActivity but never feed back into
         // another network load.
-        val validTarget = currentUrl.startsWith("https://")
-        val firstLoad = persistentWebView.url.isNullOrBlank()
-        val newCommand = navigationGeneration != appliedNavigationGeneration.intValue
-        if (validTarget && (firstLoad || newCommand) && persistentWebView.url != currentUrl) {
+        if (
+            BrowserNavigationPolicy.shouldLoad(
+                currentWebUrl = persistentWebView.url,
+                targetUrl = currentUrl,
+                navigationGeneration = navigationGeneration,
+                appliedNavigationGeneration = appliedNavigationGeneration.intValue
+            )
+        ) {
             persistentWebView.loadUrl(currentUrl)
         }
         appliedNavigationGeneration.intValue = navigationGeneration

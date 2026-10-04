@@ -184,14 +184,17 @@ jobs:
           grep -Fq 'YoutubeStreamResolver.prefetch(applicationContext, warmUrl)' "$MAIN"
           grep -Fq 'browserSessionCreated by rememberSaveable' "$MAIN"
           grep -Fq 'screenStateHolder.SaveableStateProvider(currentScreen.name)' "$MAIN"
+          grep -Fq 'navigationGeneration = browserNavigationGeneration' "$MAIN"
           grep -Fq 'historyResetGeneration = browserHistoryResetGeneration' "$MAIN"
           ! grep -Fq 'webViewInstance?.loadUrl(destination)' "$MAIN"
           grep -Fq 'if (web?.canGoBack() == true)' "$MAIN"
           grep -Fq 'persistentWebView.onPause()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'pendingHistoryReset' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
+          grep -Fq 'LaunchedEffect(navigationGeneration)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'persistentWebView.clearHistory()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           ! grep -Fq 'YoutubeStreamResolver.invalidate(url)' "$NATIVE"
           ! grep -Fq 'YoutubeStreamResolver.invalidate(media.mediaUri)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'RESOLUTION_CACHE_TTL_MS = 30 * 60 * 1000L' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           echo "Release-critical OAuth, Back/PiP, Live playback, fast handoff and retained-navigation source checks passed."
 
       - name: Verify MyTube Android OAuth configuration
@@ -524,7 +527,8 @@ jobs:
           - Closing Web playback uses the existing WebView Back history when available instead of rebuilding the previous results URL.
           - New searches launched from Home/Mixes become clean browser roots, so stale older searches do not leak into Back navigation.
           - Home and utility-screen saveable UI state is preserved across normal MyTube navigation; Download Center keeps its selected tab, search/filter and list/tile view.
-          - Ordinary player resumes and Native/Web host changes preserve resolver cache; forced extraction is reserved for genuine playback-error recovery.
+          - Observed YouTube SPA URL changes are no longer treated as load commands, preventing feedback-driven full page reloads.
+          - Normal resolved-stream metadata is reused for 30 minutes; ordinary player resumes and Native/Web host changes preserve it, while forced extraction is reserved for genuine playback-error recovery.
           - Video -> Audio-only and Audio-only -> video reuse recently resolved streams, use fast audio startup buffering, and avoid unnecessary network extraction.
           - Live/livestream queries use YouTube's Live feature filter and active HLS broadcasts are supported in the native player.
           - Existing PiP, notification Return-to-video, queue, Suggested/Trending, downloads and OAuth refinements remain included.

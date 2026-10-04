@@ -82,6 +82,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var playerActive = true
     private var closingPlayer = false
     private var playbackBackDecisionJob: Job? = null
+    private var pipExitResolutionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var currentPlaybackPositionMs = 0L
     private var initialPlaybackPositionMs = 0L
@@ -704,6 +705,8 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun closePlaybackCompletely() {
         if (closingPlayer) return
+        pipExitResolutionJob?.cancel()
+        pipExitResolutionJob = null
         pipChoicePending = false
         pipExitPendingStop = false
         explicitAudioHandoff = false
@@ -750,6 +753,8 @@ class NativePlayerActivity : ComponentActivity() {
 
     private fun finishPlayer() {
         if (closingPlayer) return
+        pipExitResolutionJob?.cancel()
+        pipExitResolutionJob = null
         pipChoicePending = false
         pipExitPendingStop = false
         explicitAudioHandoff = false
@@ -814,7 +819,9 @@ class NativePlayerActivity : ComponentActivity() {
         }
         if (!closingPlayer && pipExitPendingStop) {
             // Reaching RESUMED means PiP was expanded, not dismissed by the system X.
-            // Expansion/resume is not itself a request for the 3-option chooser.
+            // Cancel the close watchdog and clear the bridge only after expansion is confirmed.
+            pipExitResolutionJob?.cancel()
+            pipExitResolutionJob = null
             pipExitPendingStop = false
             pipChoicePending = false
             NativePipSessionBridge.clear(playbackSessionId)
@@ -874,6 +881,8 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pipExitResolutionJob?.cancel()
+        pipExitResolutionJob = null
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         playbackBackCoordinator.reset()
@@ -904,14 +913,29 @@ class NativePlayerActivity : ComponentActivity() {
             // Starting an Activity here races the system PiP animation and caused the observed
             // minimize -> maximize -> minimize bounce on the first Back press.
         } else if (wasInPip && !isInPictureInPictureMode) {
-            NativePipSessionBridge.clear(playbackSessionId)
-            // We cannot know in this callback whether the user expanded PiP or pressed the
-            // system X. onResume means expansion; onStop means dismissal.
+            // Keep the native bridge alive during the exit transition. Android 13+ can deliver
+            // the system Close/X PendingIntent after this callback; clearing the bridge here
+            // races that broadcast and can leave ExoPlayer playing after the PiP window vanishes.
             pipExitPendingStop = true
-        }
-
-        if (wasInPip && !isInPictureInPictureMode && playerActive && !closingPlayer) {
             pendingFreshResumeFromPip = true
+
+            pipExitResolutionJob?.cancel()
+            pipExitResolutionJob = lifecycleScope.launch {
+                // Normal PiP expansion reaches onResume quickly and cancels this watchdog.
+                // If neither the close PendingIntent nor onStop arrives (observed on some OEMs),
+                // treat a non-resumed PiP exit as dismissal and hard-stop every playback path.
+                delay(850L)
+                if (
+                    pipExitPendingStop &&
+                    !isPipMode &&
+                    playerActive &&
+                    !closingPlayer
+                ) {
+                    foregroundPlaybackAllowed = false
+                    BackgroundAudioController.stop(applicationContext)
+                    closePlaybackCompletely()
+                }
+            }
         }
     }
 }

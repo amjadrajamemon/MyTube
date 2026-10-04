@@ -2,9 +2,11 @@ package com.drivedeck.tubedeck.player
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.drivedeck.tubedeck.MainActivity
 import androidx.core.app.ServiceCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -45,6 +47,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         private const val CHANNEL_ID = "mytube_background_audio"
         private const val EXTRA_REQUEST_ID = "request_id"
         private const val ACTION_PLAY = "com.drivedeck.tubedeck.action.PLAY_BACKGROUND_AUDIO"
+        const val ACTION_RETURN_TO_VIDEO = "com.drivedeck.tubedeck.action.RETURN_TO_VIDEO"
         private const val EXTRA_SOURCE_URL = "source_url"
         private const val EXTRA_PLAY_URL = "play_url"
         private const val EXTRA_TITLE = "title"
@@ -136,7 +139,9 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 }
             })
         }
-        mediaSession = MediaSession.Builder(this, player).build()
+        mediaSession = MediaSession.Builder(this, player)
+            .setSessionActivity(returnToVideoPendingIntent())
+            .build()
         serviceScope.launch {
             while (isActive) {
                 BackgroundAudioController.markPosition(sourceUrl, player.currentPosition.coerceAtLeast(0L))
@@ -173,6 +178,19 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         return START_NOT_STICKY
     }
 
+    private fun returnToVideoPendingIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_RETURN_TO_VIDEO
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        return PendingIntent.getActivity(
+            this,
+            1002,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun promoteToForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -182,7 +200,13 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(currentTitle)
-            .setContentText("Starting audio playback…")
+            .setContentText("Audio only • Tap to return to video")
+            .setContentIntent(returnToVideoPendingIntent())
+            .addAction(
+                android.R.drawable.ic_menu_view,
+                "Return to video",
+                returnToVideoPendingIntent()
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
@@ -206,6 +230,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private fun loadPlayableUrl(playUrl: String, positionMs: Long) {
         val metadata = MediaMetadata.Builder()
             .setTitle(currentTitle)
+            .setArtist("Audio only • Tap notification to return to video")
             .apply {
                 currentArtwork?.takeIf { it.isNotBlank() }?.let {
                     setArtworkUri(Uri.parse(it))

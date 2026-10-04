@@ -870,7 +870,7 @@ class MainActivity : ComponentActivity() {
                                             ) {
                                                 // Live discovery stays native so it is not dependent on
                                                 // YouTube's volatile web Live-filter token.
-                                                repository.searchLive(query)
+                                                repository.searchLive(query, googleSession.currentYoutubeAccessToken())
                                             } else {
                                                 repository.clearLiveSearch()
                                                 browserHistoryResetGeneration += 1

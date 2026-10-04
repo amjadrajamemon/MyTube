@@ -12,6 +12,7 @@ import androidx.annotation.RequiresApi
 
 internal object PlaybackPipActions {
     const val ACTION_EXPAND_PLAYER = "com.drivedeck.tubedeck.action.PIP_EXPAND_PLAYER"
+    const val ACTION_KEEP_PIP = "com.drivedeck.tubedeck.action.PIP_KEEP"
     const val ACTION_AUDIO_ONLY = "com.drivedeck.tubedeck.action.PIP_AUDIO_ONLY"
     const val ACTION_CLOSE = "com.drivedeck.tubedeck.action.PIP_CLOSE"
 
@@ -21,53 +22,58 @@ internal object PlaybackPipActions {
         activityClass: Class<*>,
         aspectRatio: Rational = Rational(16, 9)
     ): PictureInPictureParams {
+        @Suppress("UNUSED_VARIABLE")
+        val retainedForNamedCallCompatibility = activityClass
+
+        val keepAction = RemoteAction(
+            Icon.createWithResource(context, android.R.drawable.ic_media_play),
+            "Keep PiP",
+            "Keep picture-in-picture playing",
+            actionIntent(context, ACTION_KEEP_PIP, 7100)
+        )
+        val audioAction = RemoteAction(
+            Icon.createWithResource(context, android.R.drawable.ic_lock_silent_mode_off),
+            "Audio",
+            "Continue in audio-only mode",
+            actionIntent(context, ACTION_AUDIO_ONLY, 7101)
+        )
+        val closeAction = RemoteAction(
+            Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
+            "Close",
+            "Stop playback completely",
+            actionIntent(context, ACTION_CLOSE, 7102)
+        )
+
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(aspectRatio)
-            .setActions(
-                listOf(
-                    RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_menu_more),
-                        "Options",
-                        "Close, audio only, or keep picture-in-picture",
-                        actionIntent(context, activityClass, ACTION_EXPAND_PLAYER, 7100)
-                    ),
-                    RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_lock_silent_mode_off),
-                        "Audio",
-                        "Continue in audio-only mode",
-                        actionIntent(context, activityClass, ACTION_AUDIO_ONLY, 7101)
-                    ),
-                    RemoteAction(
-                        Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
-                        "Close",
-                        "Stop playback",
-                        actionIntent(context, activityClass, ACTION_CLOSE, 7102)
-                    )
-                )
-            )
+            .setActions(listOf(keepAction, audioAction, closeAction))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(false)
             builder.setSeamlessResizeEnabled(true)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ invokes this before its own PiP X close. This gives MyTube a
+            // deterministic chance to stop ExoPlayer/WebView and any audio-only service.
+            builder.setCloseAction(closeAction)
         }
         return builder.build()
     }
 
     private fun actionIntent(
         context: Context,
-        activityClass: Class<*>,
         action: String,
         requestCode: Int
     ): PendingIntent {
-        val intent = Intent(context, activityClass).apply {
+        val intent = Intent(context, PlaybackPipActionReceiver::class.java).apply {
             this.action = action
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        return PendingIntent.getActivity(
+        return PendingIntent.getBroadcast(
             context,
             requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
+
 }

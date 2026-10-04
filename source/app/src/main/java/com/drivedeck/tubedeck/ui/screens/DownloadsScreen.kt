@@ -69,8 +69,9 @@ fun DownloadsScreen(
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteFiles by remember { mutableStateOf(setOf<String>()) }
-    var vaultListView by remember { mutableStateOf(false) }
+    var vaultListView by remember { mutableStateOf(true) }
     var queueListView by remember { mutableStateOf(true) }
+    var finishedActionsOpen by remember { mutableStateOf(false) }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
     }
@@ -80,7 +81,7 @@ fun DownloadsScreen(
         selectedTaskIds = selectedTaskIds.intersect(validIds)
     }
 
-    val tabs = listOf("Downloads (${offlineMediaList.size})", "Queue (${downloadQueue.size})", "History (${downloadHistory.size})")
+    val tabs = listOf("Finished/Completed (${offlineMediaList.size})", "Pending/Queue (${downloadQueue.size})", "History (${downloadHistory.size})")
 
     Column(
         modifier = modifier
@@ -162,10 +163,11 @@ fun DownloadsScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                TabRow(
+                ScrollableTabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = TubeDeckSurface,
                     contentColor = TubeDeckAccentCyan,
+                    edgePadding = 4.dp,
                     divider = {}
                 ) {
                     tabs.forEachIndexed { index, title ->
@@ -175,7 +177,7 @@ fun DownloadsScreen(
                             text = {
                                 Text(
                                     title,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
                                     color = if (selectedTab == index) TubeDeckAccentCyan else TubeDeckTextSecondary
                                 )
@@ -260,13 +262,80 @@ fun DownloadsScreen(
                             }
                             matchesType
                         }
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { selectedFileIds = if (selectedFileIds.containsAll(filteredList.map { it.id })) emptySet() else filteredList.mapTo(mutableSetOf()) { it.id } }, enabled = !fileOperationBusy && filteredList.isNotEmpty()) { Text("Select all") }
-                            TextButton(onClick = { onCopyFiles(selectedFileIds, false) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Copy") }
-                            TextButton(onClick = { onCopyFiles(selectedFileIds, true) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Cut") }
-                            TextButton(onClick = onPasteFiles, enabled = !fileOperationBusy && clipboardCount > 0) { Text("Paste ($clipboardCount)") }
-                            TextButton(onClick = { onMoveFiles(selectedFileIds) }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Move") }
-                            TextButton(onClick = { confirmDeleteFiles = selectedFileIds }, enabled = !fileOperationBusy && selectedFileIds.isNotEmpty()) { Text("Delete", color = TubeDeckError) }
+                        Text(
+                            if (selectedFileIds.isEmpty()) "${filteredList.size} finished files" else "${selectedFileIds.size} selected",
+                            fontSize = 10.sp,
+                            color = if (selectedFileIds.isEmpty()) TubeDeckTextSecondary else TubeDeckAccentCyan
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    selectedFileIds = if (selectedFileIds.containsAll(filteredList.map { it.id })) {
+                                        emptySet()
+                                    } else {
+                                        filteredList.mapTo(mutableSetOf()) { it.id }
+                                    }
+                                },
+                                enabled = !fileOperationBusy && filteredList.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.SelectAll, null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (selectedFileIds.containsAll(filteredList.map { it.id }) && filteredList.isNotEmpty()) "None" else "Select", fontSize = 10.sp)
+                            }
+                            OutlinedButton(
+                                onClick = onPasteFiles,
+                                enabled = !fileOperationBusy && clipboardCount > 0,
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.ContentPaste, null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Paste ($clipboardCount)", fontSize = 10.sp, maxLines = 1)
+                            }
+                            Box(modifier = Modifier.weight(1f)) {
+                                OutlinedButton(
+                                    onClick = { finishedActionsOpen = true },
+                                    enabled = !fileOperationBusy && selectedFileIds.isNotEmpty(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Manage", fontSize = 10.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = finishedActionsOpen,
+                                    onDismissRequest = { finishedActionsOpen = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Copy") },
+                                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                        onClick = { finishedActionsOpen = false; onCopyFiles(selectedFileIds, false) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Cut") },
+                                        leadingIcon = { Icon(Icons.Default.ContentCut, null) },
+                                        onClick = { finishedActionsOpen = false; onCopyFiles(selectedFileIds, true) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Move") },
+                                        leadingIcon = { Icon(Icons.Default.DriveFileMove, null) },
+                                        onClick = { finishedActionsOpen = false; onMoveFiles(selectedFileIds) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Delete", color = TubeDeckError) },
+                                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = TubeDeckError) },
+                                        onClick = { finishedActionsOpen = false; confirmDeleteFiles = selectedFileIds }
+                                    )
+                                }
+                            }
                         }
                         if (fileOperationBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (filteredList.isEmpty()) {
@@ -325,7 +394,7 @@ fun DownloadsScreen(
                         ) {
                             Column {
                                 Text(
-                                    "Download Queue",
+                                    "Pending downloads",
                                     fontSize = 13.sp,
                                     color = TubeDeckTextSecondary,
                                     fontWeight = FontWeight.SemiBold
@@ -360,32 +429,39 @@ fun DownloadsScreen(
                                         tint = if (queueListView) TubeDeckAccentCyan else TubeDeckTextSecondary
                                     )
                                 }
-                                TextButton(
-                                    onClick = {
-                                        selectedTaskIds = if (allSelected) {
-                                            emptySet()
-                                        } else {
-                                            downloadQueue.mapTo(mutableSetOf()) { it.id }
-                                        }
-                                    },
-                                    enabled = downloadQueue.isNotEmpty()
-                                ) {
-                                    Text(
-                                        if (allSelected) "None" else "Select all",
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                TextButton(onClick = onClearFinished) {
-                                    Text(
-                                        "Clear finished",
-                                        fontSize = 11.sp,
-                                        color = TubeDeckAccentCyan
-                                    )
-                                }
                             }
                         }
 
                         Spacer(Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    selectedTaskIds = if (allSelected) {
+                                        emptySet()
+                                    } else {
+                                        downloadQueue.mapTo(mutableSetOf()) { it.id }
+                                    }
+                                },
+                                enabled = downloadQueue.isNotEmpty(),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.SelectAll, null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (allSelected) "Clear selection" else "Select all", fontSize = 10.sp)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (selectedCount > 0) "$selectedCount selected" else "Batch actions",
+                                fontSize = 10.sp,
+                                color = if (selectedCount > 0) TubeDeckAccentCyan else TubeDeckTextSecondary
+                            )
+                        }
+
+                        Spacer(Modifier.height(5.dp))
 
                         QueueBatchControls(
                             actions = listOf(
@@ -406,6 +482,12 @@ fun DownloadsScreen(
                                             it.status == TaskStatus.FAILED
                                     },
                                     onClick = onResumeOrRetryAllTasks
+                                ),
+                                QueueBatchAction(
+                                    label = "Clear finished",
+                                    icon = Icons.Default.DoneAll,
+                                    enabled = downloadQueue.any { it.status == TaskStatus.COMPLETED },
+                                    onClick = onClearFinished
                                 ),
                                 QueueBatchAction(
                                     label = "Delete all",
@@ -453,40 +535,6 @@ fun DownloadsScreen(
                             )
                         )
 
-                        Spacer(Modifier.height(5.dp))
-
-                        val queueFileIds = selectedTaskIds.intersect(
-                            offlineMediaList.mapTo(mutableSetOf()) { it.id }
-                        )
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = { onCopyFiles(queueFileIds, false) },
-                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
-                            ) { Text("Copy files") }
-                            TextButton(
-                                onClick = { onCopyFiles(queueFileIds, true) },
-                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
-                            ) { Text("Cut") }
-                            TextButton(
-                                onClick = onPasteFiles,
-                                enabled = !fileOperationBusy && clipboardCount > 0
-                            ) { Text("Paste ($clipboardCount)") }
-                            TextButton(
-                                onClick = { onMoveFiles(queueFileIds) },
-                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
-                            ) { Text("Move") }
-                            TextButton(
-                                onClick = { confirmDeleteFiles = queueFileIds },
-                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
-                            ) { Text("Delete files", color = TubeDeckError) }
-                        }
-                        if (fileOperationBusy) {
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
-                        }
-
                         Spacer(Modifier.height(8.dp))
 
                         if (downloadQueue.isEmpty()) {
@@ -494,7 +542,7 @@ fun DownloadsScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Queue is empty", color = TubeDeckTextSecondary)
+                                Text("No pending downloads", color = TubeDeckTextSecondary)
                             }
                         } else if (queueListView) {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {

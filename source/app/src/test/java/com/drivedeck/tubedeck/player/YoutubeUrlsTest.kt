@@ -24,6 +24,16 @@ class YoutubeUrlsTest {
         assertFalse(YoutubeUrls.playlist("http://www.youtube.com/playlist?list=PL123"))
         assertFalse(YoutubeUrls.playlist("https://example.com/playlist?list=PL123"))
     }
+
+    @Test fun canonicalizesPlaylistWatchLinksForSingleVideoPlayback() {
+        assertEquals(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            YoutubeUrls.canonicalVideoUrl(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123&index=7&start_radio=1"
+            )
+        )
+        assertNull(YoutubeUrls.canonicalVideoUrl("https://www.youtube.com/playlist?list=PL123"))
+    }
     @Test
     fun startPositionReplacesOldTimestampAndPreservesOtherQueryData() {
         assertEquals(

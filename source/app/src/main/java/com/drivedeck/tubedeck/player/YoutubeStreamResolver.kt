@@ -479,7 +479,8 @@ object YoutubeStreamResolver {
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             ensureInitialized()
             require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
-            val info = StreamInfo.getInfo(url)
+            val canonicalUrl = YoutubeUrls.canonicalVideoUrl(url) ?: url
+            val info = StreamInfo.getInfo(canonicalUrl)
 
             val progressive = info.videoStreams
                 .filter { it.isUrl() && it.getContent().startsWith("https://") }

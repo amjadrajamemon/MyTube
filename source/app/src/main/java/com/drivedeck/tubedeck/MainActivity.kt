@@ -427,8 +427,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    when (PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)) {
-                        PlaybackHost.NATIVE -> launchNativePlayer(media)
+                    val playbackHost = PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
+                    val nativeMedia = if (
+                        playbackHost == PlaybackHost.NATIVE &&
+                        YoutubeUrls.playlistId(media.mediaUri) != null
+                    ) {
+                        YoutubeUrls.canonicalVideoUrl(media.mediaUri)
+                            ?.let { media.copy(mediaUri = it) }
+                            ?: media
+                    } else {
+                        media
+                    }
+                    when (playbackHost) {
+                        PlaybackHost.NATIVE -> launchNativePlayer(nativeMedia)
                         PlaybackHost.WEB -> {
                             val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
                             val targetUrl =

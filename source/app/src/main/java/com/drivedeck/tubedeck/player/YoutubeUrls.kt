@@ -24,6 +24,9 @@ object YoutubeUrls {
         return candidate?.takeIf { idPattern.matches(it) }
     }
 
+    fun canonicalVideoUrl(value: String): String? =
+        videoId(value)?.let { "https://www.youtube.com/watch?v=$it" }
+
     fun playlist(value: String): Boolean = playlistId(value) != null
 
     fun playlistId(value: String): String? {

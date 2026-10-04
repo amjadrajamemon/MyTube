@@ -152,6 +152,8 @@ fun PlayerScreen(
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    onPreviousItem: (() -> Unit)? = null,
+    onNextItem: (() -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -233,6 +235,8 @@ fun PlayerScreen(
             onDownloadVideo = onDownloadVideo,
             onDownloadPlaylist = onDownloadPlaylist,
             onPlayRelated = onPlayRelated,
+            onPreviousItem = onPreviousItem,
+            onNextItem = onNextItem,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             onPlaybackPositionChanged = onPlaybackPositionChanged,
@@ -387,6 +391,8 @@ fun NativeExoPlayer(
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
+    onPreviousItem: (() -> Unit)? = null,
+    onNextItem: (() -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -1160,6 +1166,7 @@ fun NativeExoPlayer(
                     shadowElevation = 8.dp,
                     modifier = Modifier
                         .align(Alignment.Center)
+                        .offset(y = if (compactPortrait) 12.dp else 10.dp)
                         .zIndex(50f)
                         .size(centerControlDiameter)
                 ) {
@@ -1263,29 +1270,75 @@ fun NativeExoPlayer(
                         }
                     }
 
-                    Row(
-                        Modifier.align(Alignment.Center)
-                            .offset(y = if (compactPortrait) 12.dp else 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
-                    ) {
-                        HoldSeekButton(Icons.Default.FastRewind, "Reverse", -1, exoPlayer, duration, seekIntervalSeconds)
-                        Surface(
-                            onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
-                            shape = CircleShape,
-                            color = TubeDeckAccentCyan,
-                            modifier = Modifier.size(centerControlDiameter)
+                    if (firstFrameRendered) {
+                        val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                        val suggestedNext = resolved?.relatedVideos
+                            ?.firstOrNull { it.videoId.isNotBlank() && it.videoId != currentVideoId }
+
+                        Row(
+                            Modifier.align(Alignment.Center)
+                                .offset(y = if (compactPortrait) 12.dp else 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            IconButton(
+                                onClick = { onPreviousItem?.invoke() },
+                                enabled = onPreviousItem != null,
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                            ) {
                                 Icon(
-                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    "Play/Pause",
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(if (compactPortrait) 30.dp else 34.dp)
+                                    Icons.Default.SkipPrevious,
+                                    "Previous video",
+                                    tint = if (onPreviousItem != null) Color.White else Color.White.copy(alpha = .28f),
+                                    modifier = Modifier.size(if (compactPortrait) 34.dp else 40.dp)
+                                )
+                            }
+
+                            Surface(
+                                onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
+                                shape = CircleShape,
+                                color = TubeDeckAccentCyan,
+                                modifier = Modifier.size(centerControlDiameter)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        "Play/Pause",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(if (compactPortrait) 30.dp else 34.dp)
+                                    )
+                                }
+                            }
+
+                            val nextEnabled = onNextItem != null || (suggestedNext != null && onPlayRelated != null)
+                            IconButton(
+                                onClick = {
+                                    when {
+                                        onNextItem != null -> onNextItem.invoke()
+                                        suggestedNext != null && onPlayRelated != null -> {
+                                            onPlayRelated.invoke(
+                                                OfflineMedia(
+                                                    id = "next-${suggestedNext.videoId}-${System.nanoTime()}",
+                                                    title = suggestedNext.title,
+                                                    videoId = suggestedNext.videoId,
+                                                    thumbnailUrl = suggestedNext.thumbnailUrl,
+                                                    mediaUri = suggestedNext.url
+                                                )
+                                            )
+                                        }
+                                    }
+                                },
+                                enabled = nextEnabled,
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.SkipNext,
+                                    "Next video",
+                                    tint = if (nextEnabled) Color.White else Color.White.copy(alpha = .28f),
+                                    modifier = Modifier.size(if (compactPortrait) 34.dp else 40.dp)
                                 )
                             }
                         }
-                        HoldSeekButton(Icons.Default.FastForward, "Fast forward", 1, exoPlayer, duration, seekIntervalSeconds)
                     }
 
                     Column(

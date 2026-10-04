@@ -21,6 +21,14 @@ internal class AudioHandoffStartup {
         pending?.takeIf { it.id == id }?.ready?.complete(Result.failure(IllegalStateException(message)))
     }
 
+    @Synchronized fun isCurrent(id: Long): Boolean = pending?.id == id
+
+    @Synchronized fun cancelPending(message: String) {
+        pending?.ready?.complete(Result.failure(IllegalStateException(message)))
+        pending = null
+        sequence += 1
+    }
+
     @Synchronized fun finish(id: Long) {
         if (pending?.id == id) pending = null
     }

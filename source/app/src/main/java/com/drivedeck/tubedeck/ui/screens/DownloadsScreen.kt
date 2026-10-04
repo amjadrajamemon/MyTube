@@ -70,6 +70,7 @@ fun DownloadsScreen(
     var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteFiles by remember { mutableStateOf(setOf<String>()) }
     var vaultListView by remember { mutableStateOf(false) }
+    var queueListView by remember { mutableStateOf(true) }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
     }
@@ -338,6 +339,28 @@ fun DownloadsScreen(
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(
+                                    onClick = { queueListView = false },
+                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.GridView,
+                                        contentDescription = "Queue tile view",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (!queueListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { queueListView = true },
+                                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ViewList,
+                                        contentDescription = "Queue list view",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (queueListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                }
+                                TextButton(
                                     onClick = {
                                         selectedTaskIds = if (allSelected) {
                                             emptySet()
@@ -430,6 +453,40 @@ fun DownloadsScreen(
                             )
                         )
 
+                        Spacer(Modifier.height(5.dp))
+
+                        val queueFileIds = selectedTaskIds.intersect(
+                            offlineMediaList.mapTo(mutableSetOf()) { it.id }
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = { onCopyFiles(queueFileIds, false) },
+                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
+                            ) { Text("Copy files") }
+                            TextButton(
+                                onClick = { onCopyFiles(queueFileIds, true) },
+                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
+                            ) { Text("Cut") }
+                            TextButton(
+                                onClick = onPasteFiles,
+                                enabled = !fileOperationBusy && clipboardCount > 0
+                            ) { Text("Paste ($clipboardCount)") }
+                            TextButton(
+                                onClick = { onMoveFiles(queueFileIds) },
+                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
+                            ) { Text("Move") }
+                            TextButton(
+                                onClick = { confirmDeleteFiles = queueFileIds },
+                                enabled = !fileOperationBusy && queueFileIds.isNotEmpty()
+                            ) { Text("Delete files", color = TubeDeckError) }
+                        }
+                        if (fileOperationBusy) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
+
                         Spacer(Modifier.height(8.dp))
 
                         if (downloadQueue.isEmpty()) {
@@ -439,8 +496,32 @@ fun DownloadsScreen(
                             ) {
                                 Text("Queue is empty", color = TubeDeckTextSecondary)
                             }
-                        } else {
+                        } else if (queueListView) {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                items(downloadQueue, key = { it.id }) { task ->
+                                    QueueTaskCard(
+                                        task = task,
+                                        selected = task.id in selectedTaskIds,
+                                        onSelectedChange = { selected ->
+                                            selectedTaskIds = if (selected) {
+                                                selectedTaskIds + task.id
+                                            } else {
+                                                selectedTaskIds - task.id
+                                            }
+                                        },
+                                        onPause = { onPauseTask(task.id) },
+                                        onResume = { onResumeTask(task.id) },
+                                        onCancel = { onCancelTask(task.id) },
+                                        onRetry = { onRetryTask(task.id) }
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 220.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 items(downloadQueue, key = { it.id }) { task ->
                                     QueueTaskCard(
                                         task = task,

@@ -9,6 +9,25 @@ val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
 val googleDeviceClientId = ""
 val googleDeviceClientSecret = ""
 
+val releaseStoreFilePath = providers.gradleProperty("MYTUBE_RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("MYTUBE_RELEASE_STORE_FILE"))
+    .orNull
+val releaseStorePassword = providers.gradleProperty("MYTUBE_RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("MYTUBE_RELEASE_STORE_PASSWORD"))
+    .orNull
+val releaseKeyAlias = providers.gradleProperty("MYTUBE_RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("MYTUBE_RELEASE_KEY_ALIAS"))
+    .orNull
+val releaseKeyPassword = providers.gradleProperty("MYTUBE_RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("MYTUBE_RELEASE_KEY_PASSWORD"))
+    .orNull
+val productionSigningReady = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 require(googleWebClientId.matches(Regex("[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com"))) {
     "Configure GOOGLE_WEB_CLIENT_ID with the MyTube Web OAuth client ID"
 }
@@ -27,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 63
-        versionName = "1.5.7"
+        versionCode = 64
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
@@ -52,17 +71,27 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            // CI restores and verifies this exact key. AGP's default XDG path is different.
+            // Existing test/update channel keeps the pinned v1.5.x certificate.
             storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (productionSigningReady) {
+            create("production") {
+                storeFile = file(requireNotNull(releaseStoreFilePath))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
     }
 
     buildTypes {
         release {
+            isDebuggable = false
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("production")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

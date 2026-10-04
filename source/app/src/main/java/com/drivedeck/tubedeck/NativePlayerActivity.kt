@@ -710,6 +710,8 @@ class NativePlayerActivity : ComponentActivity() {
         pipChoicePending = false
         pipExitPendingStop = false
         explicitAudioHandoff = false
+        foregroundPlaybackAllowed = false
+        pauseGeneration += 1
         closingPlayer = true
         playerActive = false
         playbackBackDecisionJob?.cancel()

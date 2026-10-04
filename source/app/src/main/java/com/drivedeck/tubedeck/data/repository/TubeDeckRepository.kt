@@ -223,7 +223,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         return items.map { relatedToHome(it, live = true) }
     }
 
-    fun searchLive(query: String) {
+    fun searchLive(query: String, accessToken: String? = null) {
         val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
         if (clean.isBlank()) return
         liveSearchJob?.cancel()
@@ -232,8 +232,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
         _liveSearchStatus.value = "Loading"
         liveSearchJob = scope.launch {
             try {
-                val items = YoutubeStreamResolver.searchLiveVideos(context, clean, 24)
-                    .map { relatedToHome(it, live = true) }
+                val official = accessToken
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { token ->
+                        runCatching { YoutubeHomeFeedClient.liveSearch(token, clean, 24) }
+                            .getOrDefault(emptyList())
+                    }
+                    .orEmpty()
+                val items = if (official.isNotEmpty()) {
+                    official
+                } else {
+                    YoutubeStreamResolver.searchLiveVideos(context, clean, 24)
+                        .map { relatedToHome(it, live = true) }
+                }
                 ensureActive()
                 _liveSearchResults.value = items
                 _liveSearchStatus.value = if (items.isEmpty()) "No active live streams" else ""

@@ -165,7 +165,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val current = loadRecentSearches()
         val next = (listOf(clean) + current.filterNot { it.equals(clean, ignoreCase = true) }).take(8)
         val array = JSONArray()
-        next.forEach(array::put)
+        next.forEach { array.put(it) }
         prefs.edit()
             .putString("recent_searches_json", array.toString())
             .remove("home_suggestions_seed")
@@ -1032,7 +1032,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                                 DownloadFailureClassifier.isRecoverable(IllegalStateException(persistedError)))
                         ) TaskStatus.QUEUED else TaskStatus.FAILED
                     }
-                    TaskStatus.CANCELLED, TaskStatus.RETRIED -> TaskStatus.FAILED
+                    status == TaskStatus.CANCELLED || status == TaskStatus.RETRIED -> TaskStatus.FAILED
                     else -> status
                 },
                 errorMessage = if (systemTimedOut) null else persistedError,

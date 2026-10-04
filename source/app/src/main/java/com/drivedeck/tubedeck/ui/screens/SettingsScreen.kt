@@ -58,6 +58,7 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         YtDlpUpdateManager.scheduleWeekly(context)
         YtDlpUpdateManager.refreshState(context)
+        YtDlpUpdateManager.refreshLatestVersion(context)
     }
     var downloadDir by remember { mutableStateOf(currentSettings.downloadDir) }
     var downloadTreeUri by remember { mutableStateOf(currentSettings.downloadTreeUri) }
@@ -359,6 +360,14 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Download Engine") {
+                val installedVersion = ytDlpState.version ?: "—"
+                val latestVersion = ytDlpState.latestVersion ?: "Checking…"
+                Text(
+                    "Installed: $installedVersion   Latest: $latestVersion",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = {
                         updateScope.launch {
@@ -384,6 +393,14 @@ fun SettingsScreen(
                         Spacer(Modifier.width(6.dp))
                         Text("Update")
                     }
+                }
+                if (ytDlpState.lastCheckedAt > 0L) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Checked: ${ytDlpState.lastCheckedLabel}",
+                        color = TubeDeckTextSecondary,
+                        fontSize = 10.sp
+                    )
                 }
             }
 

@@ -84,8 +84,8 @@ fun DriveDeckScreen(
             item {
                 HomeShelf("Trending · $countryCode", if (trendingEnabled) trendingVideos else emptyList(), onOpenVideo,
                     enabled = trendingEnabled, loading = trendingStatus == "Loading",
-                    action = if (!trendingEnabled) null else if (trendingStatus == "Connect YouTube") "Connect" else "Refresh",
-                    onAction = if (trendingStatus == "Connect YouTube") onGoogleAccountClick else onRefreshFeed)
+                    action = if (!trendingEnabled) null else "Refresh",
+                    onAction = onRefreshFeed)
             }
         }
     }

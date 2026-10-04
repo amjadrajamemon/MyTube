@@ -44,6 +44,7 @@ fun BrowserScreen(
     onPlaybackStateChanged: (isPlaying: Boolean, positionMs: Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     isActive: Boolean = true,
+    historyResetGeneration: Int = 0,
     onFullscreenChanged: (Boolean) -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -59,6 +60,8 @@ fun BrowserScreen(
     val latestUrl by rememberUpdatedState(currentUrl)
     var lastObservedVideoId by remember { mutableStateOf<String?>(null) }
     var lastNativeRequestAt by remember { mutableLongStateOf(0L) }
+    val pendingHistoryReset = remember { mutableIntStateOf(0) }
+    val appliedHistoryReset = remember { mutableIntStateOf(0) }
 
     fun observeUrl(view: WebView?, url: String?, explicitNavigation: Boolean = false) {
         if (url?.startsWith("https://") != true) return
@@ -254,6 +257,17 @@ fun BrowserScreen(
                     super.onPageFinished(view, url)
                     isLoading = false
                     observeUrl(view, url)
+                    if (
+                        pendingHistoryReset.intValue > appliedHistoryReset.intValue &&
+                        url == latestUrl
+                    ) {
+                        // A search started from Home/Mixes is a fresh browser navigation session.
+                        // Make that results page the WebView root only after it commits, so Back
+                        // returns to MyTube Home rather than walking through stale older searches.
+                        view?.clearHistory()
+                        appliedHistoryReset.intValue = pendingHistoryReset.intValue
+                        pendingHistoryReset.intValue = 0
+                    }
                     if (url != null && YoutubeUrls.isYoutubePage(url)) view?.evaluateJavascript(currentScript, null)
                     onCanGoBackChanged(view?.canGoBack() == true)
                     onCanGoForwardChanged(view?.canGoForward() == true)
@@ -335,6 +349,19 @@ fun BrowserScreen(
                 }
             } else {
                 currentOnPlaybackStateChanged(false, 0L)
+            }
+        }
+    }
+
+    LaunchedEffect(historyResetGeneration) {
+        if (historyResetGeneration > appliedHistoryReset.intValue) {
+            pendingHistoryReset.intValue = historyResetGeneration
+            if (persistentWebView.url == currentUrl && currentUrl.startsWith("https://")) {
+                persistentWebView.clearHistory()
+                appliedHistoryReset.intValue = historyResetGeneration
+                pendingHistoryReset.intValue = 0
+                onCanGoBackChanged(false)
+                onCanGoForwardChanged(false)
             }
         }
     }

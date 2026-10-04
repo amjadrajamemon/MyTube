@@ -40,6 +40,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var activeSponsorId: String? = null
     private var homeSuggestionsJob: Job? = null
     private var homeTrendingJob: Job? = null
+    private var homeLiveJob: Job? = null
+    private var liveSearchJob: Job? = null
     @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -60,6 +62,16 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val homeSuggestions: StateFlow<List<HomeVideo>> = _homeSuggestions.asStateFlow()
     private val _homeTrending = MutableStateFlow<List<HomeVideo>>(emptyList())
     val homeTrending: StateFlow<List<HomeVideo>> = _homeTrending.asStateFlow()
+    private val _homeLive = MutableStateFlow<List<HomeVideo>>(emptyList())
+    val homeLive: StateFlow<List<HomeVideo>> = _homeLive.asStateFlow()
+    private val _homeLiveStatus = MutableStateFlow("")
+    val homeLiveStatus: StateFlow<String> = _homeLiveStatus.asStateFlow()
+    private val _liveSearchResults = MutableStateFlow<List<HomeVideo>>(emptyList())
+    val liveSearchResults: StateFlow<List<HomeVideo>> = _liveSearchResults.asStateFlow()
+    private val _liveSearchQuery = MutableStateFlow("")
+    val liveSearchQuery: StateFlow<String> = _liveSearchQuery.asStateFlow()
+    private val _liveSearchStatus = MutableStateFlow("")
+    val liveSearchStatus: StateFlow<String> = _liveSearchStatus.asStateFlow()
     private val _homeCountry = MutableStateFlow(detectHomeCountry())
     val homeCountry: StateFlow<String> = _homeCountry.asStateFlow()
     private val _homeTrendingStatus = MutableStateFlow("")
@@ -181,20 +193,63 @@ class TubeDeckRepository private constructor(private val context: Context) {
             .take(8)
     }.getOrDefault(emptyList())
 
+    private fun relatedToHome(item: YoutubeStreamResolver.RelatedVideo, live: Boolean = false) =
+        HomeVideo(
+            videoId = item.videoId,
+            title = item.title,
+            url = item.url,
+            thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
+            channelTitle = item.channelTitle.ifBlank { "YouTube" },
+            durationText = if (live) "LIVE" else formatDurationLabel(item.durationSeconds),
+            watchedAt = 0L
+        )
+
     private suspend fun publicTrending(region: String, limit: Int = 12): List<HomeVideo> {
         val countryName = Locale("", region).displayCountry.ifBlank { region }
         return YoutubeStreamResolver.searchVideos("popular trending videos $countryName", limit)
-            .map { item ->
-                HomeVideo(
-                    videoId = item.videoId,
-                    title = item.title,
-                    url = item.url,
-                    thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
-                    channelTitle = item.channelTitle.ifBlank { "YouTube" },
-                    durationText = formatDurationLabel(item.durationSeconds),
-                    watchedAt = 0L
-                )
+            .map(::relatedToHome)
+    }
+
+    private suspend fun publicLive(region: String, limit: Int = 12): List<HomeVideo> {
+        val countryName = Locale("", region).displayCountry.ifBlank { region }
+        val primary = YoutubeStreamResolver.searchLiveVideos(
+            context,
+            "$countryName live news",
+            limit
+        )
+        val items = if (primary.isNotEmpty()) primary else {
+            YoutubeStreamResolver.searchLiveVideos(context, "$countryName live", limit)
+        }
+        return items.map { relatedToHome(it, live = true) }
+    }
+
+    fun searchLive(query: String) {
+        val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
+        if (clean.isBlank()) return
+        liveSearchJob?.cancel()
+        _liveSearchQuery.value = clean
+        _liveSearchResults.value = emptyList()
+        _liveSearchStatus.value = "Loading"
+        liveSearchJob = scope.launch {
+            try {
+                val items = YoutubeStreamResolver.searchLiveVideos(context, clean, 24)
+                    .map { relatedToHome(it, live = true) }
+                ensureActive()
+                _liveSearchResults.value = items
+                _liveSearchStatus.value = if (items.isEmpty()) "No active live streams" else ""
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _liveSearchStatus.value = "Retry"
             }
+        }
+    }
+
+    fun clearLiveSearch() {
+        liveSearchJob?.cancel()
+        _liveSearchQuery.value = ""
+        _liveSearchResults.value = emptyList()
+        _liveSearchStatus.value = ""
     }
 
     fun recordWatch(media: OfflineMedia) {
@@ -373,6 +428,40 @@ class TubeDeckRepository private constructor(private val context: Context) {
                             "home_suggestions_updated",
                             now - HomeFeedPolicy.CACHE_MS + 120_000L
                         ).apply()
+                }
+            }
+        }
+
+        val liveCacheKey = "home_live_$region"
+        if (_homeLive.value.isEmpty() || region != prefs.getString("home_live_region", null)) {
+            _homeLive.value = loadHomeVideos(liveCacheKey)
+        }
+        if (
+            homeLiveJob?.isActive != true &&
+            HomeFeedPolicy.shouldRefresh(
+                true, now, prefs.getLong("${liveCacheKey}_updated", 0L), force
+            )
+        ) {
+            homeLiveJob = scope.launch {
+                _homeLiveStatus.value = "Loading"
+                try {
+                    val items = publicLive(region)
+                    ensureActive()
+                    _homeLive.value = items.take(12)
+                    if (items.isNotEmpty()) {
+                        saveHomeVideos(liveCacheKey, _homeLive.value)
+                        prefs.edit()
+                            .putLong("${liveCacheKey}_updated", now)
+                            .putString("home_live_region", region)
+                            .apply()
+                        _homeLiveStatus.value = ""
+                    } else {
+                        _homeLiveStatus.value = "Retry"
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    _homeLiveStatus.value = "Retry"
                 }
             }
         }

@@ -46,7 +46,7 @@ internal object MediaDownloader {
         settings: TubeDeckSettings,
         onProgress: (Progress) -> Unit
     ): OfflineMedia = withContext(Dispatchers.IO) {
-        val resolved = YoutubeStreamResolver.resolve(context, task.url)
+        val resolved = YoutubeStreamResolver.resolveForDownload(context, task.url)
         require(resolved.durationSeconds > 0) { "Live or unbounded streams are not supported for offline downloads" }
 
         val selectedUrl: String

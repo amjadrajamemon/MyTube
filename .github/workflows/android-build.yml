@@ -119,7 +119,7 @@ jobs:
           grep -Fq 'latestVersion' source/app/src/main/java/com/drivedeck/tubedeck/player/YtDlpUpdateManager.kt
           grep -Fq 'pipExitPendingStop' "$MAIN"
           grep -Fq 'PiP exit alone is not a request to show the 3-option chooser' "$MAIN"
-          grep -Fq 'Expansion/resume is not itself a request for the 3-option chooser' "$NATIVE"
+          grep -Fq 'Cancel the close watchdog and clear the bridge only after expansion is confirmed' "$NATIVE"
           grep -Fq 'cancelPending' source/app/src/main/java/com/drivedeck/tubedeck/player/AudioHandoffStartup.kt
           grep -Fq 'centerControlDiameter = if (compactPortrait) 52.dp else 60.dp' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'ERROR_CODE_DECODER_INIT_FAILED' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt

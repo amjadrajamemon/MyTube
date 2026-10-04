@@ -245,7 +245,7 @@ object YoutubeStreamResolver {
                 resolutionInFlight[key]?.let { return@synchronized it }
             }
             resolutionScope.async {
-                resolveUncached(url)
+                resolvePlaybackWithFallback(context.applicationContext, url)
             }.also { resolutionInFlight[key] = it }
         }
 
@@ -472,6 +472,32 @@ object YoutubeStreamResolver {
             chapters = chapters,
             previewStoryboard = null,
             relatedVideos = emptyList()
+        )
+    }
+
+    private suspend fun resolvePlaybackWithFallback(context: Context, url: String): ResolvedMedia {
+        val canonicalUrl = YoutubeUrls.canonicalVideoUrl(url) ?: url
+        val extractorAttempt = runCatching { resolveUncached(canonicalUrl) }
+        extractorAttempt.getOrNull()?.let { return it }
+
+        val engineAttempt = runCatching { resolveWithDownloadEngine(context, canonicalUrl) }
+        engineAttempt.getOrNull()?.let { return it }
+
+        runCatching { YtDlpUpdateManager.updateNow(context) }
+        val refreshedEngineAttempt = runCatching {
+            resolveWithDownloadEngine(context, canonicalUrl)
+        }
+        refreshedEngineAttempt.getOrNull()?.let { return it }
+
+        val extractorError = extractorAttempt.exceptionOrNull()
+        val engineError = refreshedEngineAttempt.exceptionOrNull() ?: engineAttempt.exceptionOrNull()
+        throw IOException(
+            listOfNotNull(
+                "Could not resolve video stream",
+                extractorError?.message?.takeIf { it.isNotBlank() }?.let { "Extractor: $it" },
+                engineError?.message?.takeIf { it.isNotBlank() }?.let { "Download Engine: $it" }
+            ).joinToString(" • "),
+            engineError ?: extractorError
         )
     }
 
@@ -1170,6 +1196,33 @@ object YoutubeStreamResolver {
 
         return value.take(90)
     }
+
+    suspend fun searchVideos(query: String, limit: Int = 20): List<RelatedVideo> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val clean = query.trim()
+            if (clean.isBlank()) return@withContext emptyList()
+            ensureInitialized()
+            val service = NewPipe.getService("YouTube")
+            val handler = service.searchQHFactory.fromQuery(clean, listOf("videos"), "")
+            val info = SearchInfo.getInfo(service, handler)
+            info.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .mapNotNull { item ->
+                    val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
+                    RelatedVideo(
+                        videoId = id,
+                        title = item.name,
+                        url = YoutubeUrls.canonicalVideoUrl(item.url)
+                            ?: "https://www.youtube.com/watch?v=$id",
+                        thumbnailUrl = item.thumbnails.firstOrNull()?.url
+                            ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                        channelTitle = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+                        durationSeconds = item.duration.coerceAtLeast(0L)
+                    )
+                }
+                .distinctBy { it.videoId }
+                .take(limit.coerceIn(1, 50))
+        }
 
     suspend fun playlistItems(url: String): List<org.schabi.newpipe.extractor.stream.StreamInfoItem> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

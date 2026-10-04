@@ -52,11 +52,6 @@ fun DriveDeckScreen(
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val topics = remember {
-        listOf("All", "Music", "Gaming", "News", "Live", "Technology", "Sports", "Movies", "Learning")
-    }
-    var selectedTopic by remember { mutableStateOf("All") }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -77,24 +72,6 @@ fun DriveDeckScreen(
             contentPadding = PaddingValues(bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(topics) { topic ->
-                        FilterChip(
-                            selected = selectedTopic == topic,
-                            onClick = {
-                                selectedTopic = topic
-                                if (topic != "All") onExecuteSearch(topic)
-                            },
-                            label = { Text(topic) }
-                        )
-                    }
-                }
-            }
-
             item {
                 HomeShelf("History", watchHistory.take(12), onOpenVideo,
                     action = if (watchHistory.isNotEmpty()) "Clear" else null, onAction = onClearHistory)

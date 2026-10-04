@@ -649,6 +649,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun pauseTask(id: String) {
+        MediaDownloader.cancel(id)
         synchronized(lock) {
             updateTask(id) { if (it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED) it.copy(status = TaskStatus.PAUSED, speed = "Paused") else it }
             activeJobs[id]?.cancel()
@@ -662,6 +663,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         processQueue()
     }
     fun cancelTask(id: String) {
+        MediaDownloader.cancel(id)
         val job = synchronized(lock) {
             val running = activeJobs[id]
             running?.cancel()
@@ -682,6 +684,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             val targets = ids.toSet()
             val updated = _downloadQueue.value.map { task ->
                 if (task.id in targets && (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.QUEUED)) {
+                    MediaDownloader.cancel(task.id)
                     activeJobs[task.id]?.cancel()
                     task.copy(status = TaskStatus.PAUSED, speed = "Paused")
                 } else {
@@ -730,6 +733,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val targets = ids.toSet()
         val jobs = synchronized(lock) {
             val running = targets.mapNotNull { id ->
+                MediaDownloader.cancel(id)
                 activeJobs[id]?.also { it.cancel() }?.let { id to it }
             }
             setQueue(_downloadQueue.value.filterNot { it.id in targets })

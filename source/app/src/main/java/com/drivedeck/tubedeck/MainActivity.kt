@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var pipChoicePending = false
     private var pendingChooserAfterPipExit = false
+    private var pipExitPendingStop = false
     private var activePlaybackUrl: String = ""
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
@@ -1171,6 +1172,10 @@ class MainActivity : ComponentActivity() {
         if (playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+        if (pipExitPendingStop && playerActive) {
+            // Reaching RESUMED means PiP was expanded rather than dismissed.
+            pipExitPendingStop = false
+        }
         if (pendingChooserAfterPipExit && playerActive) {
             pendingChooserAfterPipExit = false
             playbackBackCoordinator.forceChooserVisible()
@@ -1181,6 +1186,16 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         if (!isPipMode) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (pipExitPendingStop && playerActive) {
+            // Some OEM PiP close buttons never dispatch our custom close RemoteAction.
+            // A PiP exit followed by STOP (without RESUME) is a dismissal, so hard-stop both
+            // the visible player and any pending/active audio-only service.
+            pipExitPendingStop = false
+            pendingChooserAfterPipExit = false
+            closeActivePlaybackCompletely()
+            super.onStop()
+            return
         }
         if (!isPipMode && !enteringPip && playerActive) {
             // Web playback must not silently survive task/background transitions. Only explicit
@@ -1203,6 +1218,7 @@ class MainActivity : ComponentActivity() {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null
                 pipChoicePending = false
+                pipExitPendingStop = false
                 NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
                     NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.SHOW_CHOOSER)
                     return
@@ -1333,6 +1349,7 @@ class MainActivity : ComponentActivity() {
 
     private fun closeActivePlaybackCompletely() {
         pipChoicePending = false
+        pipExitPendingStop = false
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         nativePipBackExitJob?.cancel()
@@ -1417,6 +1434,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
             pipChoicePending = true
+            pipExitPendingStop = false
             val params = PlaybackPipActions.buildParams(
                 context = this,
                 activityClass = MainActivity::class.java
@@ -1460,6 +1478,10 @@ class MainActivity : ComponentActivity() {
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             pendingChooserAfterPipExit = true
+        }
+        if (wasInPip && !isInPictureInPictureMode && playerActive) {
+            // onResume clears this for a normal expansion; onStop consumes it for an X/dismiss.
+            pipExitPendingStop = true
         }
     }
 

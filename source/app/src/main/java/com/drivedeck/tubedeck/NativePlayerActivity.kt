@@ -49,6 +49,8 @@ import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
 import com.drivedeck.tubedeck.player.PlaybackBackSequenceTracker
+import com.drivedeck.tubedeck.player.ParentPipBackAction
+import com.drivedeck.tubedeck.player.PlaybackParentPipBackPolicy
 import com.drivedeck.tubedeck.player.PlaybackHost
 import com.drivedeck.tubedeck.player.PlaybackHostRouter
 import com.drivedeck.tubedeck.player.PlaybackPipActions
@@ -647,7 +649,22 @@ class NativePlayerActivity : ComponentActivity() {
         if (isPipMode) {
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
-            expandNativePlayerChooser()
+            when (PlaybackParentPipBackPolicy.onBack(rapidCount, showPlaybackExitChoices)) {
+                ParentPipBackAction.PAUSE_AND_EXIT -> {
+                    pauseGeneration += 1
+                    PlaybackBackSequenceTracker.reset()
+                    moveTaskToBack(true)
+                }
+                ParentPipBackAction.KEEP_PIP_AND_EXIT -> {
+                    // Slow Back behaves like a normal app exit: keep the existing PiP small.
+                    PlaybackBackSequenceTracker.reset()
+                    moveTaskToBack(true)
+                }
+                ParentPipBackAction.SHOW_CHOICES -> {
+                    // Only a deliberate quick second Back brings the compact player forward.
+                    expandNativePlayerChooser()
+                }
+            }
             return
         }
 

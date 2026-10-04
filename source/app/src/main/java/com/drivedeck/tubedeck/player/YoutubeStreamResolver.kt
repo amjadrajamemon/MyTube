@@ -288,6 +288,31 @@ object YoutubeStreamResolver {
         }
     }
 
+    /**
+     * Audio/video mode changes should reuse the stream metadata that is already driving the
+     * foreground player. A mode switch is not a reason to hit YouTube again.
+     *
+     * Handoffs are allowed to reuse a somewhat older cache entry because the currently playing
+     * direct URL is strong evidence that it is still valid. If it has expired, Media3's normal
+     * error path refreshes the extractor once in the background.
+     */
+    fun peekForHandoff(url: String, maxAgeMs: Long = 30 * 60 * 1000L): ResolvedMedia? {
+        if (YoutubeUrls.videoId(url) == null) return null
+        val key = resolutionKey(url)
+        val now = android.os.SystemClock.elapsedRealtime()
+        return synchronized(resolutionLock) {
+            resolutionCache[key]
+                ?.takeIf { now - it.cachedAtMs <= maxAgeMs.coerceAtLeast(RESOLUTION_CACHE_TTL_MS) }
+                ?.media
+        }
+    }
+
+    fun preferredAudioPlaybackUrl(media: ResolvedMedia): String? =
+        media.audioOptions.maxByOrNull { it.bitrate }?.url
+            ?: media.liveManifestUrl?.takeIf { media.isLive && it.startsWith("https://") }
+            ?: media.progressiveUrl
+            ?: media.options.firstOrNull()?.videoUrl
+
     fun invalidate(url: String) {
         val key = resolutionKey(url)
         synchronized(resolutionLock) {

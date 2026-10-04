@@ -332,6 +332,11 @@ class MainActivity : ComponentActivity() {
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val homeSuggestions by repository.homeSuggestions.collectAsStateWithLifecycle()
                 val homeTrending by repository.homeTrending.collectAsStateWithLifecycle()
+                val homeLive by repository.homeLive.collectAsStateWithLifecycle()
+                val homeLiveStatus by repository.homeLiveStatus.collectAsStateWithLifecycle()
+                val liveSearchResults by repository.liveSearchResults.collectAsStateWithLifecycle()
+                val liveSearchQuery by repository.liveSearchQuery.collectAsStateWithLifecycle()
+                val liveSearchStatus by repository.liveSearchStatus.collectAsStateWithLifecycle()
                 val homeCountry by repository.homeCountry.collectAsStateWithLifecycle()
                 val homeTrendingStatus by repository.homeTrendingStatus.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
@@ -859,12 +864,22 @@ class MainActivity : ComponentActivity() {
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
                                             repository.recordSearch(query)
-                                            browserHistoryResetGeneration += 1
-                                            val destination = YoutubeSearchPolicy.buildSearchUrl(
-                                                query = query,
-                                                playlistOnly = currentScreen == ActiveScreen.MIXES
-                                            )
-                                            navigateTo(ActiveScreen.BROWSER, destination)
+                                            if (
+                                                currentScreen == ActiveScreen.HOME &&
+                                                YoutubeSearchPolicy.isLiveIntent(query)
+                                            ) {
+                                                // Live discovery stays native so it is not dependent on
+                                                // YouTube's volatile web Live-filter token.
+                                                repository.searchLive(query)
+                                            } else {
+                                                repository.clearLiveSearch()
+                                                browserHistoryResetGeneration += 1
+                                                val destination = YoutubeSearchPolicy.buildSearchUrl(
+                                                    query = query,
+                                                    playlistOnly = currentScreen == ActiveScreen.MIXES
+                                                )
+                                                navigateTo(ActiveScreen.BROWSER, destination)
+                                            }
                                         }
                                     },
                                     onOpenDownloads = {
@@ -876,11 +891,17 @@ class MainActivity : ComponentActivity() {
                                     watchHistory = watchHistory,
                                     suggestedVideos = homeSuggestions,
                                     trendingVideos = homeTrending,
+                                    liveNowVideos = homeLive,
+                                    liveNowStatus = homeLiveStatus,
+                                    liveSearchResults = liveSearchResults,
+                                    liveSearchQuery = liveSearchQuery,
+                                    liveSearchStatus = liveSearchStatus,
                                     suggestionsEnabled = settings.homeSuggestionsEnabled,
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,
                                     onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
+                                    onClearLiveSearch = { repository.clearLiveSearch() },
                                     onOpenVideo = { item ->
                                         val media = OfflineMedia(
                                             id = UUID.randomUUID().toString(),

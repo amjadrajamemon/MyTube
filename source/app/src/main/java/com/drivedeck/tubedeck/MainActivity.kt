@@ -34,6 +34,7 @@ import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.player.YoutubeUrls
+import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.BackgroundAudioController
@@ -711,7 +712,8 @@ class MainActivity : ComponentActivity() {
                                         val destination = if (input.startsWith("https://")) {
                                             input
                                         } else {
-                                            "https://www.youtube.com/results?search_query=" + URLEncoder.encode(input, "UTF-8")
+                                            repository.recordSearch(input)
+                                            YoutubeSearchPolicy.buildSearchUrl(input)
                                         }
                                         navigateTo(ActiveScreen.BROWSER, destination)
                                         webViewInstance?.loadUrl(destination)
@@ -769,11 +771,10 @@ class MainActivity : ComponentActivity() {
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
                                             repository.recordSearch(query)
-                                            val destination = if (currentScreen == ActiveScreen.MIXES) {
-                                                "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8") + "&sp=EgIQAw%253D%253D"
-                                            } else {
-                                                "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8")
-                                            }
+                                            val destination = YoutubeSearchPolicy.buildSearchUrl(
+                                                query = query,
+                                                playlistOnly = currentScreen == ActiveScreen.MIXES
+                                            )
                                             navigateTo(ActiveScreen.BROWSER, destination)
                                         }
                                     },

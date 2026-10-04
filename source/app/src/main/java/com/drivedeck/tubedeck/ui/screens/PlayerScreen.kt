@@ -111,6 +111,8 @@ import com.drivedeck.tubedeck.player.LiveDubLanguages
 import com.drivedeck.tubedeck.player.LiveDubInputMode
 import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
+import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
+import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
@@ -443,6 +445,8 @@ fun NativeExoPlayer(
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
+    var isPreparing by remember(media.id) { mutableStateOf(true) }
+    var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
     var autoStableSamples by remember(media.id) { mutableIntStateOf(0) }
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
@@ -522,6 +526,7 @@ fun NativeExoPlayer(
             initialPositionMs.coerceAtLeast(0L)
         }
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
+        isPreparing = true
         exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -560,13 +565,20 @@ fun NativeExoPlayer(
                 if (!playing && !exoPlayer.playWhenReady && liveDubEnabled) liveDubEngine.pauseForPlayback()
             }
             override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
+                    isPreparing = false
                     duration = exoPlayer.duration.coerceAtLeast(1L)
                     playbackRecoveryAttempts = 0
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
+                } else if (state == Player.STATE_ENDED || state == Player.STATE_IDLE) {
+                    isPreparing = false
+                    isBuffering = false
                 }
             }
             override fun onRenderedFirstFrame() {
+                isPreparing = false
+                isBuffering = false
                 if (!firstFrameRendered) {
                     firstFrameRendered = true
                     PlaybackStartupTelemetry.markFirstFrame(media.mediaUri)
@@ -601,6 +613,8 @@ fun NativeExoPlayer(
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
+                isPreparing = false
+                isBuffering = false
                 val retryable = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
                     error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
@@ -660,6 +674,8 @@ fun NativeExoPlayer(
     }
 
     LaunchedEffect(media.id, media.mediaUri) {
+        isPreparing = true
+        isBuffering = false
         val online = YoutubeUrls.videoId(media.mediaUri) != null
         if (online) {
             resolveError = null
@@ -692,6 +708,8 @@ fun NativeExoPlayer(
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (t: Exception) {
+                isPreparing = false
+                isBuffering = false
                 resolveError = "Could not resolve video stream: ${t.message ?: t.javaClass.simpleName}"
             }
         } else {
@@ -701,6 +719,7 @@ fun NativeExoPlayer(
             }
             val targetUri = Uri.parse(media.mediaUri)
             val subtitleConfigurations = emptyList<SubtitleConfiguration>()
+            isPreparing = true
             exoPlayer.setMediaItem(
                 MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build(),
                 initialPositionMs.coerceAtLeast(0L)
@@ -967,14 +986,26 @@ fun NativeExoPlayer(
                                     controlsVisible = true
                                 },
                                 onDoubleTap = { position ->
-                                    val direction = if (position.x < size.width / 2f) -1 else 1
-                                    exoPlayer.seekTo(
-                                        (exoPlayer.currentPosition + direction * seekIntervalSeconds * 1_000L)
-                                            .coerceIn(0L, duration.coerceAtLeast(0L))
-                                    )
-                                    gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
-                                    gestureValue = (exoPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                                    gestureOverlayVisible = true
+                                    val action = PlaybackSurfaceGesturePolicy.doubleTap(position.x, size.width.toFloat())
+                                    when (action) {
+                                        PlaybackSurfaceGesture.SEEK_BACK, PlaybackSurfaceGesture.SEEK_FORWARD -> {
+                                            val direction = if (action == PlaybackSurfaceGesture.SEEK_FORWARD) 1 else -1
+                                            exoPlayer.seekTo(
+                                                (exoPlayer.currentPosition + direction * seekIntervalSeconds * 1_000L)
+                                                    .coerceIn(0L, duration.coerceAtLeast(0L))
+                                            )
+                                            gestureIcon = if (direction > 0) Icons.Default.FastForward else Icons.Default.FastRewind
+                                            gestureValue = (exoPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                                            gestureOverlayVisible = true
+                                        }
+                                        PlaybackSurfaceGesture.TOGGLE_FULLSCREEN -> {
+                                            isFullscreen = !isFullscreen
+                                            gestureIcon = if (isFullscreen) Icons.Default.Fullscreen else Icons.Default.FullscreenExit
+                                            gestureValue = 1f
+                                            gestureOverlayVisible = true
+                                        }
+                                        else -> Unit
+                                    }
                                     controlsVisible = true
                                 }
                             )
@@ -987,6 +1018,7 @@ fun NativeExoPlayer(
                                 var pinching = false
                                 var pinchDistance = 0f
                                 val rightSide = down.position.x > size.width / 2f
+                                val centerZone = down.position.x in (size.width * .30f)..(size.width * .70f)
                                 val startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                                 val startBrightness = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: .5f
@@ -1027,7 +1059,21 @@ fun NativeExoPlayer(
                                     if (dragging) {
                                         change.consume()
                                         val fraction = (-totalDy / size.height.toFloat()).coerceIn(-1f, 1f)
-                                        if (rightSide) {
+                                        if (centerZone) {
+                                            val action = PlaybackSurfaceGesturePolicy.verticalRelease(
+                                                down.position.x, size.width.toFloat(), totalDy,
+                                                size.height.toFloat(), isFullscreen, pipEnabled
+                                            )
+                                            gestureIcon = when (action) {
+                                                PlaybackSurfaceGesture.ENTER_FULLSCREEN -> Icons.Default.Fullscreen
+                                                PlaybackSurfaceGesture.EXIT_FULLSCREEN -> Icons.Default.FullscreenExit
+                                                PlaybackSurfaceGesture.ENTER_PIP -> Icons.Default.PictureInPictureAlt
+                                                else -> if (totalDy < 0f) Icons.Default.Fullscreen
+                                                    else if (isFullscreen) Icons.Default.FullscreenExit
+                                                    else Icons.Default.PictureInPictureAlt
+                                            }
+                                            gestureValue = (kotlin.math.abs(totalDy) / (size.height * .30f)).coerceIn(0f, 1f)
+                                        } else if (rightSide) {
                                             val value = (startVolume + fraction * maxVolume).toInt().coerceIn(0, maxVolume)
                                             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0)
                                             gestureIcon = if (value == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
@@ -1040,10 +1086,57 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                gestureOverlayVisible = false
+                                if (centerZone && dragging) {
+                                    when (PlaybackSurfaceGesturePolicy.verticalRelease(
+                                        down.position.x, size.width.toFloat(), totalDy,
+                                        size.height.toFloat(), isFullscreen, pipEnabled
+                                    )) {
+                                        PlaybackSurfaceGesture.ENTER_FULLSCREEN -> {
+                                            isFullscreen = true
+                                            gestureIcon = Icons.Default.Fullscreen
+                                            gestureValue = 1f
+                                            gestureOverlayVisible = true
+                                        }
+                                        PlaybackSurfaceGesture.EXIT_FULLSCREEN -> {
+                                            isFullscreen = false
+                                            gestureIcon = Icons.Default.FullscreenExit
+                                            gestureValue = 1f
+                                            gestureOverlayVisible = true
+                                        }
+                                        PlaybackSurfaceGesture.ENTER_PIP -> {
+                                            if (pipEnabled) {
+                                                gestureIcon = Icons.Default.PictureInPictureAlt
+                                                gestureValue = 1f
+                                                gestureOverlayVisible = true
+                                                onEnterPip()
+                                            }
+                                        }
+                                        else -> gestureOverlayVisible = false
+                                    }
+                                } else {
+                                    gestureOverlayVisible = false
+                                }
                             }
                         }
                 )
+            }
+
+            if ((isPreparing || isBuffering || playbackRecoveryActive) &&
+                resolveError == null && !inPictureInPicture) {
+                Surface(
+                    color = Color.Black.copy(alpha = .54f),
+                    shape = CircleShape,
+                    modifier = Modifier.align(Alignment.Center).size(64.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(42.dp),
+                            strokeWidth = 4.dp,
+                            color = TubeDeckAccentCyan,
+                            trackColor = Color.White.copy(alpha = .18f)
+                        )
+                    }
+                }
             }
 
             if (gestureOverlayVisible) {
@@ -1060,6 +1153,9 @@ fun NativeExoPlayer(
                                 Icons.Default.Brightness6 -> "Brightness"
                                 Icons.Default.FastForward -> "Forward"
                                 Icons.Default.FastRewind -> "Rewind"
+                                Icons.Default.Fullscreen -> "Fullscreen"
+                                Icons.Default.FullscreenExit -> "Mini player"
+                                Icons.Default.PictureInPictureAlt -> "Picture in Picture"
                                 else -> "Volume"
                             },
                             color = Color.White,

@@ -44,6 +44,7 @@ fun BrowserScreen(
     onPlaybackStateChanged: (isPlaying: Boolean, positionMs: Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     isActive: Boolean = true,
+    navigationGeneration: Int = 0,
     historyResetGeneration: Int = 0,
     onFullscreenChanged: (Boolean) -> Unit = {}
 ) {
@@ -62,6 +63,7 @@ fun BrowserScreen(
     var lastNativeRequestAt by remember { mutableLongStateOf(0L) }
     val pendingHistoryReset = remember { mutableIntStateOf(0) }
     val appliedHistoryReset = remember { mutableIntStateOf(0) }
+    val appliedNavigationGeneration = remember { mutableIntStateOf(-1) }
 
     fun observeUrl(view: WebView?, url: String?, explicitNavigation: Boolean = false) {
         if (url?.startsWith("https://") != true) return
@@ -366,12 +368,17 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(currentUrl) {
-        // currentUrl is the single authoritative external navigation input. WebView callbacks
-        // update state after navigation but must never cause a second load of the same page.
-        if (persistentWebView.url != currentUrl && currentUrl.startsWith("https://")) {
+    LaunchedEffect(navigationGeneration) {
+        // Only an explicit MyTube navigation command may call loadUrl(). URL observations from
+        // WebView/YouTube SPA history update currentUrl in MainActivity but never feed back into
+        // another network load.
+        val validTarget = currentUrl.startsWith("https://")
+        val firstLoad = persistentWebView.url.isNullOrBlank()
+        val newCommand = navigationGeneration != appliedNavigationGeneration.intValue
+        if (validTarget && (firstLoad || newCommand) && persistentWebView.url != currentUrl) {
             persistentWebView.loadUrl(currentUrl)
         }
+        appliedNavigationGeneration.intValue = navigationGeneration
     }
 
     Box(modifier = modifier.fillMaxSize().background(TubeDeckBackground)) {

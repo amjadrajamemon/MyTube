@@ -350,6 +350,7 @@ class MainActivity : ComponentActivity() {
                 var browserSessionCreated by rememberSaveable {
                     mutableStateOf(currentScreen == ActiveScreen.BROWSER)
                 }
+                var browserNavigationGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var browserHistoryResetGeneration by rememberSaveable { mutableIntStateOf(0) }
                 val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
@@ -385,6 +386,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun navigateTo(screen: ActiveScreen, browserUrl: String? = null) {
+                    if (screen == ActiveScreen.BROWSER && browserUrl != null) {
+                        browserNavigationGeneration += 1
+                    }
                     val entry = NavigationEntry(
                         screen = screen,
                         browserUrl = if (screen == ActiveScreen.BROWSER) {
@@ -647,6 +651,7 @@ class MainActivity : ComponentActivity() {
                                     val destination = browserReturnUrl.ifBlank {
                                         "https://www.youtube.com/"
                                     }
+                                    browserNavigationGeneration += 1
                                     currentUrl = destination
                                     replaceCurrentRoute(ActiveScreen.BROWSER, destination)
                                 }
@@ -829,6 +834,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     isActive = currentScreen == ActiveScreen.BROWSER,
+                                    navigationGeneration = browserNavigationGeneration,
                                     historyResetGeneration = browserHistoryResetGeneration,
                                     modifier = if (currentScreen == ActiveScreen.BROWSER) {
                                         Modifier.fillMaxSize()

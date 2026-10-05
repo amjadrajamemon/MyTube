@@ -98,6 +98,9 @@ android {
             )
         }
         debug {
+            // Keep the long-lived update-compatible signing identity without exposing a
+            // debuggable production-distribution surface.
+            isDebuggable = false
         }
     }
 

@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck.player
 
 import android.content.Context
+import android.content.Intent
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
@@ -14,6 +15,8 @@ import kotlin.math.roundToInt
  * rotates its audio session, so seeks/source changes/decoder recovery do not reset the EQ.
  */
 class PlaybackEqualizerController(context: Context) {
+
+    private val appContext = context.applicationContext
 
     data class Band(
         val index: Int,
@@ -75,13 +78,12 @@ class PlaybackEqualizerController(context: Context) {
         }
     }
 
-    private val prefs = context.applicationContext
+    private val prefs = appContext
         .getSharedPreferences("mytube_playback_equalizer_v2", Context.MODE_PRIVATE)
 
     private var effect: Equalizer? = null
     @Suppress("DEPRECATION")
     private var surroundEffect: Virtualizer? = null
-    private var dtsEffect: AudioEffect? = null
     private var dtsDescriptor: AudioEffect.Descriptor? = null
     private var requestedEnabled = prefs.getBoolean(KEY_ENABLED, false)
     private var requestedPresetId = prefs.getString(KEY_PRESET, "flat") ?: "flat"
@@ -164,8 +166,10 @@ class PlaybackEqualizerController(context: Context) {
     }
 
     fun setDtsEnabled(enabled: Boolean): Snapshot {
-        requestedDtsEnabled = enabled
-        runCatching { dtsEffect?.enabled = enabled }
+        requestedDtsEnabled = enabled && dtsDescriptor != null
+        if (attachedSessionId > 0 && dtsDescriptor != null) {
+            signalDeviceDtsSession(open = requestedDtsEnabled, audioSessionId = attachedSessionId)
+        }
         persistCurrentState()
         return snapshot()
     }
@@ -251,8 +255,8 @@ class PlaybackEqualizerController(context: Context) {
                 surroundAvailable = surroundEffect != null,
                 surroundEnabled = runCatching { surroundEffect?.enabled == true }.getOrDefault(false),
                 surroundStrength = requestedSurroundStrength,
-                dtsAvailable = dtsEffect != null,
-                dtsEnabled = runCatching { dtsEffect?.enabled == true }.getOrDefault(false),
+                dtsAvailable = dtsDescriptor != null,
+                dtsEnabled = requestedDtsEnabled && dtsDescriptor != null,
                 dtsEffectName = dtsDescriptor?.name
             )
         }.getOrElse { unavailableSnapshot() }
@@ -273,8 +277,8 @@ class PlaybackEqualizerController(context: Context) {
         surroundAvailable = surroundEffect != null,
         surroundEnabled = runCatching { surroundEffect?.enabled == true }.getOrDefault(false),
         surroundStrength = requestedSurroundStrength,
-        dtsAvailable = dtsEffect != null,
-        dtsEnabled = runCatching { dtsEffect?.enabled == true }.getOrDefault(false),
+        dtsAvailable = dtsDescriptor != null,
+        dtsEnabled = requestedDtsEnabled && dtsDescriptor != null,
         dtsEffectName = dtsDescriptor?.name
     )
 
@@ -395,33 +399,46 @@ class PlaybackEqualizerController(context: Context) {
     }
 
     private fun attachDts(audioSessionId: Int) {
-        runCatching {
-            dtsEffect?.enabled = false
-            dtsEffect?.release()
-        }
-        dtsEffect = null
         dtsDescriptor = null
         if (audioSessionId <= 0) return
 
-        val descriptor = runCatching {
+        dtsDescriptor = runCatching {
             AudioEffect.queryEffects()
                 ?.firstOrNull { candidate ->
                     val identity = "${candidate.name} ${candidate.implementor}".lowercase()
                     identity.contains("dts") &&
                         candidate.connectMode.equals(AudioEffect.EFFECT_INSERT, ignoreCase = true)
                 }
-        }.getOrNull() ?: return
-
-        val vendorEffect = runCatching {
-            AudioEffect(descriptor.type, descriptor.uuid, 0, audioSessionId).also {
-                it.enabled = requestedDtsEnabled
-            }
         }.getOrNull()
 
-        if (vendorEffect != null) {
-            dtsDescriptor = descriptor
-            dtsEffect = vendorEffect
+        if (dtsDescriptor != null && requestedDtsEnabled) {
+            signalDeviceDtsSession(open = true, audioSessionId = audioSessionId)
+        } else if (dtsDescriptor == null) {
+            requestedDtsEnabled = false
         }
+    }
+
+    /**
+     * Android does not expose a public generic constructor for vendor AudioEffect implementations.
+     * Vendor effects such as DTS are instead driven through the documented audio-effect control
+     * session broadcasts, allowing the OEM effect service to apply its saved settings to this
+     * ExoPlayer audio session.
+     */
+    private fun signalDeviceDtsSession(open: Boolean, audioSessionId: Int) {
+        if (audioSessionId <= 0) return
+        val action = if (open) {
+            AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION
+        } else {
+            AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION
+        }
+        val intent = Intent(action).apply {
+            putExtra(AudioEffect.EXTRA_AUDIO_SESSION, audioSessionId)
+            putExtra(AudioEffect.EXTRA_PACKAGE_NAME, appContext.packageName)
+            if (open) {
+                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MOVIE)
+            }
+        }
+        runCatching { appContext.sendBroadcast(intent) }
     }
 
     private fun releaseEffect() {
@@ -433,13 +450,11 @@ class PlaybackEqualizerController(context: Context) {
             surroundEffect?.enabled = false
             surroundEffect?.release()
         }
-        runCatching {
-            dtsEffect?.enabled = false
-            dtsEffect?.release()
+        if (dtsDescriptor != null && requestedDtsEnabled && attachedSessionId > 0) {
+            signalDeviceDtsSession(open = false, audioSessionId = attachedSessionId)
         }
         effect = null
         surroundEffect = null
-        dtsEffect = null
         dtsDescriptor = null
         attachedSessionId = 0
     }

@@ -1286,6 +1286,31 @@ object YoutubeStreamResolver {
         return value.take(90)
     }
 
+    suspend fun searchPlaylists(query: String, limit: Int = 20): List<DiscoveredPlaylist> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
+            if (clean.isBlank()) return@withContext emptyList()
+            ensureInitialized()
+            val service = NewPipe.getService("YouTube")
+            val handler = service.searchQHFactory.fromQuery(clean, listOf("playlists"), "")
+            val info = SearchInfo.getInfo(service, handler)
+            info.relatedItems
+                .filterIsInstance<PlaylistInfoItem>()
+                .mapNotNull { item ->
+                    val playlistId = YoutubeUrls.playlistId(item.url) ?: return@mapNotNull null
+                    DiscoveredPlaylist(
+                        title = item.name.ifBlank { "YouTube playlist" },
+                        url = "https://www.youtube.com/playlist?list=$playlistId",
+                        uploader = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+                        itemCount = item.streamCount.coerceAtLeast(0L),
+                        thumbnailUrl = item.thumbnails.firstOrNull()?.url.orEmpty(),
+                        kind = if (PlaylistQueuePolicy.isDynamicMix(playlistId)) "Mix" else "Playlist"
+                    )
+                }
+                .distinctBy { YoutubeUrls.playlistId(it.url) ?: it.url }
+                .take(limit.coerceIn(1, 40))
+        }
+
     suspend fun searchVideos(query: String, limit: Int = 20): List<RelatedVideo> =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             val clean = query.trim()

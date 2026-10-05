@@ -46,6 +46,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var homeTrendingJob: Job? = null
     private var homeLiveJob: Job? = null
     private var liveSearchJob: Job? = null
+    private var playlistSearchJob: Job? = null
     private val playlistCache = LinkedHashMap<String, Pair<Long, List<PlaylistItem>>>(8, 0.75f, true)
     @Volatile private var schedulingSuspendedBySystem = false
 
@@ -77,6 +78,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val liveSearchQuery: StateFlow<String> = _liveSearchQuery.asStateFlow()
     private val _liveSearchStatus = MutableStateFlow("")
     val liveSearchStatus: StateFlow<String> = _liveSearchStatus.asStateFlow()
+    private val _playlistSearchResults = MutableStateFlow<List<PlaylistCandidate>>(emptyList())
+    val playlistSearchResults: StateFlow<List<PlaylistCandidate>> = _playlistSearchResults.asStateFlow()
+    private val _playlistSearchQuery = MutableStateFlow("")
+    val playlistSearchQuery: StateFlow<String> = _playlistSearchQuery.asStateFlow()
+    private val _playlistSearchStatus = MutableStateFlow("")
+    val playlistSearchStatus: StateFlow<String> = _playlistSearchStatus.asStateFlow()
     private val _homeCountry = MutableStateFlow(detectHomeCountry())
     val homeCountry: StateFlow<String> = _homeCountry.asStateFlow()
     private val _homeTrendingStatus = MutableStateFlow("")
@@ -283,6 +290,45 @@ class TubeDeckRepository private constructor(private val context: Context) {
         _liveSearchQuery.value = ""
         _liveSearchResults.value = emptyList()
         _liveSearchStatus.value = ""
+    }
+
+    fun searchPlaylists(query: String) {
+        val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
+        if (clean.isBlank()) return
+        playlistSearchJob?.cancel()
+        _playlistSearchQuery.value = clean
+        _playlistSearchResults.value = emptyList()
+        _playlistSearchStatus.value = "Loading"
+        playlistSearchJob = scope.launch {
+            try {
+                val results = YoutubeStreamResolver.searchPlaylists(clean, 24)
+                    .map { playlist ->
+                        PlaylistCandidate(
+                            title = playlist.title,
+                            url = playlist.url,
+                            channel = playlist.uploader,
+                            itemCount = playlist.itemCount,
+                            thumbnailUrl = playlist.thumbnailUrl,
+                            kind = playlist.kind
+                        )
+                    }
+                ensureActive()
+                _playlistSearchResults.value = results
+                _playlistSearchStatus.value =
+                    if (results.isEmpty()) "No playlists or Mixes found" else ""
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _playlistSearchStatus.value = "Retry"
+            }
+        }
+    }
+
+    fun clearPlaylistSearch() {
+        playlistSearchJob?.cancel()
+        _playlistSearchQuery.value = ""
+        _playlistSearchResults.value = emptyList()
+        _playlistSearchStatus.value = ""
     }
 
     fun recordWatch(media: OfflineMedia) {

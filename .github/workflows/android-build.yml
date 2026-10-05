@@ -147,6 +147,13 @@ jobs:
           grep -Fq 'DownloadQueuePolicy.pendingTasks' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DownloadsScreen.kt
           grep -Fq 'MAX_AUTO_RETRIES = 7' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/DownloadRetryPolicy.kt
           grep -Fq 'Activity/History' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DownloadsScreen.kt
+          grep -Fq 'PlaybackEqualizerController(context.applicationContext)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Graphic equalizer' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Custom / User preset' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Surround / Spatial' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'No DTS effect exposed by this device' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'AudioEffect.queryEffects' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt
+          grep -Fq 'Virtualizer(0, audioSessionId)' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt
           grep -Fq 'recent_searches_json' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
           grep -Fq 'subscriptionTitles' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/YoutubeHomeFeedClient.kt
           grep -Fq 'publicTrending(region)' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
@@ -413,10 +420,12 @@ jobs:
             grep -Fq 'Pending/Queue' "$DEX_STRINGS"
             grep -Fq 'Manage' "$DEX_STRINGS"
             grep -Fq 'Activity/History' "$DEX_STRINGS"
-          grep -Fq 'Custom / User preset' "$DEX_STRINGS"
-          grep -Fq 'Save User' "$DEX_STRINGS"
-          grep -Fq 'Graphic' "$DEX_STRINGS"
-          grep -Fq 'Sub Woofer' "$DEX_STRINGS"
+            grep -Fq 'Custom / User preset' "$DEX_STRINGS"
+            grep -Fq 'Save User' "$DEX_STRINGS"
+            grep -Fq 'Graphic equalizer' "$DEX_STRINGS"
+            grep -Fq 'Sub Woofer' "$DEX_STRINGS"
+            grep -Fq 'Surround / Spatial' "$DEX_STRINGS"
+            grep -Fq 'No DTS effect exposed by this device' "$DEX_STRINGS"
             grep -Fq 'New download' "$DEX_STRINGS"
             grep -Fq 'Retry limit reached' "$DEX_STRINGS"
             grep -Fq 'Return to video' "$DEX_STRINGS"

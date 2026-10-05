@@ -299,14 +299,16 @@ internal object MediaDownloader {
             else -> "application/octet-stream"
         }
 
-        tree.findFile(name)?.let { existing ->
-            require(existing.delete()) { "Could not replace previous output in chosen folder" }
-        }
-
-        val document = tree.createFile(mime, name)
+        // Never destroy the previous good file before the replacement is proven complete.
+        // Some SAF/USB providers can disappear during a long write, so stage beside the target,
+        // verify byte count, and only then commit/rename.
+        val existing = tree.findFile(name)
+        val stagedName = if (existing == null) name else "${name}.mytube-part-${System.currentTimeMillis()}"
+        val document = tree.createFile(mime, stagedName)
             ?: error("Could not create file in chosen folder")
 
         try {
+            var copied = 0L
             val output = context.contentResolver.openOutputStream(document.uri, "w")
                 ?: error("Could not open chosen folder for writing")
             output.use { target ->
@@ -317,8 +319,22 @@ internal object MediaDownloader {
                         val count = input.read(buffer)
                         if (count < 0) break
                         target.write(buffer, 0, count)
+                        copied += count
                     }
+                    target.flush()
                 }
+            }
+            require(copied == source.length() && copied > 0L) { "Incomplete file copy" }
+            val reportedSize = document.length()
+            require(reportedSize <= 0L || reportedSize == copied) { "Destination file is incomplete" }
+
+            if (existing != null) {
+                require(existing.delete()) { "Could not replace previous output in chosen folder" }
+                if (document.renameTo(name)) {
+                    return (tree.findFile(name)?.uri ?: document.uri).toString()
+                }
+                // Rename is optional on some document providers. The staged file is already a
+                // verified complete replacement, so keep it rather than deleting valid media.
             }
             return document.uri.toString()
         } catch (error: Exception) {

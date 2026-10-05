@@ -494,6 +494,10 @@ jobs:
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
             printf '%s\n' "$BADGING" | grep -Fq "versionCode='72'"
             printf '%s\n' "$BADGING" | grep -Fq "versionName='1.7.0'"
+            if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
+              echo "::error::$EDITION APK is unexpectedly debuggable."
+              exit 1
+            fi
           done
           unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/arm64-v8a/'
           ! unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/armeabi-v7a/'

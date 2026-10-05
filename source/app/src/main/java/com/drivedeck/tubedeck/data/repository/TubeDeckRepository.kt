@@ -25,6 +25,8 @@ import java.util.UUID
 class TubeDeckRepository private constructor(private val context: Context) {
     companion object {
         private const val SYSTEM_TIMEOUT_MESSAGE = "Waiting for MyTube after Android background transfer limit"
+        private const val PLAYLIST_CACHE_MS = 15 * 60 * 1000L
+        private const val MAX_PLAYLIST_CACHE_ENTRIES = 8
         @Volatile private var instance: TubeDeckRepository? = null
         fun get(context: Context): TubeDeckRepository =
             instance ?: synchronized(this) {
@@ -42,6 +44,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var homeTrendingJob: Job? = null
     private var homeLiveJob: Job? = null
     private var liveSearchJob: Job? = null
+    private val playlistCache = LinkedHashMap<String, Pair<Long, List<PlaylistItem>>>(8, 0.75f, true)
     @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -558,28 +561,52 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val playlistId = YoutubeUrls.playlistId(url)
             ?: throw IllegalArgumentException("Enter a valid YouTube playlist or Mix URL")
         val currentVideoId = YoutubeUrls.videoId(url)
+        val now = System.currentTimeMillis()
+        synchronized(lock) {
+            playlistCache[playlistId]
+                ?.takeIf { now - it.first < PLAYLIST_CACHE_MS && it.second.isNotEmpty() }
+                ?.second
+                ?.let { return it }
+        }
 
-        // Dynamic YouTube Mixes (RD...) are watch-context queues, not reliable ordinary playlist
-        // pages. Prefer the Watch Next playlist panel when a current video is available.
-        if (currentVideoId != null) {
-            val contextual = runCatching {
-                val resolved = YoutubeWatchNextClient.resolve(url, currentVideoId)
-                val selected = resolved.playlists.firstOrNull { it.playlistId == playlistId }
-                    ?: resolved.playlists.firstOrNull()
-                selected?.items.orEmpty().map { item ->
-                    PlaylistItem(
-                        videoId = item.videoId,
-                        title = item.title,
-                        channel = item.uploader.ifBlank { "YouTube" },
-                        duration = if (item.durationSeconds > 0L) {
-                            "${item.durationSeconds / 60}:${(item.durationSeconds % 60).toString().padStart(2, '0')}"
-                        } else "",
-                        thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
-                        viewCount = item.viewCount
-                    )
-                }.distinctBy { it.videoId }
-            }.getOrDefault(emptyList())
-            if (contextual.isNotEmpty()) return contextual
+        fun cache(items: List<PlaylistItem>): List<PlaylistItem> {
+            val stable = items.distinctBy { it.videoId }
+            if (stable.isNotEmpty()) {
+                synchronized(lock) {
+                    playlistCache[playlistId] = now to stable
+                    while (playlistCache.size > MAX_PLAYLIST_CACHE_ENTRIES) {
+                        playlistCache.entries.iterator().let { if (it.hasNext()) { it.next(); it.remove() } }
+                    }
+                }
+            }
+            return stable
+        }
+
+        fun contextual(): List<PlaylistItem> = runCatching {
+            val videoId = currentVideoId ?: return@runCatching emptyList()
+            val resolved = YoutubeWatchNextClient.resolve(url, videoId)
+            val selected = resolved.playlists.firstOrNull { it.playlistId == playlistId }
+                ?: resolved.playlists.firstOrNull()
+            selected?.items.orEmpty().map { item ->
+                PlaylistItem(
+                    videoId = item.videoId,
+                    title = item.title,
+                    channel = item.uploader.ifBlank { "YouTube" },
+                    duration = if (item.durationSeconds > 0L) {
+                        "${item.durationSeconds / 60}:${(item.durationSeconds % 60).toString().padStart(2, '0')}"
+                    } else "",
+                    thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
+                    viewCount = item.viewCount
+                )
+            }
+        }.getOrDefault(emptyList())
+
+        // RD* identifiers are dynamic Mix/radio queues: their order belongs to the current watch
+        // context. Ordinary PL/UU/OL/etc. playlists must be fully paginated first instead of being
+        // truncated to the small Watch Next panel.
+        val dynamicMix = playlistId.startsWith("RD", ignoreCase = true)
+        if (dynamicMix && currentVideoId != null) {
+            contextual().takeIf { it.isNotEmpty() }?.let { return cache(it) }
         }
 
         val playlistUrl = "https://www.youtube.com/playlist?list=$playlistId"
@@ -604,25 +631,30 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         (value as? Number)?.toLong() ?: -1L
                     }.getOrDefault(-1L)
                 )
-            }.distinctBy { it.videoId }
-        }.getOrDefault(emptyList())
-        if (extractorItems.isNotEmpty()) return extractorItems
-
-        // Independent final fallback for both static playlists and Mixes.
-        return YoutubeStreamResolver.playlistEntriesWithDownloadEngine(context, playlistUrl)
-            .map { item ->
-                PlaylistItem(
-                    videoId = item.videoId,
-                    title = item.title,
-                    channel = item.uploader,
-                    duration = if (item.durationSeconds > 0L) {
-                        "${item.durationSeconds / 60}:${(item.durationSeconds % 60).toString().padStart(2, '0')}"
-                    } else "",
-                    thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
-                    viewCount = item.viewCount
-                )
             }
-            .distinctBy { it.videoId }
+        }.getOrDefault(emptyList())
+        if (extractorItems.isNotEmpty()) return cache(extractorItems)
+
+        val downloadEngineItems = runCatching {
+            YoutubeStreamResolver.playlistEntriesWithDownloadEngine(context, playlistUrl)
+                .map { item ->
+                    PlaylistItem(
+                        videoId = item.videoId,
+                        title = item.title,
+                        channel = item.uploader,
+                        duration = if (item.durationSeconds > 0L) {
+                            "${item.durationSeconds / 60}:${(item.durationSeconds % 60).toString().padStart(2, '0')}"
+                        } else "",
+                        thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
+                        viewCount = item.viewCount
+                    )
+                }
+        }.getOrDefault(emptyList())
+        if (downloadEngineItems.isNotEmpty()) return cache(downloadEngineItems)
+
+        // Last-resort contextual recovery helps unusual/private playlist pages, but never takes
+        // precedence over a complete static playlist.
+        return cache(contextual())
     }
 
     fun incrementBlockedAds(count: Int = 1) {

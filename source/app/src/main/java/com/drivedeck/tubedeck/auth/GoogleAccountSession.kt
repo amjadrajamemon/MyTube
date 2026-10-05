@@ -354,6 +354,7 @@ class GoogleAccountSession private constructor(context: Context) {
     private fun resetCancelledAuthorization(message: String) {
         if (_status.value.youtubeAuthorized) return
         youtubeAccessToken = null
+        youtubeAccessTokenExpiresAt = 0L
         _status.value = YoutubeAuthorizationStatus(
             if (_account.value == null) YoutubeAuthorizationState.SIGNED_OUT
             else YoutubeAuthorizationState.CONNECTED,
@@ -803,6 +804,7 @@ class GoogleAccountSession private constructor(context: Context) {
             YoutubeAuthorizationState.ERROR
         }
         youtubeAccessToken = null
+        youtubeAccessTokenExpiresAt = 0L
         authorizedAndroidAccount = null
         _status.value = YoutubeAuthorizationStatus(state, message)
     }

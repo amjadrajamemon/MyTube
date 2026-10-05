@@ -25,18 +25,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.6.5 dual-APK source
+      - name: Verify v1.6.6 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.6.5"' source/app/build.gradle.kts
-          grep -q 'versionCode = 69' source/app/build.gradle.kts
+          grep -q 'versionName = "1.6.6"' source/app/build.gradle.kts
+          grep -q 'versionCode = 70' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.6.5 ARM64 + Universal source tree."
+          echo "Building MyTube v1.6.6 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -176,6 +176,14 @@ jobs:
           grep -Fq 'repository.searchLive(query, googleSession.currentYoutubeAccessToken())' "$MAIN"
           grep -Fq 'Live now' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
           grep -Fq 'eventType=live' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/YoutubeHomeFeedClient.kt
+          grep -Fq 'viewStateKey = currentScreen.name' "$MAIN"
+          grep -Fq 'ContentViewModeBar' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq 'Text size ·' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
+          grep -Fq 'viewCount' source/app/src/main/java/com/drivedeck/tubedeck/data/model/TubeDeckModels.kt
+          grep -Fq 'playlistVideoUrl' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeUrls.kt
+          grep -Fq 'activePlaylistItems' "$NATIVE"
+          grep -Fq 'onPlaybackEnded' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          ! grep -Fq 'canonicalVideoUrl(media.mediaUri)' "$MAIN"
           grep -Fq 'YoutubeSearchPolicy.buildSearchUrl' "$MAIN"
           grep -Fq 'androidx-media3-exoplayer-hls' source/gradle/libs.versions.toml
           grep -Fq 'info.hlsUrl' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
@@ -392,11 +400,15 @@ jobs:
             grep -Fq 'Live now' "$DEX_STRINGS"
             grep -Fq 'No active live streams' "$DEX_STRINGS"
             grep -Fq 'eventType=live' "$DEX_STRINGS"
+            grep -Fq 'Text size' "$DEX_STRINGS"
+            grep -Fq 'List view' "$DEX_STRINGS"
+            grep -Fq 'Card view' "$DEX_STRINGS"
+            grep -Fq 'Select Tracks' "$DEX_STRINGS"
             grep -Fq 'Finished/Completed' "$DEX_STRINGS"
             grep -Fq 'Activity/History' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.6.5 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.6.6 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -433,8 +445,8 @@ jobs:
             "$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionCode='69'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.6.5'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionCode='70'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.6.6'"
           done
           unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/arm64-v8a/'
           ! unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/armeabi-v7a/'
@@ -448,8 +460,8 @@ jobs:
           set -euo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           PREVIOUS_DIR="$(mktemp -d)"
-          gh release download v1.6.4-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.6.4-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
-          PREVIOUS_APK="$PREVIOUS_DIR/MyTube-v1.6.4-ARM64-Whisper-DownloadEngine-debug.apk"
+          gh release download v1.6.5-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
+          PREVIOUS_APK="$PREVIOUS_DIR/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk"
           PREVIOUS_SHA1="$("$APKSIGNER" verify --print-certs "$PREVIOUS_APK" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
           test -n "$PREVIOUS_SHA1"
           PINNED_SHA1="$(printf '%s' "$MYTUBE_SIGNING_SHA1" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
@@ -464,11 +476,11 @@ jobs:
           echo "MYTUBE_SIGNING_SHA1=$ACTUAL_SHA1" >> "$GITHUB_ENV"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           {
-            echo "Previous v1.6.4 signing certificate: $PREVIOUS_SHA1"
-            echo "Saved stable signing certificate used by v1.6.5: $ACTUAL_SHA1"
+            echo "Previous v1.6.5 signing certificate: $PREVIOUS_SHA1"
+            echo "Saved stable signing certificate used by v1.6.6: $ACTUAL_SHA1"
             test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
-            echo "The APK is compatible with an update over v1.6.4."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-Install-Compatibility.txt"
+            echo "The APK is compatible with an update over v1.6.5."
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-Install-Compatibility.txt"
 
       - name: Report OAuth registration identity
         shell: bash
@@ -485,7 +497,7 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
           echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
@@ -498,15 +510,15 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-Universal-Older-Rooted-debug.apk"
 
           if [ -s "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk" ]; then
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-ARM64-production.apk"
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.5-Universal-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-ARM64-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.6-Universal-production.apk"
           fi
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.6.5-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.6.6-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -516,26 +528,26 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.6.5-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.6.5-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.6.5-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.6.5-Complete-AndroidStudio-Source.zip.sha256
-          if [ -s dist/MyTube-v1.6.5-ARM64-production.apk ]; then
-            sha256sum dist/MyTube-v1.6.5-ARM64-production.apk > dist/MyTube-v1.6.5-ARM64-production.apk.sha256
-            sha256sum dist/MyTube-v1.6.5-Universal-production.apk > dist/MyTube-v1.6.5-Universal-production.apk.sha256
+          sha256sum dist/MyTube-v1.6.6-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.6.6-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.6.6-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.6.6-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.6.6-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.6.6-Complete-AndroidStudio-Source.zip.sha256
+          if [ -s dist/MyTube-v1.6.6-ARM64-production.apk ]; then
+            sha256sum dist/MyTube-v1.6.6-ARM64-production.apk > dist/MyTube-v1.6.6-ARM64-production.apk.sha256
+            sha256sum dist/MyTube-v1.6.6-Universal-production.apk > dist/MyTube-v1.6.6-Universal-production.apk.sha256
           fi
-          test -s dist/MyTube-v1.6.5-OAuth-Registration.txt
+          test -s dist/MyTube-v1.6.6-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Upload verified v1.6.5 build artifact
+      - name: Upload verified v1.6.6 build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.6.5-verified-build
+          name: MyTube-v1.6.6-verified-build
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish v1.6.5 dual APK release
+      - name: Publish v1.6.6 dual APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -546,38 +558,36 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.6.5-dual-arm64-universal-debug"
-          NOTES="MyTube v1.6.5: retained navigation, live-stream search and fast Audio-only handoff.
-          - The YouTube WebView is retained instead of destroyed when moving to Home, Downloads or Settings, preserving search results, SPA state, scroll position and browser history.
-          - Hidden browser sessions are paused so retained state does not keep hidden media playing.
-          - The browser search path now has one authoritative load call; duplicate navigate + loadUrl requests are removed.
-          - Closing Web playback uses the existing WebView Back history when available instead of rebuilding the previous results URL.
-          - New searches launched from Home/Mixes become clean browser roots, so stale older searches do not leak into Back navigation.
-          - Home and utility-screen saveable UI state is preserved across normal MyTube navigation; Download Center keeps its selected tab, search/filter and list/tile view.
-          - Observed YouTube SPA URL changes are no longer treated as load commands, preventing feedback-driven full page reloads.
-          - Normal resolved-stream metadata is reused for 30 minutes; ordinary player resumes and Native/Web host changes preserve it, while forced extraction is reserved for genuine playback-error recovery.
-          - Video -> Audio-only and Audio-only -> video reuse recently resolved streams, use fast audio startup buffering, and avoid unnecessary network extraction.
-          - Live/livestream queries use YouTube's Live feature filter and active HLS broadcasts are supported in the native player.
-          - Existing PiP, notification Return-to-video, queue, Suggested/Trending, downloads and OAuth refinements remain included.
+          TAG="v1.6.6-dual-arm64-universal-debug"
+          NOTES="MyTube v1.6.6: complete titles, view counts, list/card views and native playlist continuity.
+          - Home, Live, Suggested, Trending and History default to List view with a page-level List/Card toggle.
+          - Video titles wrap instead of being cut; companion and playlist titles are also allowed to show completely.
+          - View counts are carried through native discovery and official YouTube feed results when available.
+          - Main Settings now exposes a global Text size control using the existing app font-scale system.
+          - Playlist download/selection pages have their own List/Card switch and show view counts when available.
+          - Native playback now preserves YouTube list=/mix context instead of stripping it to a single-video URL.
+          - Native playlist queues load the real playlist, wire Previous/Next to collection order and auto-advance at end of playback.
+          - The next playlist item is prefetched to reduce transition delay.
+          - Live-channel discovery, HLS playback, retained navigation, PiP/audio-only behavior, downloads and OAuth refinements remain included.
           - Debug APKs retain the established update-compatible signing certificate."
 
 
           ASSETS=(
-            dist/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.6.5-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.6.5-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.6.5-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.6.5-Complete-AndroidStudio-Source.zip.sha256
-            dist/MyTube-v1.6.5-OAuth-Registration.txt
-            dist/MyTube-v1.6.5-Install-Compatibility.txt
+            dist/MyTube-v1.6.6-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.6.6-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.6.6-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.6.6-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.6.6-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.6.6-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.6.6-OAuth-Registration.txt
+            dist/MyTube-v1.6.6-Install-Compatibility.txt
           )
-          if [ -s dist/MyTube-v1.6.5-ARM64-production.apk ]; then
+          if [ -s dist/MyTube-v1.6.6-ARM64-production.apk ]; then
             ASSETS+=(
-              dist/MyTube-v1.6.5-ARM64-production.apk
-              dist/MyTube-v1.6.5-ARM64-production.apk.sha256
-              dist/MyTube-v1.6.5-Universal-production.apk
-              dist/MyTube-v1.6.5-Universal-production.apk.sha256
+              dist/MyTube-v1.6.6-ARM64-production.apk
+              dist/MyTube-v1.6.6-ARM64-production.apk.sha256
+              dist/MyTube-v1.6.6-Universal-production.apk
+              dist/MyTube-v1.6.6-Universal-production.apk.sha256
             )
           fi
 
@@ -586,7 +596,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.6.5 ARM64 + Universal" \
+              --title "MyTube v1.6.6 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

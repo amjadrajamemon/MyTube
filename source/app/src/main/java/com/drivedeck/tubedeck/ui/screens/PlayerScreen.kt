@@ -484,6 +484,7 @@ fun NativeExoPlayer(
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
+    val tvSafePlayback = remember(context) { isTvLikePlaybackDevice(context) }
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
             shouldCapture = liveDubEngine::isAudioCaptureEnabled,
@@ -504,7 +505,7 @@ fun NativeExoPlayer(
                     .setAudioProcessors(arrayOf(pcmTap))
                     .build()
             }
-        }
+        }.setEnableDecoderFallback(true)
         // Fast first frame, but keep a deep reservoir once playback is running. The small
         // playback/rebuffer thresholds avoid long blank waits on weak links; the 90 s ceiling
         // gives unstable networks room to download ahead whenever bandwidth is temporarily good.
@@ -782,7 +783,26 @@ fun NativeExoPlayer(
                 resolved = result
                 result.title.takeIf { it.isNotBlank() }?.let(onResolvedTitleChanged)
                 hasCaptions = result.subtitles.isNotEmpty()
-                if (preferredPlaybackQualityHeight > 0) {
+                if (tvSafePlayback) {
+                    // TV boxes frequently ship fragile vendor codecs. Start on a single-file MP4
+                    // representation at a conservative height; higher qualities remain selectable.
+                    val requestedTarget = if (preferredPlaybackQualityHeight > 0) {
+                        preferredPlaybackQualityHeight
+                    } else {
+                        chooseAutoHeight(
+                            context,
+                            result.options.map { it.height },
+                            bandwidthMeter.bitrateEstimate
+                        )
+                    }
+                    val safeTarget = chooseFastStartHeight(result, requestedTarget.coerceAtMost(720))
+                    loadResolvedStream(
+                        result,
+                        safeTarget,
+                        autoSelected = preferredPlaybackQualityHeight <= 0,
+                        preservePosition = false
+                    )
+                } else if (preferredPlaybackQualityHeight > 0) {
                     loadResolvedStream(
                         result,
                         preferredPlaybackQualityHeight,
@@ -3854,6 +3874,17 @@ private fun buildResolvedSource(
     val audioItem = MediaItem.fromUri(Uri.parse(audioUrl))
     val audioSource = ProgressiveMediaSource.Factory(factory).createMediaSource(audioItem)
     return MergingMediaSource(videoSource, audioSource)
+}
+
+private fun isTvLikePlaybackDevice(context: Context): Boolean {
+    val uiType = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
+    val leanback = runCatching {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+    }.getOrDefault(false)
+    val television = runCatching {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION)
+    }.getOrDefault(false)
+    return uiType == Configuration.UI_MODE_TYPE_TELEVISION || leanback || television
 }
 
 private fun chooseFastStartHeight(

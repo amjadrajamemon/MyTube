@@ -207,8 +207,10 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
         translator = newTranslator
         val configureGeneration = generation
 
-        postStatus("Preparing free offline ${LiveDubLanguages.label(source)} → ${LiveDubLanguages.label(target)} model (Wi-Fi first time)…")
-        newTranslator.downloadModelIfNeeded(DownloadConditions.Builder().requireWifi().build())
+        postStatus("Preparing free offline ${LiveDubLanguages.label(source)} → ${LiveDubLanguages.label(target)} model…")
+        // Translation models are downloaded once and then stay on-device. Do not deadlock Live
+        // Dub behind a Wi-Fi-only requirement when the user is on a usable metered connection.
+        newTranslator.downloadModelIfNeeded(DownloadConditions.Builder().build())
             .addOnSuccessListener {
                 if (closed || translator !== newTranslator || !enabled || generation != configureGeneration) return@addOnSuccessListener
                 modelReady = true

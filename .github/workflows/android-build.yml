@@ -2,7 +2,7 @@ name: Build MyTube Android APKs
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, stabilization-v1.7.0 ]
     paths:
       - 'source/**'
       - '.github/workflows/android-build.yml'
@@ -25,18 +25,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify v1.6.7 dual-APK source
+      - name: Verify v1.7.0 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.6.7"' source/app/build.gradle.kts
-          grep -q 'versionCode = 71' source/app/build.gradle.kts
+          grep -q 'versionName = "1.7.0"' source/app/build.gradle.kts
+          grep -q 'versionCode = 72' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.6.7 ARM64 + Universal source tree."
+          echo "Building MyTube v1.7.0 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -184,7 +184,17 @@ jobs:
           grep -Fq 'activePlaylistItems' "$NATIVE"
           grep -Fq 'onPlaybackEnded' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'playlistEntriesWithDownloadEngine' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
-          grep -Fq 'YoutubeWatchNextClient.resolve(url, currentVideoId)' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'PlaylistQueuePolicy.preferContextualWatchNext' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          test -f source/app/src/test/java/com/drivedeck/tubedeck/player/PlaylistQueuePolicyTest.kt
+          grep -Fq 'rememberUpdatedState(onPlaybackEnded)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'playlistItems = activePlaylistItems' "$NATIVE"
+          grep -Fq 'AtomicJsonStore' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'MediaDownloader.cancel(it.id)' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'LanguageIdentification.getClient()' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
+          grep -Fq 'clipChannel.send' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
+          grep -Fq 'youtubeAccessTokenExpiresAt' "$AUTH"
+          grep -Fq 'validateGoogleIdTokenClaims' "$AUTH"
+          grep -Fq 'onRenderProcessGone' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'onNativePlaylist' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'No playable videos were found in this playlist or Mix.' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/DownloadModal.kt
           grep -Fq 'repository.enqueuePlaylist(items, mode, quality)' "$MAIN"
@@ -207,7 +217,7 @@ jobs:
           grep -Fq 'if (web?.canGoBack() == true)' "$MAIN"
           grep -Fq 'persistentWebView.onPause()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'pendingHistoryReset' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
-          grep -Fq 'LaunchedEffect(navigationGeneration)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
+          grep -Fq 'LaunchedEffect(navigationGeneration, persistentWebView)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'persistentWebView.clearHistory()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           ! grep -Fq 'YoutubeStreamResolver.invalidate(url)' "$NATIVE"
           ! grep -Fq 'YoutubeStreamResolver.invalidate(media.mediaUri)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
@@ -417,7 +427,7 @@ jobs:
             grep -Fq 'Activity/History' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.6.7 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.7.0 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -439,6 +449,30 @@ jobs:
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86_64/'
           unzip -l "$UNIVERSAL" | grep -q 'lib/x86/'
 
+      - name: Verify 16 KB ELF load alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v readelf >/dev/null
+          TMP="$(mktemp -d)"
+          APK="source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk"
+          unzip -q "$APK" 'lib/arm64-v8a/*.so' -d "$TMP"
+          COUNT=0
+          while IFS= read -r -d '' SO; do
+            COUNT=$((COUNT + 1))
+            while read -r ALIGN; do
+              [ -n "$ALIGN" ] || continue
+              VALUE=$((ALIGN))
+              if [ "$VALUE" -lt 16384 ]; then
+                echo "::error::$SO has LOAD alignment $ALIGN; Android 16 KB devices require >= 0x4000."
+                readelf -lW "$SO"
+                exit 1
+              fi
+            done < <(readelf -lW "$SO" | awk '$1 == "LOAD" { print $NF }')
+          done < <(find "$TMP/lib/arm64-v8a" -type f -name '*.so' -print0)
+          test "$COUNT" -gt 0
+          echo "Verified $COUNT ARM64 native libraries with >=16 KB ELF LOAD alignment."
+
       - name: Verify installable APK container metadata
         shell: bash
         run: |
@@ -454,8 +488,8 @@ jobs:
             "$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionCode='71'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.6.7'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionCode='72'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.7.0'"
           done
           unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/arm64-v8a/'
           ! unzip -l source/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk | grep -q 'lib/armeabi-v7a/'
@@ -469,8 +503,8 @@ jobs:
           set -euo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           PREVIOUS_DIR="$(mktemp -d)"
-          gh release download v1.6.5-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
-          PREVIOUS_APK="$PREVIOUS_DIR/MyTube-v1.6.5-ARM64-Whisper-DownloadEngine-debug.apk"
+          gh release download v1.6.7-dual-arm64-universal-debug --repo "$GITHUB_REPOSITORY" --pattern 'MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk' --dir "$PREVIOUS_DIR"
+          PREVIOUS_APK="$PREVIOUS_DIR/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk"
           PREVIOUS_SHA1="$("$APKSIGNER" verify --print-certs "$PREVIOUS_APK" | sed -n 's/.*certificate SHA-1 digest: //p' | head -n 1)"
           test -n "$PREVIOUS_SHA1"
           PINNED_SHA1="$(printf '%s' "$MYTUBE_SIGNING_SHA1" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
@@ -485,11 +519,11 @@ jobs:
           echo "MYTUBE_SIGNING_SHA1=$ACTUAL_SHA1" >> "$GITHUB_ENV"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           {
-            echo "Previous v1.6.5 signing certificate: $PREVIOUS_SHA1"
-            echo "Saved stable signing certificate used by v1.6.7: $ACTUAL_SHA1"
+            echo "Previous v1.6.7 signing certificate: $PREVIOUS_SHA1"
+            echo "Saved stable signing certificate used by v1.7.0: $ACTUAL_SHA1"
             test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
-            echo "The APK is compatible with an update over v1.6.5."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-Install-Compatibility.txt"
+            echo "The APK is compatible with an update over v1.6.7."
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-Install-Compatibility.txt"
 
       - name: Report OAuth registration identity
         shell: bash
@@ -506,7 +540,7 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
           echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
@@ -519,15 +553,15 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-Universal-Older-Rooted-debug.apk"
 
           if [ -s "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk" ]; then
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-ARM64-production.apk"
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.6.7-Universal-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-ARM64-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.0-Universal-production.apk"
           fi
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.6.7-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.7.0-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -537,26 +571,27 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.6.7-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.6.7-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.6.7-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.6.7-Complete-AndroidStudio-Source.zip.sha256
-          if [ -s dist/MyTube-v1.6.7-ARM64-production.apk ]; then
-            sha256sum dist/MyTube-v1.6.7-ARM64-production.apk > dist/MyTube-v1.6.7-ARM64-production.apk.sha256
-            sha256sum dist/MyTube-v1.6.7-Universal-production.apk > dist/MyTube-v1.6.7-Universal-production.apk.sha256
+          sha256sum dist/MyTube-v1.7.0-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.7.0-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.7.0-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.7.0-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.7.0-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.7.0-Complete-AndroidStudio-Source.zip.sha256
+          if [ -s dist/MyTube-v1.7.0-ARM64-production.apk ]; then
+            sha256sum dist/MyTube-v1.7.0-ARM64-production.apk > dist/MyTube-v1.7.0-ARM64-production.apk.sha256
+            sha256sum dist/MyTube-v1.7.0-Universal-production.apk > dist/MyTube-v1.7.0-Universal-production.apk.sha256
           fi
-          test -s dist/MyTube-v1.6.7-OAuth-Registration.txt
+          test -s dist/MyTube-v1.7.0-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Upload verified v1.6.7 build artifact
+      - name: Upload verified v1.7.0 build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.6.7-verified-build
+          name: MyTube-v1.7.0-verified-build
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish v1.6.7 dual APK release
+      - name: Publish v1.7.0 dual APK release
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -567,8 +602,8 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.6.7-dual-arm64-universal-debug"
-          NOTES="MyTube v1.6.7: playlist and Mix loading/playback/download recovery.
+          TAG="v1.7.0-dual-arm64-universal-debug"
+          NOTES="MyTube v1.7.0: full stabilization release across playback, playlists, downloads, Live Dub, OAuth and browser recovery.
           - Dynamic YouTube Mix queues prefer Watch Next playlist context instead of being forced through an ordinary playlist page.
           - Static playlists retain NewPipe pagination, with Download Engine flat-playlist metadata as an independent final fallback.
           - Playlist-only search results open directly into the native playlist flow instead of bouncing through repeated YouTube WebView redirects.
@@ -580,21 +615,21 @@ jobs:
 
 
           ASSETS=(
-            dist/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.6.7-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.6.7-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.6.7-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.6.7-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.6.7-Complete-AndroidStudio-Source.zip.sha256
-            dist/MyTube-v1.6.7-OAuth-Registration.txt
-            dist/MyTube-v1.6.7-Install-Compatibility.txt
+            dist/MyTube-v1.7.0-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.7.0-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.7.0-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.7.0-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.7.0-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.7.0-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.7.0-OAuth-Registration.txt
+            dist/MyTube-v1.7.0-Install-Compatibility.txt
           )
-          if [ -s dist/MyTube-v1.6.7-ARM64-production.apk ]; then
+          if [ -s dist/MyTube-v1.7.0-ARM64-production.apk ]; then
             ASSETS+=(
-              dist/MyTube-v1.6.7-ARM64-production.apk
-              dist/MyTube-v1.6.7-ARM64-production.apk.sha256
-              dist/MyTube-v1.6.7-Universal-production.apk
-              dist/MyTube-v1.6.7-Universal-production.apk.sha256
+              dist/MyTube-v1.7.0-ARM64-production.apk
+              dist/MyTube-v1.7.0-ARM64-production.apk.sha256
+              dist/MyTube-v1.7.0-Universal-production.apk
+              dist/MyTube-v1.7.0-Universal-production.apk.sha256
             )
           fi
 
@@ -603,7 +638,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.6.7 ARM64 + Universal" \
+              --title "MyTube v1.7.0 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

@@ -97,12 +97,26 @@ class PlaybackEqualizerController(context: Context) {
     private var savedUserCurve: MutableList<Float> = decodeCurve(prefs.getString(KEY_USER_CURVE, null))
     private var attachedSessionId = 0
 
+    /**
+     * Record the current ExoPlayer session only. Do not touch AudioFX here.
+     *
+     * Several TV-box vendor stacks can crash natively when Equalizer/Virtualizer/vendor effects are
+     * instantiated during playback startup. Audio effects are therefore lazy and opt-in.
+     */
     fun attach(audioSessionId: Int): Snapshot {
         if (audioSessionId <= 0) return snapshot()
-        if (attachedSessionId == audioSessionId && effect != null) return snapshot()
+        if (attachedSessionId == audioSessionId) return snapshot()
 
         releaseEffect()
         attachedSessionId = audioSessionId
+        return unavailableSnapshot()
+    }
+
+    fun prepareEqualizer(): Snapshot {
+        val audioSessionId = attachedSessionId
+        if (audioSessionId <= 0) return unavailableSnapshot()
+        if (effect != null) return snapshot()
+
         return try {
             val equalizer = Equalizer(0, audioSessionId)
             effect = equalizer
@@ -117,18 +131,34 @@ class PlaybackEqualizerController(context: Context) {
 
             applyCurve(equalizer)
             equalizer.enabled = requestedEnabled
-            attachSurround(audioSessionId)
-            attachDts(audioSessionId)
-            persistCurrentState()
             snapshot()
         } catch (_: Throwable) {
-            releaseEffect()
+            runCatching { effect?.release() }
+            effect = null
             unavailableSnapshot()
         }
     }
 
+    fun probeDts(): Snapshot {
+        if (attachedSessionId <= 0) return snapshot()
+        if (dtsDescriptor == null) {
+            dtsDescriptor = runCatching {
+                AudioEffect.queryEffects()
+                    ?.firstOrNull { candidate ->
+                        val identity = "${candidate.name} ${candidate.implementor}".lowercase()
+                        identity.contains("dts") &&
+                            candidate.connectMode.equals(AudioEffect.EFFECT_INSERT, ignoreCase = true)
+                    }
+            }.getOrNull()
+        }
+        return snapshot()
+    }
+
     fun setEnabled(enabled: Boolean): Snapshot {
         requestedEnabled = enabled
+        if (enabled && effect == null) {
+            prepareEqualizer()
+        }
         runCatching { effect?.enabled = enabled }
         persistCurrentState()
         return snapshot()
@@ -148,6 +178,15 @@ class PlaybackEqualizerController(context: Context) {
 
     fun setSurroundEnabled(enabled: Boolean): Snapshot {
         requestedSurroundEnabled = enabled
+        if (enabled && surroundEffect == null && attachedSessionId > 0) {
+            attachSurround(attachedSessionId)
+        } else if (!enabled) {
+            runCatching {
+                surroundEffect?.enabled = false
+                surroundEffect?.release()
+            }
+            surroundEffect = null
+        }
         runCatching { surroundEffect?.enabled = enabled }
         persistCurrentState()
         return snapshot()
@@ -166,6 +205,9 @@ class PlaybackEqualizerController(context: Context) {
     }
 
     fun setDtsEnabled(enabled: Boolean): Snapshot {
+        if (enabled && dtsDescriptor == null) {
+            probeDts()
+        }
         requestedDtsEnabled = enabled && dtsDescriptor != null
         if (attachedSessionId > 0 && dtsDescriptor != null) {
             signalDeviceDtsSession(open = requestedDtsEnabled, audioSessionId = attachedSessionId)
@@ -410,26 +452,6 @@ class PlaybackEqualizerController(context: Context) {
                 virtualizer.enabled = requestedSurroundEnabled
             }
         }.getOrNull()
-    }
-
-    private fun attachDts(audioSessionId: Int) {
-        dtsDescriptor = null
-        if (audioSessionId <= 0) return
-
-        dtsDescriptor = runCatching {
-            AudioEffect.queryEffects()
-                ?.firstOrNull { candidate ->
-                    val identity = "${candidate.name} ${candidate.implementor}".lowercase()
-                    identity.contains("dts") &&
-                        candidate.connectMode.equals(AudioEffect.EFFECT_INSERT, ignoreCase = true)
-                }
-        }.getOrNull()
-
-        if (dtsDescriptor != null && requestedDtsEnabled) {
-            signalDeviceDtsSession(open = true, audioSessionId = audioSessionId)
-        } else if (dtsDescriptor == null) {
-            requestedDtsEnabled = false
-        }
     }
 
     /**

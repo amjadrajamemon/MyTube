@@ -1590,7 +1590,13 @@ fun NativeExoPlayer(
                             }
                             TextButton(
                                 onClick = {
-                                    showEqualizer = !showEqualizer
+                                    if (!showEqualizer) {
+                                        equalizerSnapshot = equalizerController.prepareEqualizer()
+                                        equalizerSnapshot = equalizerController.probeDts()
+                                        showEqualizer = true
+                                    } else {
+                                        showEqualizer = false
+                                    }
                                     controlsVisible = true
                                 },
                                 modifier = Modifier.height(30.dp),

@@ -34,6 +34,16 @@ class YoutubeUrlsTest {
         )
         assertNull(YoutubeUrls.canonicalVideoUrl("https://www.youtube.com/playlist?list=PL123"))
     }
+
+    @Test fun buildsPlaylistAwareWatchLinks() {
+        assertEquals(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123",
+            YoutubeUrls.playlistVideoUrl("dQw4w9WgXcQ", "PL123")
+        )
+        assertNull(YoutubeUrls.playlistVideoUrl("bad-id", "PL123"))
+        assertNull(YoutubeUrls.playlistVideoUrl("dQw4w9WgXcQ", ""))
+    }
+
     @Test
     fun startPositionReplacesOldTimestampAndPreservesOtherQueryData() {
         assertEquals(

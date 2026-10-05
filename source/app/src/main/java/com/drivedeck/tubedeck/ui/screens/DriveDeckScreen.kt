@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
+import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.theme.*
@@ -46,6 +47,11 @@ fun DriveDeckScreen(
     liveSearchResults: List<HomeVideo> = emptyList(),
     liveSearchQuery: String = "",
     liveSearchStatus: String = "",
+    playlistMode: Boolean = false,
+    playlistResults: List<PlaylistCandidate> = emptyList(),
+    playlistSearchQuery: String = "",
+    playlistSearchStatus: String = "",
+    onOpenPlaylist: (PlaylistCandidate) -> Unit = {},
     suggestionsEnabled: Boolean = true,
     trendingEnabled: Boolean = true,
     countryCode: String = "US",
@@ -71,7 +77,8 @@ fun DriveDeckScreen(
             onSearch = { onExecuteSearch(searchQuery) },
             onOpenDownloads = onOpenDownloads,
             googleAccount = googleAccount,
-            onGoogleAccountClick = onGoogleAccountClick
+            onGoogleAccountClick = onGoogleAccountClick,
+            searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube"
         )
 
         ContentViewModeBar(
@@ -85,7 +92,18 @@ fun DriveDeckScreen(
             contentPadding = PaddingValues(bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            if (liveSearchQuery.isNotBlank()) {
+            if (playlistMode) {
+                item {
+                    PlaylistShelf(
+                        title = if (playlistSearchQuery.isBlank()) "Playlists & Mixes" else "Results · $playlistSearchQuery",
+                        playlists = playlistResults,
+                        onOpenPlaylist = onOpenPlaylist,
+                        listView = listView,
+                        loading = playlistSearchStatus == "Loading",
+                        emptyLabel = playlistSearchStatus.takeIf { it.isNotBlank() && it != "Loading" }
+                    )
+                }
+            } else if (liveSearchQuery.isNotBlank()) {
                 item {
                     HomeShelf(
                         "Live results · $liveSearchQuery",
@@ -99,6 +117,7 @@ fun DriveDeckScreen(
                     )
                 }
             }
+            if (!playlistMode) {
             item {
                 HomeShelf(
                     "Live now · $countryCode",
@@ -143,6 +162,7 @@ fun DriveDeckScreen(
                     onAction = onRefreshFeed
                 )
             }
+            }
         }
     }
 }
@@ -185,6 +205,165 @@ private fun ContentViewModeBar(
                 )
             ) {
                 Icon(Icons.Default.GridView, "Card view", modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistShelf(
+    title: String,
+    playlists: List<PlaylistCandidate>,
+    onOpenPlaylist: (PlaylistCandidate) -> Unit,
+    listView: Boolean,
+    loading: Boolean = false,
+    emptyLabel: String? = null
+) {
+    Surface(
+        color = TubeDeckSurface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+    ) {
+        Column(Modifier.padding(bottom = 12.dp)) {
+            SectionHeader(title)
+            when {
+                playlists.isNotEmpty() && listView -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    playlists.forEach { playlist ->
+                        PlaylistListRow(playlist) { onOpenPlaylist(playlist) }
+                    }
+                }
+                playlists.isNotEmpty() -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    playlists.chunked(2).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            row.forEach { playlist ->
+                                PlaylistTileCard(
+                                    playlist = playlist,
+                                    onClick = { onOpenPlaylist(playlist) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+                else -> Box(
+                    Modifier.fillMaxWidth().height(64.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(emptyLabel ?: "Search for a playlist or Mix", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistListRow(playlist: PlaylistCandidate, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        PlaylistThumbnail(playlist, Modifier.width(138.dp).aspectRatio(16f / 9f))
+        Column(Modifier.weight(1f).padding(start = 10.dp, top = 1.dp, end = 3.dp)) {
+            Text(
+                playlist.title,
+                color = TubeDeckTextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                playlist.channel,
+                color = TubeDeckTextSecondary,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            val count = playlist.itemCount.takeIf { it > 0L }?.let { String.format(Locale.US, "%,d videos", it) }
+            Text(
+                listOfNotNull(playlist.kind.takeIf { it.isNotBlank() }, count).joinToString(" • "),
+                color = TubeDeckAccentCyan,
+                fontSize = 10.5.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistTileCard(
+    playlist: PlaylistCandidate,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.clickable(onClick = onClick)) {
+        PlaylistThumbnail(playlist, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+        Spacer(Modifier.height(7.dp))
+        Text(
+            playlist.title,
+            color = TubeDeckTextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            playlist.channel,
+            color = TubeDeckTextSecondary,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (playlist.itemCount > 0L) {
+            Text(
+                String.format(Locale.US, "%,d videos", playlist.itemCount),
+                color = TubeDeckAccentCyan,
+                fontSize = 10.5.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistThumbnail(playlist: PlaylistCandidate, modifier: Modifier) {
+    Box(modifier) {
+        AsyncImage(
+            model = playlist.thumbnailUrl,
+            contentDescription = playlist.title,
+            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+            contentScale = ContentScale.Crop
+        )
+        Surface(
+            color = Color.Black.copy(alpha = .78f),
+            shape = RoundedCornerShape(5.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.PlaylistPlay, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(3.dp))
+                Text(playlist.kind.ifBlank { "Playlist" }, color = Color.White, fontSize = 9.5.sp)
             }
         }
     }
@@ -392,6 +571,7 @@ fun DriveDeckTopHeader(
     onOpenDownloads: () -> Unit,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
+    searchPlaceholder: String = "Search YouTube",
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -420,7 +600,7 @@ fun DriveDeckTopHeader(
                 value = searchQuery,
                 onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
-                placeholder = { Text("Search YouTube", color = Color.Gray, fontSize = 15.sp) },
+                placeholder = { Text(searchPlaceholder, color = Color.Gray, fontSize = 15.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = TubeDeckTextSecondary) },
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically) {

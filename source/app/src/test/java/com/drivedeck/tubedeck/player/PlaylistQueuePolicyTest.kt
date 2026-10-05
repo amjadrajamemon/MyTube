@@ -1,0 +1,23 @@
+package com.drivedeck.tubedeck.player
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PlaylistQueuePolicyTest {
+    @Test
+    fun rdMixPrefersWatchContextWhenCurrentVideoExists() {
+        assertTrue(PlaylistQueuePolicy.preferContextualWatchNext("RDabc123", "dQw4w9WgXcQ"))
+    }
+
+    @Test
+    fun ordinaryPlaylistMustNotBeTruncatedToWatchNextPanel() {
+        assertFalse(PlaylistQueuePolicy.preferContextualWatchNext("PLabc123", "dQw4w9WgXcQ"))
+        assertFalse(PlaylistQueuePolicy.preferContextualWatchNext("UUabc123", "dQw4w9WgXcQ"))
+    }
+
+    @Test
+    fun mixWithoutCurrentVideoFallsBackToPlaylistResolvers() {
+        assertFalse(PlaylistQueuePolicy.preferContextualWatchNext("RDabc123", null))
+    }
+}

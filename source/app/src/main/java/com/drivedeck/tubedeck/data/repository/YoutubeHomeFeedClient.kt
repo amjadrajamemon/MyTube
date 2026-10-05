@@ -43,7 +43,7 @@ internal object YoutubeHomeFeedClient {
             check(connection.responseCode == 200) { "Live search unavailable" }
             val items = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                 .getJSONArray("items")
-            return List(items.length()) { index ->
+            val base = List(items.length()) { index ->
                 val item = items.getJSONObject(index)
                 val videoId = item.getJSONObject("id").optString("videoId")
                 val snippet = item.getJSONObject("snippet")
@@ -60,6 +60,12 @@ internal object YoutubeHomeFeedClient {
                     watchedAt = 0L
                 )
             }.filter { it.videoId.isNotBlank() }
+
+            val counts = runCatching { viewCounts(token, base.map { it.videoId }) }
+                .getOrDefault(emptyMap())
+            return base.map { video ->
+                video.copy(viewCount = counts[video.videoId] ?: -1L)
+            }
         } finally {
             connection.disconnect()
         }
@@ -67,8 +73,9 @@ internal object YoutubeHomeFeedClient {
 
     fun trending(token: String, country: String): List<HomeVideo> {
         require(country.matches(Regex("[A-Z]{2}")))
-        val connection = (URL("https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&chart=mostPopular&regionCode=$country&maxResults=12")
-            .openConnection() as HttpURLConnection).apply {
+        val connection = (URL(
+            "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode=$country&maxResults=12"
+        ).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
             readTimeout = 12_000
             setRequestProperty("Authorization", "Bearer $token")
@@ -87,8 +94,36 @@ internal object YoutubeHomeFeedClient {
                     thumbnailUrl = thumbnails?.optJSONObject("medium")?.optString("url")
                         ?: thumbnails?.optJSONObject("default")?.optString("url").orEmpty(),
                     channelTitle = snippet.optString("channelTitle"),
+                    viewCount = item.optJSONObject("statistics")?.optLong("viewCount", -1L) ?: -1L,
                     watchedAt = 0L
                 )
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun viewCounts(token: String, videoIds: List<String>): Map<String, Long> {
+        val ids = videoIds.filter { it.isNotBlank() }.distinct().take(50)
+        if (ids.isEmpty()) return emptyMap()
+        val connection = (URL(
+            "https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${ids.joinToString(",")}"
+        ).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 12_000
+            readTimeout = 12_000
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        try {
+            check(connection.responseCode == 200) { "Video statistics unavailable" }
+            val items = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                .getJSONArray("items")
+            return buildMap {
+                for (index in 0 until items.length()) {
+                    val item = items.getJSONObject(index)
+                    val id = item.optString("id")
+                    val count = item.optJSONObject("statistics")?.optLong("viewCount", -1L) ?: -1L
+                    if (id.isNotBlank() && count >= 0L) put(id, count)
+                }
             }
         } finally {
             connection.disconnect()

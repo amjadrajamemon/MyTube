@@ -465,6 +465,11 @@ class NativePlayerActivity : ComponentActivity() {
                     ) {
                         { playPlaylistItem(activePlaylistIndex + 1) }
                     } else null,
+                    playlistItems = activePlaylistItems,
+                    playlistIndex = activePlaylistIndex,
+                    onPlayPlaylistItem = if (activePlaylistId != null) {
+                        { index -> playPlaylistItem(index) }
+                    } else null,
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },

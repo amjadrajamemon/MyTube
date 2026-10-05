@@ -15,6 +15,7 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.drivedeck.tubedeck.BuildConfig
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
@@ -97,6 +98,10 @@ class GoogleAccountSession private constructor(context: Context) {
         private const val KEY_EMAIL = "google_email"
         private const val KEY_NAME = "google_name"
         private const val KEY_PHOTO = "google_photo"
+        // AuthorizationClient access tokens are short-lived. Refresh before the typical one-hour
+        // boundary rather than leaving the UI connected with a dead token.
+        private const val ANDROID_TOKEN_VALIDITY_MS = 50 * 60 * 1000L
+        private const val TOKEN_EXPIRY_SKEW_MS = 60 * 1000L
 
         private val YOUTUBE_SCOPES = listOf(Scope(YOUTUBE_READONLY))
 
@@ -151,6 +156,7 @@ class GoogleAccountSession private constructor(context: Context) {
     val status: StateFlow<YoutubeAuthorizationStatus> = _status.asStateFlow()
 
     @Volatile private var youtubeAccessToken: String? = null
+    @Volatile private var youtubeAccessTokenExpiresAt: Long = 0L
     @Volatile private var authorizedAndroidAccount: Account? =
         currentInstallIdentity?.email?.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
     @Volatile private var pendingIdentity: SignedInIdentity? = currentInstallIdentity
@@ -204,8 +210,11 @@ class GoogleAccountSession private constructor(context: Context) {
 
     suspend fun restoreYoutubeAuthorization(): Result<Boolean> {
         // A second player host must not replace an interactive sign-in already in progress.
-        if (authorizationOperation.isRunning || waitingForConsent || _status.value.youtubeAuthorized) {
-            return Result.success(_status.value.youtubeAuthorized)
+        if (authorizationOperation.isRunning || waitingForConsent) {
+            return Result.success(currentYoutubeAccessToken() != null)
+        }
+        if (_status.value.youtubeAuthorized && currentYoutubeAccessToken() != null) {
+            return Result.success(true)
         }
         val identity = pendingIdentity ?: return Result.success(false)
         return try {
@@ -420,7 +429,23 @@ class GoogleAccountSession private constructor(context: Context) {
         }
     }
 
-    fun currentYoutubeAccessToken(): String? = youtubeAccessToken
+    fun currentYoutubeAccessToken(): String? {
+        val token = youtubeAccessToken ?: return null
+        val now = System.currentTimeMillis()
+        if (youtubeAccessTokenExpiresAt > now + TOKEN_EXPIRY_SKEW_MS) return token
+
+        youtubeAccessToken = null
+        youtubeAccessTokenExpiresAt = 0L
+        val profile = _account.value
+        if (profile != null) {
+            _status.value = YoutubeAuthorizationStatus(
+                YoutubeAuthorizationState.CONNECTED,
+                "Google signed in • refreshing YouTube access",
+                youtubeAuthorized = false
+            )
+        }
+        return null
+    }
 
     fun oauthRegistrationInfo(): String {
         val source = if (effectiveWebClientId().isNotBlank()) "embedded in build" else "not required for fallback sign-in"
@@ -455,6 +480,7 @@ class GoogleAccountSession private constructor(context: Context) {
         prefs.edit().clear().apply()
         pendingIdentity = null
         youtubeAccessToken = null
+        youtubeAccessTokenExpiresAt = 0L
         authorizedAndroidAccount = null
         _account.value = null
         _status.value = YoutubeAuthorizationStatus()
@@ -485,14 +511,22 @@ class GoogleAccountSession private constructor(context: Context) {
         activity: Activity,
         clientId: String
     ): SignedInIdentity {
+        val nonce = generateNonce()
         val option = GetSignInWithGoogleOption.Builder(clientId)
-            .setNonce(generateNonce())
+            .setNonce(nonce)
             .build()
         val request = GetCredentialRequest.Builder()
             .addCredentialOption(option)
             .build()
 
-        val response = credentialManager.getCredential(activity, request)
+        val response = try {
+            credentialManager.getCredential(activity, request)
+        } catch (error: NoCredentialException) {
+            throw IllegalStateException(
+                "No Google credential is available. Choose or add a Google account and retry.",
+                error
+            )
+        }
         val custom = response.credential as? CustomCredential
             ?: error("Google credential unavailable")
         require(custom.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -501,6 +535,7 @@ class GoogleAccountSession private constructor(context: Context) {
 
         val google = GoogleIdTokenCredential.createFrom(custom.data)
         val claims = parseGoogleIdTokenClaims(google.idToken)
+        validateGoogleIdTokenClaims(claims, clientId, nonce)
         @Suppress("DEPRECATION")
         val legacyId = google.id
 
@@ -617,6 +652,7 @@ class GoogleAccountSession private constructor(context: Context) {
         pendingIdentity = identity
         authorizedAndroidAccount = email.takeIf { it.isNotBlank() }?.let { Account(it, "com.google") }
         youtubeAccessToken = tokenSet.accessToken
+        youtubeAccessTokenExpiresAt = tokenSet.expiresAtEpochMs
         _account.value = profile
         _status.value = YoutubeAuthorizationStatus(
             YoutubeAuthorizationState.CONNECTED,
@@ -656,6 +692,7 @@ class GoogleAccountSession private constructor(context: Context) {
         persistIdentity(identityFromProfile(profile))
         pendingIdentity = identityFromProfile(profile)
         youtubeAccessToken = token
+        youtubeAccessTokenExpiresAt = System.currentTimeMillis() + ANDROID_TOKEN_VALIDITY_MS
         _account.value = profile
         _status.value = YoutubeAuthorizationStatus(
             YoutubeAuthorizationState.CONNECTED,
@@ -727,6 +764,7 @@ class GoogleAccountSession private constructor(context: Context) {
 
     private fun preserveGoogleIdentityAfterYoutubeFailure(error: Throwable) {
         youtubeAccessToken = null
+        youtubeAccessTokenExpiresAt = 0L
         val profile = _account.value
         _status.value = if (profile != null) {
             YoutubeAuthorizationStatus(
@@ -830,6 +868,31 @@ class GoogleAccountSession private constructor(context: Context) {
             Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
         )
         return JSONObject(payload.toString(Charsets.UTF_8))
+    }
+
+    private fun validateGoogleIdTokenClaims(
+        claims: JSONObject,
+        expectedAudience: String,
+        expectedNonce: String
+    ) {
+        val audience = claims.optString("aud")
+        require(audience == expectedAudience) { "Google ID token audience mismatch" }
+
+        val issuer = claims.optString("iss")
+        require(issuer == "accounts.google.com" || issuer == "https://accounts.google.com") {
+            "Google ID token issuer mismatch"
+        }
+
+        val expiresAtSeconds = claims.optLong("exp", 0L)
+        require(expiresAtSeconds > System.currentTimeMillis() / 1_000L) {
+            "Google ID token has expired"
+        }
+
+        // Credential Manager binds the nonce into the Google token. Some older Play-services
+        // responses omit the claim, so require equality whenever Google returns it.
+        claims.optString("nonce").takeIf { it.isNotBlank() }?.let { nonce ->
+            require(nonce == expectedNonce) { "Google ID token nonce mismatch" }
+        }
     }
 
     private fun generateNonce(byteLength: Int = 32): String {

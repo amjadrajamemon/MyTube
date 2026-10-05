@@ -1,7 +1,9 @@
 package com.drivedeck.tubedeck.player
 
 import android.content.Context
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.Equalizer
+import android.media.audiofx.Virtualizer
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -30,7 +32,13 @@ class PlaybackEqualizerController(context: Context) {
         val layoutId: String,
         val styleId: String,
         val userPresetName: String,
-        val hasUserPreset: Boolean
+        val hasUserPreset: Boolean,
+        val surroundAvailable: Boolean,
+        val surroundEnabled: Boolean,
+        val surroundStrength: Float,
+        val dtsAvailable: Boolean,
+        val dtsEnabled: Boolean,
+        val dtsEffectName: String?
     ) {
         companion object {
             fun unavailable(
@@ -39,7 +47,13 @@ class PlaybackEqualizerController(context: Context) {
                 layoutId: String = "horizontal",
                 styleId: String = "classic",
                 userPresetName: String = "User",
-                hasUserPreset: Boolean = false
+                hasUserPreset: Boolean = false,
+                surroundAvailable: Boolean = false,
+                surroundEnabled: Boolean = false,
+                surroundStrength: Float = .65f,
+                dtsAvailable: Boolean = false,
+                dtsEnabled: Boolean = false,
+                dtsEffectName: String? = null
             ) = Snapshot(
                 supported = false,
                 enabled = enabled,
@@ -50,7 +64,13 @@ class PlaybackEqualizerController(context: Context) {
                 layoutId = layoutId,
                 styleId = styleId,
                 userPresetName = userPresetName,
-                hasUserPreset = hasUserPreset
+                hasUserPreset = hasUserPreset,
+                surroundAvailable = surroundAvailable,
+                surroundEnabled = surroundEnabled,
+                surroundStrength = surroundStrength,
+                dtsAvailable = dtsAvailable,
+                dtsEnabled = dtsEnabled,
+                dtsEffectName = dtsEffectName
             )
         }
     }
@@ -59,11 +79,18 @@ class PlaybackEqualizerController(context: Context) {
         .getSharedPreferences("mytube_playback_equalizer_v2", Context.MODE_PRIVATE)
 
     private var effect: Equalizer? = null
+    @Suppress("DEPRECATION")
+    private var surroundEffect: Virtualizer? = null
+    private var dtsEffect: AudioEffect? = null
+    private var dtsDescriptor: AudioEffect.Descriptor? = null
     private var requestedEnabled = prefs.getBoolean(KEY_ENABLED, false)
     private var requestedPresetId = prefs.getString(KEY_PRESET, "flat") ?: "flat"
     private var requestedLayoutId = prefs.getString(KEY_LAYOUT, "horizontal") ?: "horizontal"
     private var requestedStyleId = prefs.getString(KEY_STYLE, "classic") ?: "classic"
     private var requestedUserName = prefs.getString(KEY_USER_NAME, "User")?.ifBlank { "User" } ?: "User"
+    private var requestedSurroundEnabled = prefs.getBoolean(KEY_SURROUND_ENABLED, false)
+    private var requestedSurroundStrength = prefs.getFloat(KEY_SURROUND_STRENGTH, .65f).coerceIn(0f, 1f)
+    private var requestedDtsEnabled = prefs.getBoolean(KEY_DTS_ENABLED, false)
     private var requestedCurve: MutableList<Float> = decodeCurve(prefs.getString(KEY_CURRENT_CURVE, null))
     private var savedUserCurve: MutableList<Float> = decodeCurve(prefs.getString(KEY_USER_CURVE, null))
     private var attachedSessionId = 0
@@ -88,6 +115,8 @@ class PlaybackEqualizerController(context: Context) {
 
             applyCurve(equalizer)
             equalizer.enabled = requestedEnabled
+            attachSurround(audioSessionId)
+            attachDts(audioSessionId)
             persistCurrentState()
             snapshot()
         } catch (_: Throwable) {
@@ -111,6 +140,32 @@ class PlaybackEqualizerController(context: Context) {
 
     fun setStyle(styleId: String): Snapshot {
         requestedStyleId = if (styleId == "graphic") "graphic" else "classic"
+        persistCurrentState()
+        return snapshot()
+    }
+
+    fun setSurroundEnabled(enabled: Boolean): Snapshot {
+        requestedSurroundEnabled = enabled
+        runCatching { surroundEffect?.enabled = enabled }
+        persistCurrentState()
+        return snapshot()
+    }
+
+    @Suppress("DEPRECATION")
+    fun setSurroundStrength(strength: Float): Snapshot {
+        requestedSurroundStrength = strength.coerceIn(0f, 1f)
+        surroundEffect?.let { virtualizer ->
+            if (virtualizer.strengthSupported) {
+                runCatching { virtualizer.setStrength((requestedSurroundStrength * 1000f).roundToInt().toShort()) }
+            }
+        }
+        persistCurrentState()
+        return snapshot()
+    }
+
+    fun setDtsEnabled(enabled: Boolean): Snapshot {
+        requestedDtsEnabled = enabled
+        runCatching { dtsEffect?.enabled = enabled }
         persistCurrentState()
         return snapshot()
     }
@@ -192,7 +247,13 @@ class PlaybackEqualizerController(context: Context) {
                 layoutId = requestedLayoutId,
                 styleId = requestedStyleId,
                 userPresetName = requestedUserName,
-                hasUserPreset = savedUserCurve.isNotEmpty()
+                hasUserPreset = savedUserCurve.isNotEmpty(),
+                surroundAvailable = surroundEffect != null,
+                surroundEnabled = runCatching { surroundEffect?.enabled == true }.getOrDefault(false),
+                surroundStrength = requestedSurroundStrength,
+                dtsAvailable = dtsEffect != null,
+                dtsEnabled = runCatching { dtsEffect?.enabled == true }.getOrDefault(false),
+                dtsEffectName = dtsDescriptor?.name
             )
         }.getOrElse { unavailableSnapshot() }
     }
@@ -208,7 +269,13 @@ class PlaybackEqualizerController(context: Context) {
         layoutId = requestedLayoutId,
         styleId = requestedStyleId,
         userPresetName = requestedUserName,
-        hasUserPreset = savedUserCurve.isNotEmpty()
+        hasUserPreset = savedUserCurve.isNotEmpty(),
+        surroundAvailable = surroundEffect != null,
+        surroundEnabled = runCatching { surroundEffect?.enabled == true }.getOrDefault(false),
+        surroundStrength = requestedSurroundStrength,
+        dtsAvailable = dtsEffect != null,
+        dtsEnabled = runCatching { dtsEffect?.enabled == true }.getOrDefault(false),
+        dtsEffectName = dtsDescriptor?.name
     )
 
     private fun ensureCurveSize(count: Int) {
@@ -291,6 +358,9 @@ class PlaybackEqualizerController(context: Context) {
             .putString(KEY_LAYOUT, requestedLayoutId)
             .putString(KEY_STYLE, requestedStyleId)
             .putString(KEY_USER_NAME, requestedUserName)
+            .putBoolean(KEY_SURROUND_ENABLED, requestedSurroundEnabled)
+            .putFloat(KEY_SURROUND_STRENGTH, requestedSurroundStrength)
+            .putBoolean(KEY_DTS_ENABLED, requestedDtsEnabled)
             .putString(KEY_CURRENT_CURVE, encodeCurve(requestedCurve))
             .apply()
     }
@@ -305,12 +375,72 @@ class PlaybackEqualizerController(context: Context) {
             .toMutableList()
     }
 
+    @Suppress("DEPRECATION")
+    private fun attachSurround(audioSessionId: Int) {
+        runCatching {
+            surroundEffect?.enabled = false
+            surroundEffect?.release()
+        }
+        surroundEffect = null
+        if (audioSessionId <= 0) return
+
+        surroundEffect = runCatching {
+            Virtualizer(0, audioSessionId).also { virtualizer ->
+                if (virtualizer.strengthSupported) {
+                    virtualizer.setStrength((requestedSurroundStrength * 1000f).roundToInt().toShort())
+                }
+                virtualizer.enabled = requestedSurroundEnabled
+            }
+        }.getOrNull()
+    }
+
+    private fun attachDts(audioSessionId: Int) {
+        runCatching {
+            dtsEffect?.enabled = false
+            dtsEffect?.release()
+        }
+        dtsEffect = null
+        dtsDescriptor = null
+        if (audioSessionId <= 0) return
+
+        val descriptor = runCatching {
+            AudioEffect.queryEffects()
+                ?.firstOrNull { candidate ->
+                    val identity = "${candidate.name} ${candidate.implementor}".lowercase()
+                    identity.contains("dts") &&
+                        candidate.connectMode.equals(AudioEffect.EFFECT_INSERT, ignoreCase = true)
+                }
+        }.getOrNull() ?: return
+
+        val vendorEffect = runCatching {
+            AudioEffect(descriptor.type, descriptor.uuid, 0, audioSessionId).also {
+                it.enabled = requestedDtsEnabled
+            }
+        }.getOrNull()
+
+        if (vendorEffect != null) {
+            dtsDescriptor = descriptor
+            dtsEffect = vendorEffect
+        }
+    }
+
     private fun releaseEffect() {
         runCatching {
             effect?.enabled = false
             effect?.release()
         }
+        runCatching {
+            surroundEffect?.enabled = false
+            surroundEffect?.release()
+        }
+        runCatching {
+            dtsEffect?.enabled = false
+            dtsEffect?.release()
+        }
         effect = null
+        surroundEffect = null
+        dtsEffect = null
+        dtsDescriptor = null
         attachedSessionId = 0
     }
 
@@ -322,5 +452,8 @@ class PlaybackEqualizerController(context: Context) {
         const val KEY_USER_NAME = "user_name"
         const val KEY_CURRENT_CURVE = "current_curve"
         const val KEY_USER_CURVE = "user_curve"
+        const val KEY_SURROUND_ENABLED = "surround_enabled"
+        const val KEY_SURROUND_STRENGTH = "surround_strength"
+        const val KEY_DTS_ENABLED = "dts_enabled"
     }
 }

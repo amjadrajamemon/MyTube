@@ -113,6 +113,7 @@ import com.drivedeck.tubedeck.player.LiveDubEngine
 import com.drivedeck.tubedeck.player.LiveDubLanguages
 import com.drivedeck.tubedeck.player.LiveDubInputMode
 import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
+import com.drivedeck.tubedeck.player.PlaybackEqualizerController
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
@@ -461,6 +462,9 @@ fun NativeExoPlayer(
     var dubVoiceProfile by rememberSaveable(media.id) { mutableStateOf("natural") }
     var dubOriginalVolume by rememberSaveable(media.id) { mutableFloatStateOf(0.18f) }
     var dubStatus by remember(media.id) { mutableStateOf("Live Dub off") }
+    var showEqualizer by rememberSaveable(media.id) { mutableStateOf(false) }
+    val equalizerController = remember(media.id) { PlaybackEqualizerController() }
+    var equalizerSnapshot by remember(media.id) { mutableStateOf(equalizerController.snapshot()) }
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
@@ -648,6 +652,9 @@ fun NativeExoPlayer(
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 hasCaptions = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSupported } || resolved?.subtitles?.isNotEmpty() == true
             }
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                equalizerSnapshot = equalizerController.attach(audioSessionId)
+            }
             override fun onCues(cueGroup: CueGroup) {
                 val cue = cueGroup.cues
                     .mapNotNull { it.text?.toString()?.trim() }
@@ -750,8 +757,10 @@ fun NativeExoPlayer(
             }
         }
         exoPlayer.addListener(listener)
+        equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
             exoPlayer.removeListener(listener)
+            equalizerController.release()
             liveDubEngine.close()
             mediaSession.release()
             exoPlayer.release()
@@ -1021,9 +1030,10 @@ fun NativeExoPlayer(
 
     BackHandler(
         enabled = !inPictureInPicture && !isPipMode(activity) &&
-            (showSettings || (showComments && compactPortrait))
+            (showEqualizer || showSettings || (showComments && compactPortrait))
     ) {
         when {
+            showEqualizer -> showEqualizer = false
             showSettings -> showSettings = false
             showComments && compactPortrait -> showComments = false
             isFullscreen -> isFullscreen = false
@@ -1037,6 +1047,7 @@ fun NativeExoPlayer(
             controlsVisible = false
             showSettings = false
             showQuickActions = false
+            showEqualizer = false
             gestureOverlayVisible = false
         }
     }
@@ -1573,6 +1584,27 @@ fun NativeExoPlayer(
                                     fontSize = 10.sp
                                 )
                             }
+                            TextButton(
+                                onClick = {
+                                    showEqualizer = !showEqualizer
+                                    controlsVisible = true
+                                },
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    "EQ",
+                                    color = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 10.sp
+                                )
+                                Icon(
+                                    if (showEqualizer) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                    if (showEqualizer) "Minimize equalizer" else "Open equalizer",
+                                    tint = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
                         }
                         resolved?.chapters
                             ?.lastOrNull { it.startTimeSeconds * 1_000L <= currentPosition }
@@ -1622,6 +1654,28 @@ fun NativeExoPlayer(
                         )
                     }
                 }
+            }
+
+            if (showEqualizer && !inPictureInPicture) {
+                PlaybackEqualizerOverlay(
+                    snapshot = equalizerSnapshot,
+                    onEnabled = { enabled ->
+                        equalizerSnapshot = equalizerController.setEnabled(enabled)
+                    },
+                    onPreset = { preset ->
+                        equalizerSnapshot = equalizerController.applyPreset(preset)
+                    },
+                    onBandChanged = { index, value ->
+                        equalizerSnapshot = equalizerController.setBandNormalized(index, value)
+                    },
+                    onMinimize = { showEqualizer = false },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(horizontal = 8.dp, vertical = 44.dp)
+                        .zIndex(70f)
+                        .fillMaxWidth(if (compactPortrait) .92f else .42f)
+                        .widthIn(max = 360.dp)
+                )
             }
 
             if (resolveError != null) {
@@ -1808,6 +1862,126 @@ fun NativeExoPlayer(
             },
             onDismiss = { showSettings = false }
         )
+    }
+}
+
+@Composable
+private fun PlaybackEqualizerOverlay(
+    snapshot: PlaybackEqualizerController.Snapshot,
+    onEnabled: (Boolean) -> Unit,
+    onPreset: (String) -> Unit,
+    onBandChanged: (Int, Float) -> Unit,
+    onMinimize: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = Color.Black.copy(alpha = .90f),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 8.dp,
+        shadowElevation = 10.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .heightIn(max = 300.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Audio Equalizer",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = snapshot.enabled,
+                    onCheckedChange = onEnabled,
+                    enabled = snapshot.supported,
+                    modifier = Modifier.height(30.dp)
+                )
+                IconButton(onClick = onMinimize, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        "Minimize equalizer",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            if (!snapshot.supported) {
+                Text(
+                    "Equalizer will become available when the playback audio session is ready.",
+                    color = Color.White.copy(alpha = .72f),
+                    fontSize = 10.sp
+                )
+            } else {
+                val presets = listOf(
+                    "flat" to "Flat",
+                    "bass" to "Bass",
+                    "voice" to "Voice",
+                    "music" to "Music",
+                    "treble" to "Treble"
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    presets.forEach { (id, label) ->
+                        FilterChip(
+                            selected = snapshot.presetId == id,
+                            onClick = { onPreset(id) },
+                            label = { Text(label, fontSize = 9.sp) }
+                        )
+                    }
+                    if (snapshot.presetId == "custom") {
+                        FilterChip(
+                            selected = true,
+                            onClick = {},
+                            label = { Text("Custom", fontSize = 9.sp) }
+                        )
+                    }
+                }
+
+                snapshot.bands.forEach { band ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(34.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            equalizerFrequencyLabel(band.centerFrequencyHz),
+                            color = Color.White.copy(alpha = .82f),
+                            fontSize = 9.sp,
+                            modifier = Modifier.width(48.dp)
+                        )
+                        Slider(
+                            value = band.normalizedLevel,
+                            onValueChange = { onBandChanged(band.index, it) },
+                            valueRange = -1f..1f,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            String.format(Locale.ROOT, "%+.1f", band.levelDb),
+                            color = Color.White.copy(alpha = .78f),
+                            fontSize = 9.sp,
+                            modifier = Modifier.width(42.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun equalizerFrequencyLabel(hz: Int): String {
+    return if (hz >= 1000) {
+        val khz = hz / 1000f
+        if (khz >= 10f) "${khz.roundToInt()}k" else String.format(Locale.ROOT, "%.1fk", khz)
+    } else {
+        "${hz}Hz"
     }
 }
 

@@ -1235,10 +1235,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         prefs.edit().remove("queue_json").apply()
         DownloadQueueNotifier.update(context, items, force = true)
     }
-    private fun loadQueue(): List<DownloadTask> = runCatching {
-        val data = JSONArray(stateStore.read("queue.json") ?: prefs.getString("queue_json", "[]"))
-        List(data.length()) { index ->
-            val item = data.getJSONObject(index)
+    private fun loadQueue(): List<DownloadTask> {
+        val raw = stateStore.read("queue.json") ?: prefs.getString("queue_json", "[]")
+        return parseJsonArray(raw) { item ->
             val status = enumValue(item.optString("status"), TaskStatus.QUEUED)
             val persistedError = item.optString("errorMessage")
                 .takeIf { it.isNotBlank() && it != "null" }
@@ -1266,14 +1265,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     status == TaskStatus.CANCELLED || status == TaskStatus.RETRIED -> TaskStatus.FAILED
                     else -> status
                 },
-                errorMessage = if (systemTimedOut) null else persistedError,
+                errorMessage = persistedError,
                 retryCount = persistedRetryCount,
                 createdAt = createdAt,
                 sessionId = item.optLong("sessionId", createdAt),
                 eventAt = item.optLong("eventAt", createdAt)
             )
         }
-    }.getOrDefault(emptyList())
+    }
 
     fun copyFilesToClipboard(ids: Set<String>, move: Boolean = false) {
         _fileClipboard.value = FileClipboard(ids.intersect(_offlineMediaList.value.mapTo(mutableSetOf()) { it.id }), move)
@@ -1342,10 +1341,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         stateStore.write("offline_media.json", array.toString())
         prefs.edit().remove("offline_media_json").apply()
     }
-    private fun loadOfflineMedia(): List<OfflineMedia> = runCatching {
-        val array = JSONArray(stateStore.read("offline_media.json") ?: prefs.getString("offline_media_json", "[]"))
-        List(array.length()) { index ->
-            val item = array.getJSONObject(index)
+    private fun loadOfflineMedia(): List<OfflineMedia> {
+        val raw = stateStore.read("offline_media.json") ?: prefs.getString("offline_media_json", "[]")
+        return parseJsonArray(raw) { item ->
             OfflineMedia(
                 item.getString("id"), item.getString("title"), item.getString("videoId"),
                 item.optString("thumbnailUrl"), item.getString("mediaUri"),
@@ -1357,11 +1355,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
             val uri = Uri.parse(media.mediaUri)
             when (uri.scheme) {
                 "file" -> uri.path?.let { File(it).isFile } == true
-                "content" -> runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true }.getOrDefault(false)
+                "content" -> runCatching {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
+                }.getOrDefault(false)
                 else -> false
             }
         }
-    }.getOrDefault(emptyList())
+    }
 
     fun clearHistory() {
         _downloadHistory.value = emptyList()
@@ -1384,10 +1384,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         stateStore.write("history.json", array.toString())
         prefs.edit().remove("history_json").apply()
     }
-    private fun loadHistory(): List<DownloadTask> = runCatching {
-        val array = JSONArray(stateStore.read("history.json") ?: prefs.getString("history_json", "[]"))
-        List(array.length()) { index ->
-            val item = array.getJSONObject(index)
+    private fun loadHistory(): List<DownloadTask> {
+        val raw = stateStore.read("history.json") ?: prefs.getString("history_json", "[]")
+        return parseJsonArray(raw) { item ->
             DownloadTask(
                 id = item.getString("id"), url = item.getString("url"),
                 videoId = item.getString("videoId"), title = item.getString("title"),
@@ -1403,7 +1402,18 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 eventAt = item.optLong("eventAt", item.optLong("createdAt"))
             )
         }
-    }.getOrDefault(emptyList())
+    }
+
+    private fun <T : Any> parseJsonArray(raw: String?, parser: (JSONObject) -> T): List<T> {
+        val array = runCatching { JSONArray(raw ?: "[]") }.getOrNull() ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                runCatching { parser(array.getJSONObject(index)) }
+                    .getOrNull()
+                    ?.let(::add)
+            }
+        }
+    }
 
     private fun saveHomeVideos(key: String, items: List<HomeVideo>) {
         val array = JSONArray()

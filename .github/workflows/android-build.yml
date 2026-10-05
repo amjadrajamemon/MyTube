@@ -153,6 +153,9 @@ jobs:
           grep -Fq 'fun prepareEqualizer()' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt
           grep -Fq 'equalizerController.prepareEqualizer()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'equalizerController.probeDts()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'isTvLikePlaybackDevice(context)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq '.setEnableDecoderFallback(true)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'requestedTarget.coerceAtMost(720)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq '.pointerInput(snapshot.bands.size)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'setBandNormalizedRealtime' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt
           grep -Fq 'commitCustomCurve' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt

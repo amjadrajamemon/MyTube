@@ -29,6 +29,11 @@ object YoutubeUrls {
 
     fun playlist(value: String): Boolean = playlistId(value) != null
 
+    fun playlistVideoUrl(videoId: String, playlistId: String): String? {
+        if (!idPattern.matches(videoId) || playlistId.isBlank()) return null
+        return "https://www.youtube.com/watch?v=$videoId&list=$playlistId"
+    }
+
     fun playlistId(value: String): String? {
         val uri = runCatching { URI(value.trim()) }.getOrNull() ?: return null
         if (uri.scheme?.lowercase() != "https") return null

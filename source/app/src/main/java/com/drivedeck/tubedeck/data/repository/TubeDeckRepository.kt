@@ -338,7 +338,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         title: String,
                         thumbnail: String,
                         channel: String,
-                        durationSeconds: Long
+                        durationSeconds: Long,
+                        viewCount: Long = -1L
                     ) {
                         if (videoId.isBlank() || videoId in watchedIds) return
                         suggestions.putIfAbsent(
@@ -350,6 +351,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                                 thumbnailUrl = thumbnail.ifBlank { getVideoThumbnail(videoId) },
                                 channelTitle = channel.ifBlank { "YouTube" },
                                 durationText = formatDurationLabel(durationSeconds),
+                                viewCount = viewCount,
                                 watchedAt = 0L
                             )
                         )
@@ -363,7 +365,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         }.getOrDefault(emptyList()).take(10).forEach { item ->
                             addSuggestion(
                                 item.videoId, item.title, item.thumbnailUrl,
-                                item.uploader, item.durationSeconds
+                                item.uploader, item.durationSeconds, item.viewCount
                             )
                         }
                         if (suggestions.size < 24) {
@@ -372,7 +374,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                             }.getOrDefault(emptyList()).take(10).forEach { item ->
                                 addSuggestion(
                                     item.videoId, item.title, item.thumbnailUrl,
-                                    item.channelTitle, item.durationSeconds
+                                    item.channelTitle, item.durationSeconds, item.viewCount
                                 )
                             }
                         }
@@ -385,7 +387,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                             .forEach { item ->
                                 addSuggestion(
                                     item.videoId, item.title, item.thumbnailUrl,
-                                    item.channelTitle, item.durationSeconds
+                                    item.channelTitle, item.durationSeconds, item.viewCount
                                 )
                             }
                         if (suggestions.size >= 24) break
@@ -402,7 +404,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                             }.getOrDefault(emptyList()).forEach { item ->
                                 addSuggestion(
                                     item.videoId, item.title, item.thumbnailUrl,
-                                    item.channelTitle, item.durationSeconds
+                                    item.channelTitle, item.durationSeconds, item.viewCount
                                 )
                             }
                             if (suggestions.size >= 24) break
@@ -413,7 +415,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                         publicTrending(region, 18).forEach { item ->
                             addSuggestion(
                                 item.videoId, item.title, item.thumbnailUrl,
-                                item.channelTitle, 0L
+                                item.channelTitle, 0L, item.viewCount
                             )
                         }
                     }

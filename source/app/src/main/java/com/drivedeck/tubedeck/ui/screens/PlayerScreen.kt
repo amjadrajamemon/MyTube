@@ -1672,6 +1672,12 @@ fun NativeExoPlayer(
                     onBandChanged = { index, value ->
                         equalizerSnapshot = equalizerController.setBandNormalized(index, value)
                     },
+                    onGraphicBandChanged = { index, value ->
+                        equalizerSnapshot = equalizerController.setBandNormalizedRealtime(index, value)
+                    },
+                    onGraphicEditFinished = {
+                        equalizerSnapshot = equalizerController.commitCustomCurve()
+                    },
                     onLayout = { layout ->
                         equalizerSnapshot = equalizerController.setLayout(layout)
                     },
@@ -1896,6 +1902,8 @@ private fun PlaybackEqualizerOverlay(
     onEnabled: (Boolean) -> Unit,
     onPreset: (String) -> Unit,
     onBandChanged: (Int, Float) -> Unit,
+    onGraphicBandChanged: (Int, Float) -> Unit,
+    onGraphicEditFinished: () -> Unit,
     onLayout: (String) -> Unit,
     onStyle: (String) -> Unit,
     onSaveUser: (String) -> Unit,
@@ -2116,7 +2124,11 @@ private fun PlaybackEqualizerOverlay(
                 }
 
                 if (snapshot.styleId == "graphic") {
-                    EqualizerGraphicCurve(snapshot = snapshot)
+                    EqualizerGraphicCurve(
+                        snapshot = snapshot,
+                        onBandChanged = onGraphicBandChanged,
+                        onEditFinished = onGraphicEditFinished
+                    )
                 }
 
                 if (snapshot.layoutId == "vertical") {
@@ -2206,9 +2218,16 @@ private fun PlaybackEqualizerOverlay(
 @Composable
 private fun EqualizerGraphicCurve(
     snapshot: PlaybackEqualizerController.Snapshot,
+    onBandChanged: (Int, Float) -> Unit,
+    onEditFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (snapshot.bands.isEmpty()) return
+
+    val latestSnapshot by rememberUpdatedState(snapshot)
+    val latestOnBandChanged by rememberUpdatedState(onBandChanged)
+    val latestOnEditFinished by rememberUpdatedState(onEditFinished)
+    var activeGraphBand by remember { mutableIntStateOf(-1) }
 
     val dbTicks = listOf(
         snapshot.maxDb,
@@ -2269,6 +2288,73 @@ private fun EqualizerGraphicCurve(
                             .fillMaxWidth()
                             .weight(1f)
                             .padding(horizontal = 2.dp, vertical = 2.dp)
+                            .pointerInput(snapshot.bands.size) {
+                                awaitEachGesture {
+                                    val initialSnapshot = latestSnapshot
+                                    if (initialSnapshot.bands.isEmpty()) return@awaitEachGesture
+
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    var previousBand: Int? = null
+                                    var previousValue = 0f
+
+                                    fun applyPosition(position: Offset) {
+                                        val current = latestSnapshot
+                                        if (current.bands.isEmpty()) return
+
+                                        val width = size.width.toFloat().coerceAtLeast(1f)
+                                        val height = size.height.toFloat().coerceAtLeast(9f)
+                                        val top = 4f
+                                        val bottom = (height - 4f).coerceAtLeast(top + 1f)
+                                        val centerY = (top + bottom) / 2f
+                                        val halfRange = ((bottom - top) / 2f).coerceAtLeast(1f)
+                                        val normalized = ((centerY - position.y) / halfRange).coerceIn(-1f, 1f)
+
+                                        val localBand = if (current.bands.size <= 1) {
+                                            0
+                                        } else {
+                                            ((position.x.coerceIn(0f, width) / width) * current.bands.lastIndex)
+                                                .roundToInt()
+                                                .coerceIn(0, current.bands.lastIndex)
+                                        }
+
+                                        val previous = previousBand
+                                        if (previous != null && previous != localBand) {
+                                            val direction = if (localBand > previous) 1 else -1
+                                            val distance = kotlin.math.abs(localBand - previous).coerceAtLeast(1)
+                                            var band = previous
+                                            var step = 0
+                                            while (band != localBand) {
+                                                band += direction
+                                                step += 1
+                                                val t = step.toFloat() / distance.toFloat()
+                                                val interpolated = previousValue + (normalized - previousValue) * t
+                                                val target = current.bands[band]
+                                                latestOnBandChanged(target.index, interpolated.coerceIn(-1f, 1f))
+                                            }
+                                        } else {
+                                            latestOnBandChanged(current.bands[localBand].index, normalized)
+                                        }
+
+                                        activeGraphBand = localBand
+                                        previousBand = localBand
+                                        previousValue = normalized
+                                    }
+
+                                    applyPosition(down.position)
+                                    down.consume()
+
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) break
+                                        applyPosition(change.position)
+                                        change.consume()
+                                    }
+
+                                    activeGraphBand = -1
+                                    latestOnEditFinished()
+                                }
+                            }
                     ) {
                         val top = 4f
                         val bottom = size.height - 4f
@@ -2347,10 +2433,18 @@ private fun EqualizerGraphicCurve(
                                 )
                             )
 
-                            points.forEach { point ->
+                            points.forEachIndexed { index, point ->
+                                val active = index == activeGraphBand
+                                if (active) {
+                                    drawCircle(
+                                        color = TubeDeckAccentCyan.copy(alpha = .22f),
+                                        radius = 11f,
+                                        center = point
+                                    )
+                                }
                                 drawCircle(
-                                    color = TubeDeckAccentMint,
-                                    radius = 4.5f,
+                                    color = if (active) TubeDeckAccentCyan else TubeDeckAccentMint,
+                                    radius = if (active) 6.5f else 4.5f,
                                     center = point
                                 )
                             }

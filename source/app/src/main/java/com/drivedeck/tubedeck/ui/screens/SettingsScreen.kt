@@ -217,6 +217,29 @@ fun SettingsScreen(
                     }
                 }
 
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Text size · ${(fontScale * 100).toInt()}%",
+                    color = TubeDeckTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Slider(
+                    value = fontScale,
+                    onValueChange = {
+                        fontScale = it.coerceIn(0.80f, 1.35f)
+                        appearancePreset = "Custom"
+                        previewApplied = false
+                    },
+                    valueRange = 0.80f..1.35f,
+                    steps = 10
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Smaller", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Normal", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Larger", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+
                 Spacer(Modifier.height(4.dp))
 
                 Row(

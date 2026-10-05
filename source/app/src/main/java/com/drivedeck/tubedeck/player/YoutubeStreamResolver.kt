@@ -151,7 +151,8 @@ object YoutubeStreamResolver {
         val url: String,
         val thumbnailUrl: String,
         val channelTitle: String,
-        val durationSeconds: Long
+        val durationSeconds: Long,
+        val viewCount: Long = -1L
     )
 
     data class DiscoveredEpisode(
@@ -707,7 +708,8 @@ object YoutubeStreamResolver {
                         url = item.url,
                         thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
                         channelTitle = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                        durationSeconds = item.duration.coerceAtLeast(0L)
+                        durationSeconds = item.duration.coerceAtLeast(0L),
+                        viewCount = streamInfoItemViewCount(item)
                     )
                 }
                 .distinctBy { it.videoId }
@@ -1336,9 +1338,21 @@ object YoutubeStreamResolver {
             thumbnailUrl = item.thumbnails.firstOrNull()?.url
                 ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
             channelTitle = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-            durationSeconds = item.duration.coerceAtLeast(0L)
+            durationSeconds = item.duration.coerceAtLeast(0L),
+            viewCount = streamInfoItemViewCount(item)
         )
     }
+
+    private fun streamInfoItemViewCount(item: StreamInfoItem): Long =
+        runCatching {
+            val value = item.javaClass.methods
+                .firstOrNull { method ->
+                    method.parameterCount == 0 &&
+                        (method.name == "getViewCount" || method.name == "viewCount")
+                }
+                ?.invoke(item)
+            (value as? Number)?.toLong() ?: -1L
+        }.getOrDefault(-1L)
 
     private fun isActiveLiveSearchItem(item: StreamInfoItem): Boolean {
         // Reflection keeps this compatible across NewPipe Extractor versions where the
@@ -1404,7 +1418,8 @@ object YoutubeStreamResolver {
                         channelTitle = item.optString("channel")
                             .ifBlank { item.optString("uploader") }
                             .ifBlank { "YouTube" },
-                        durationSeconds = 0L
+                        durationSeconds = 0L,
+                        viewCount = item.optLong("view_count", -1L)
                     )
                 )
                 if (size >= limit) break

@@ -78,47 +78,77 @@ fun DownloadModal(
     var isFetching by remember { mutableStateOf(false) }
     var playlistListView by rememberSaveable(initialUrl) { mutableStateOf(true) }
     
-    LaunchedEffect(urlText, isPlaylist, activePlaylistUrl) {
+    LaunchedEffect(urlText, isPlaylist, hasPlaylist) {
+        if (!isPlaylist || hasPlaylist) return@LaunchedEffect
+        playlistCandidates = emptyList()
+        activePlaylistUrl = ""
+        playlistItems = emptyList()
+        fetchError = null
+        isFetching = true
+        try {
+            delay(150)
+            require(hasVideo) { "Start from a YouTube video or playlist." }
+            val candidates = onDiscoverPlaylistCandidates(urlText, initialTitle)
+            playlistCandidates = candidates
+            val first = candidates.firstOrNull()
+                ?: error("No related playlist or mix could be found for this video.")
+            activePlaylistUrl = first.url
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            fetchError = error.message ?: "Could not find a playlist or Mix."
+            isFetching = false
+        }
+    }
+
+    val playlistTargetUrl = if (hasPlaylist) urlText else activePlaylistUrl
+    LaunchedEffect(isPlaylist, playlistTargetUrl) {
+        if (!isPlaylist || playlistTargetUrl.isBlank()) return@LaunchedEffect
         isFetching = true
         fetchError = null
         playlistItems = emptyList()
+        try {
+            delay(100)
+            val selectedCandidate = playlistCandidates.firstOrNull { it.url == playlistTargetUrl }
+            val loaded = if (
+                selectedCandidate?.items?.isNotEmpty() == true &&
+                playlistTargetUrl.startsWith("mytube://")
+            ) {
+                selectedCandidate.items
+            } else {
+                onFetchPlaylistItems(playlistTargetUrl)
+            }
+            playlistItems = loaded
+            if (loaded.isEmpty()) {
+                fetchError = "No playable videos were found in this playlist or Mix."
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            fetchError = error.message ?: "Could not load playlist or Mix."
+        } finally {
+            isFetching = false
+        }
+    }
+
+    LaunchedEffect(urlText, isPlaylist) {
+        if (isPlaylist) return@LaunchedEffect
+        isFetching = true
+        fetchError = null
         videoQualities = emptyList()
         audioAvailable = false
         try {
-            delay(250)
-            if (isPlaylist) {
-                val targetPlaylistUrl = when {
-                    hasPlaylist -> urlText
-                    activePlaylistUrl.isNotBlank() -> activePlaylistUrl
-                    else -> {
-                        require(hasVideo) { "Start from a YouTube video or playlist." }
-                        playlistCandidates = onDiscoverPlaylistCandidates(urlText, initialTitle)
-                        val first = playlistCandidates.firstOrNull()
-                            ?: error("No related playlist or mix could be found for this video.")
-                        activePlaylistUrl = first.url
-                        return@LaunchedEffect
-                    }
-                }
-                val selectedCandidate = playlistCandidates.firstOrNull { it.url == targetPlaylistUrl }
-                playlistItems = if (
-                    selectedCandidate?.items?.isNotEmpty() == true &&
-                    targetPlaylistUrl.startsWith("mytube://")
-                ) {
-                    selectedCandidate.items
-                } else {
-                    onFetchPlaylistItems(targetPlaylistUrl)
-                }
-                if (playlistItems.isEmpty()) {
-                    fetchError = "No verified related episodes were found in the selected collection."
-                }
-            } else {
-                require(hasVideo) { "Paste a valid YouTube video link." }
-                val choices = onFetchDownloadChoices(urlText)
-                videoQualities = choices.videoQualities
-                audioAvailable = choices.audioAvailable
-                if (selectedMode == DownloadMode.VIDEO && videoQualities.isNotEmpty() && selectedQuality !in videoQualities) {
-                    selectedQuality = "Best"
-                }
+            delay(100)
+            require(hasVideo) { "Paste a valid YouTube video link." }
+            val choices = onFetchDownloadChoices(urlText)
+            videoQualities = choices.videoQualities
+            audioAvailable = choices.audioAvailable
+            if (
+                selectedMode == DownloadMode.VIDEO &&
+                videoQualities.isNotEmpty() &&
+                selectedQuality !in videoQualities
+            ) {
+                selectedQuality = "Best"
             }
         } catch (cancel: CancellationException) {
             throw cancel

@@ -8,6 +8,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,8 +19,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +76,7 @@ fun DownloadModal(
     var audioAvailable by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var isFetching by remember { mutableStateOf(false) }
+    var playlistListView by rememberSaveable(initialUrl) { mutableStateOf(true) }
     
     LaunchedEffect(urlText, isPlaylist, activePlaylistUrl) {
         isFetching = true
@@ -254,9 +261,7 @@ fun DownloadModal(
                                                     candidate.title,
                                                     color = Color.White,
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    fontSize = 12.sp
                                                 )
                                                 Text(
                                                     buildString {
@@ -265,9 +270,7 @@ fun DownloadModal(
                                                         if (candidate.itemCount > 0) append(" • ").append(candidate.itemCount).append(" videos")
                                                     },
                                                     color = TubeDeckTextSecondary,
-                                                    fontSize = 10.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    fontSize = 10.sp
                                                 )
                                             }
                                             if (selected) {
@@ -280,43 +283,148 @@ fun DownloadModal(
                             Spacer(Modifier.height(12.dp))
                         }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text("Select Tracks (${playlistItems.size})", fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("All", color = TubeDeckAccentCyan, modifier = Modifier.clickable {
                                     playlistItems = playlistItems.map { it.copy(isSelected = true) }
                                 }, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(10.dp))
                                 Text("None", color = Color.Gray, modifier = Modifier.clickable {
                                     playlistItems = playlistItems.map { it.copy(isSelected = false) }
                                 }, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(8.dp))
+                                IconButton(onClick = { playlistListView = true }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        Icons.Default.ViewList,
+                                        "List view",
+                                        tint = if (playlistListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                }
+                                IconButton(onClick = { playlistListView = false }, modifier = Modifier.size(36.dp)) {
+                                    Icon(
+                                        Icons.Default.GridView,
+                                        "Card view",
+                                        tint = if (!playlistListView) TubeDeckAccentCyan else TubeDeckTextSecondary
+                                    )
+                                }
                             }
                         }
-                        LazyColumn(modifier = Modifier.heightIn(max = 240.dp).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(playlistItems) { item ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically, 
-                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(TubeDeckSurfaceVariant).clickable { 
-                                        playlistItems = playlistItems.map { if (it.videoId == item.videoId) it.copy(isSelected = !it.isSelected) else it }
-                                    }.padding(6.dp)
-                                ) {
-                                    Checkbox(checked = item.isSelected, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = TubeDeckAccentCyan))
-                                    
-                                    Surface(
-                                        modifier = Modifier.size(54.dp, 36.dp).clip(RoundedCornerShape(4.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(4.dp)),
-                                        color = Color.Black
+
+                        if (playlistListView) {
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 280.dp).padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(playlistItems, key = { it.videoId }) { item ->
+                                    Row(
+                                        verticalAlignment = Alignment.Top,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(TubeDeckSurfaceVariant)
+                                            .clickable {
+                                                playlistItems = playlistItems.map {
+                                                    if (it.videoId == item.videoId) it.copy(isSelected = !it.isSelected) else it
+                                                }
+                                            }
+                                            .padding(6.dp)
                                     ) {
-                                        AsyncImage(
-                                            model = item.thumbnailUrl,
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
+                                        Checkbox(
+                                            checked = item.isSelected,
+                                            onCheckedChange = null,
+                                            colors = CheckboxDefaults.colors(checkedColor = TubeDeckAccentCyan)
                                         )
+                                        Surface(
+                                            modifier = Modifier.size(72.dp, 44.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .border(1.dp, TubeDeckBorder, RoundedCornerShape(4.dp)),
+                                            color = Color.Black
+                                        ) {
+                                            AsyncImage(
+                                                model = item.thumbnailUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                                            Text(
+                                                item.title,
+                                                fontSize = 13.sp,
+                                                color = TubeDeckTextPrimary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            val meta = buildString {
+                                                if (item.channel.isNotBlank()) append(item.channel)
+                                                if (item.duration.isNotEmpty()) {
+                                                    if (isNotEmpty()) append(" • ")
+                                                    append(item.duration)
+                                                }
+                                                if (item.viewCount >= 0L) {
+                                                    if (isNotEmpty()) append(" • ")
+                                                    append(String.format(java.util.Locale.US, "%,d views", item.viewCount))
+                                                }
+                                            }
+                                            if (meta.isNotBlank()) {
+                                                Text(meta, fontSize = 10.5.sp, color = TubeDeckTextSecondary)
+                                            }
+                                        }
                                     }
-                                    
-                                    Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                                        Text(item.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = TubeDeckTextPrimary, fontWeight = FontWeight.Bold)
-                                        if (item.duration.isNotEmpty()) {
-                                            Text(item.duration, fontSize = 11.sp, color = TubeDeckTextSecondary)
+                                }
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier.heightIn(max = 320.dp).padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                gridItems(playlistItems, key = { it.videoId }) { item ->
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(TubeDeckSurfaceVariant)
+                                            .clickable {
+                                                playlistItems = playlistItems.map {
+                                                    if (it.videoId == item.videoId) it.copy(isSelected = !it.isSelected) else it
+                                                }
+                                            }
+                                            .padding(7.dp)
+                                    ) {
+                                        Box {
+                                            AsyncImage(
+                                                model = item.thumbnailUrl,
+                                                contentDescription = item.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                            )
+                                            Checkbox(
+                                                checked = item.isSelected,
+                                                onCheckedChange = null,
+                                                modifier = Modifier.align(Alignment.TopEnd),
+                                                colors = CheckboxDefaults.colors(checkedColor = TubeDeckAccentCyan)
+                                            )
+                                        }
+                                        Spacer(Modifier.height(5.dp))
+                                        Text(
+                                            item.title,
+                                            fontSize = 12.sp,
+                                            color = TubeDeckTextPrimary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        if (item.viewCount >= 0L) {
+                                            Text(
+                                                String.format(java.util.Locale.US, "%,d views", item.viewCount),
+                                                fontSize = 10.sp,
+                                                color = TubeDeckTextSecondary
+                                            )
                                         }
                                     }
                                 }

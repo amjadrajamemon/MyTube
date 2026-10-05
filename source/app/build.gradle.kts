@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 72
-        versionName = "1.7.0"
+        versionCode = 73
+        versionName = "1.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")

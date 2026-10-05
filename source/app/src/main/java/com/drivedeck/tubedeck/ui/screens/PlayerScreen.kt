@@ -107,6 +107,7 @@ import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
 import com.drivedeck.tubedeck.data.model.PlayerMode
+import com.drivedeck.tubedeck.data.model.PlaylistItem
 import com.drivedeck.tubedeck.data.model.SponsorSegment
 import com.drivedeck.tubedeck.player.LiveDubEngine
 import com.drivedeck.tubedeck.player.LiveDubLanguages
@@ -156,6 +157,9 @@ fun PlayerScreen(
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
     onPlaybackEnded: (() -> Unit)? = null,
+    playlistItems: List<PlaylistItem> = emptyList(),
+    playlistIndex: Int = -1,
+    onPlayPlaylistItem: ((Int) -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -240,6 +244,9 @@ fun PlayerScreen(
             onPreviousItem = onPreviousItem,
             onNextItem = onNextItem,
             onPlaybackEnded = onPlaybackEnded,
+            playlistItems = playlistItems,
+            playlistIndex = playlistIndex,
+            onPlayPlaylistItem = onPlayPlaylistItem,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             onPlaybackPositionChanged = onPlaybackPositionChanged,
@@ -397,6 +404,9 @@ fun NativeExoPlayer(
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
     onPlaybackEnded: (() -> Unit)? = null,
+    playlistItems: List<PlaylistItem> = emptyList(),
+    playlistIndex: Int = -1,
+    onPlayPlaylistItem: ((Int) -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -464,6 +474,7 @@ fun NativeExoPlayer(
     var autoUpgradeCount by remember(media.id) { mutableIntStateOf(0) }
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
+    val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
@@ -622,7 +633,7 @@ fun NativeExoPlayer(
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
                         endActionDispatched = true
-                        onPlaybackEnded?.invoke()
+                        latestOnPlaybackEnded?.invoke()
                     }
                 }
             }
@@ -2109,7 +2120,92 @@ private fun PortraitCompanionPanel(
                 }
 
                 else -> {
-                    if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
+                    if (playlistItems.isNotEmpty() && playlistIndex >= 0) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            item(key = "playlist-header") {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.PlaylistPlay, null, tint = TubeDeckAccentCyan)
+                                    Spacer(Modifier.width(7.dp))
+                                    Text(
+                                        "Playlist • ${(playlistIndex + 1).coerceAtMost(playlistItems.size)}/${playlistItems.size}",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                            items(playlistItems.indices.toList(), key = { playlistItems[it].videoId }) { index ->
+                                val item = playlistItems[index]
+                                val current = index == playlistIndex
+                                Surface(
+                                    color = if (current) TubeDeckAccentCyan.copy(alpha = .16f) else TubeDeckSurfaceVariant,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(
+                                            enabled = !current && onPlayPlaylistItem != null,
+                                            onClick = { onPlayPlaylistItem?.invoke(index) }
+                                        )
+                                ) {
+                                    Row(
+                                        Modifier.padding(7.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            Modifier.size(76.dp, 44.dp).clip(RoundedCornerShape(6.dp)),
+                                            color = Color.Black
+                                        ) {
+                                            AsyncImage(
+                                                model = item.thumbnailUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                            Text(
+                                                item.title.ifBlank { "YouTube video" },
+                                                color = Color.White,
+                                                fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 12.sp,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val detail = listOfNotNull(
+                                                item.channel.takeIf { it.isNotBlank() && it != "YouTube" },
+                                                item.duration.takeIf { it.isNotBlank() }
+                                            ).joinToString(" • ")
+                                            if (detail.isNotBlank()) {
+                                                Text(
+                                                    detail,
+                                                    color = TubeDeckTextSecondary,
+                                                    fontSize = 10.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        if (current) {
+                                            Icon(Icons.Default.Equalizer, "Playing", tint = TubeDeckAccentCyan)
+                                        } else {
+                                            Text(
+                                                (index + 1).toString(),
+                                                color = TubeDeckTextSecondary,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if (!playbackReadyForCompanionLoads && (autoLoadEpisodes || autoLoadUpNext)) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             // This companion panel exists only below the compact portrait player,
                             // whose center Play/Pause outer diameter is exactly 52 dp.

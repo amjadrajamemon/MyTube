@@ -35,6 +35,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+    private val stateStore = AtomicJsonStore(context)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lock = Any()
     private val activeJobs = mutableMapOf<String, Job>()
@@ -1219,11 +1220,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("eventAt", task.eventAt); put("errorMessage", task.errorMessage)
             })
         }
-        prefs.edit().putString("queue_json", json.toString()).apply()
+        stateStore.write("queue.json", json.toString())
+        prefs.edit().remove("queue_json").apply()
         DownloadQueueNotifier.update(context, items, force = true)
     }
     private fun loadQueue(): List<DownloadTask> = runCatching {
-        val data = JSONArray(prefs.getString("queue_json", "[]"))
+        val data = JSONArray(stateStore.read("queue.json") ?: prefs.getString("queue_json", "[]"))
         List(data.length()) { index ->
             val item = data.getJSONObject(index)
             val status = enumValue(item.optString("status"), TaskStatus.QUEUED)
@@ -1326,10 +1328,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("durationSeconds", media.durationSeconds); put("downloadDate", media.downloadDate)
             })
         }
-        prefs.edit().putString("offline_media_json", array.toString()).apply()
+        stateStore.write("offline_media.json", array.toString())
+        prefs.edit().remove("offline_media_json").apply()
     }
     private fun loadOfflineMedia(): List<OfflineMedia> = runCatching {
-        val array = JSONArray(prefs.getString("offline_media_json", "[]"))
+        val array = JSONArray(stateStore.read("offline_media.json") ?: prefs.getString("offline_media_json", "[]"))
         List(array.length()) { index ->
             val item = array.getJSONObject(index)
             OfflineMedia(
@@ -1351,6 +1354,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
     fun clearHistory() {
         _downloadHistory.value = emptyList()
+        stateStore.delete("history.json")
         prefs.edit().remove("history_json").apply()
     }
     private fun saveHistory(items: List<DownloadTask>) {
@@ -1366,10 +1370,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("retryCount", task.retryCount); put("errorMessage", task.errorMessage)
             })
         }
-        prefs.edit().putString("history_json", array.toString()).apply()
+        stateStore.write("history.json", array.toString())
+        prefs.edit().remove("history_json").apply()
     }
     private fun loadHistory(): List<DownloadTask> = runCatching {
-        val array = JSONArray(prefs.getString("history_json", "[]"))
+        val array = JSONArray(stateStore.read("history.json") ?: prefs.getString("history_json", "[]"))
         List(array.length()) { index ->
             val item = array.getJSONObject(index)
             DownloadTask(

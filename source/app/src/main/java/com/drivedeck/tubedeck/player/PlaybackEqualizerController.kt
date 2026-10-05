@@ -192,6 +192,16 @@ class PlaybackEqualizerController(context: Context) {
     }
 
     fun setBandNormalized(index: Int, normalized: Float): Snapshot {
+        val result = setBandNormalizedRealtime(index, normalized)
+        persistCurrentState()
+        return result
+    }
+
+    /**
+     * Low-latency graph editing path. Audio is updated immediately while the finger moves,
+     * but disk-backed preference persistence is deferred until the gesture finishes.
+     */
+    fun setBandNormalizedRealtime(index: Int, normalized: Float): Snapshot {
         val equalizer = effect ?: return snapshot()
         ensureCurveSize(equalizer.numberOfBands.toInt())
         if (index !in requestedCurve.indices) return snapshot()
@@ -199,6 +209,10 @@ class PlaybackEqualizerController(context: Context) {
         requestedPresetId = "custom"
         requestedCurve[index] = normalized.coerceIn(-1f, 1f)
         setEffectBand(equalizer, index, requestedCurve[index])
+        return snapshot()
+    }
+
+    fun commitCustomCurve(): Snapshot {
         persistCurrentState()
         return snapshot()
     }

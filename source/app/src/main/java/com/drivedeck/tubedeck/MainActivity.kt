@@ -1516,6 +1516,14 @@ class MainActivity : ComponentActivity() {
         }
 
         fun startAt(positionMs: Long) {
+            // Pause the Web player before requesting the service so two media engines never play
+            // the same audio during the handoff handshake.
+            webViewInstance?.runCatching {
+                evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                    null
+                )
+            }
             lifecycleScope.launch {
                 BackgroundAudioController.handoff(
                     context = this@MainActivity,
@@ -1524,12 +1532,6 @@ class MainActivity : ComponentActivity() {
                     artworkUrl = activePlaybackArtwork,
                     positionMs = positionMs.coerceAtLeast(0L)
                 ).onSuccess {
-                    webViewInstance?.runCatching {
-                        evaluateJavascript(
-                            "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
-                            null
-                        )
-                    }
                     playerActive = false
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         finishAndRemoveTask()
@@ -1537,6 +1539,14 @@ class MainActivity : ComponentActivity() {
                         finishAffinity()
                     }
                 }.onFailure {
+                    if (playerActive) {
+                        webViewInstance?.runCatching {
+                            evaluateJavascript(
+                                "(function(){var v=document.querySelector('video');if(v){var p=v.play();if(p&&p.catch){p.catch(function(){});} }return true;})()",
+                                null
+                            )
+                        }
+                    }
                     Toast.makeText(
                         this@MainActivity,
                         it.message ?: "Background audio could not start",

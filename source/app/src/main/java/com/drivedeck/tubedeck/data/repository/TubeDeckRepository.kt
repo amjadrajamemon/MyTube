@@ -220,8 +220,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
             .map(::relatedToHome)
     }
 
-    private suspend fun publicLive(region: String, limit: Int = 12): List<HomeVideo> {
+    private suspend fun publicLive(
+        region: String,
+        accessToken: String? = null,
+        limit: Int = 12
+    ): List<HomeVideo> {
         val countryName = Locale("", region).displayCountry.ifBlank { region }
+        if (!accessToken.isNullOrBlank()) {
+            val official = runCatching {
+                YoutubeHomeFeedClient.liveSearch(accessToken, "$countryName live news", limit)
+            }.getOrDefault(emptyList())
+            if (official.isNotEmpty()) return official
+        }
+
         val primary = YoutubeStreamResolver.searchLiveVideos(
             context,
             "$countryName live news",
@@ -468,7 +479,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             homeLiveJob = scope.launch {
                 _homeLiveStatus.value = "Loading"
                 try {
-                    val items = publicLive(region)
+                    val items = publicLive(region, accessToken)
                     ensureActive()
                     _homeLive.value = items.take(12)
                     if (items.isNotEmpty()) {

@@ -1,0 +1,30 @@
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing material and secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
+client_secret*.json
+google-services.json
+
+# Generated packages / diagnostics
+*.apk
+*.aab
+*.apks
+*.idsig
+*.log
+.DS_Store
+Thumbs.db

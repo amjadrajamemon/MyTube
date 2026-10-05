@@ -164,6 +164,15 @@ object YoutubeStreamResolver {
         val episodeNumber: Int?
     )
 
+    data class PlaylistEntry(
+        val videoId: String,
+        val title: String,
+        val uploader: String,
+        val durationSeconds: Long,
+        val thumbnailUrl: String,
+        val viewCount: Long = -1L
+    )
+
     data class DiscoveredPlaylist(
         val title: String,
         val url: String,
@@ -1446,6 +1455,53 @@ object YoutubeStreamResolver {
             }
             result
         }
+
+    suspend fun playlistEntriesWithDownloadEngine(
+        context: Context,
+        url: String,
+        limit: Int = 300
+    ): List<PlaylistEntry> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val playlistId = YoutubeUrls.playlistId(url)
+            ?: throw IllegalArgumentException("Enter a valid YouTube playlist or Mix URL")
+        YtDlpUpdateManager.ensureInitialized(context.applicationContext)
+        val playlistUrl = "https://www.youtube.com/playlist?list=$playlistId"
+        val request = YoutubeDLRequest(playlistUrl)
+            .addOption("--flat-playlist")
+            .addOption("--skip-download")
+            .addOption("--dump-single-json")
+            .addOption("--no-warnings")
+        val response = YoutubeDL.execute(request)
+        val root = JSONObject(response.out.trim())
+        val entries = root.optJSONArray("entries") ?: return@withContext emptyList()
+        buildList {
+            val maxItems = limit.coerceIn(1, 500)
+            for (index in 0 until entries.length()) {
+                currentCoroutineContext().ensureActive()
+                val item = entries.optJSONObject(index) ?: continue
+                val id = item.optString("id").trim()
+                if (!id.matches(Regex("[A-Za-z0-9_-]{11}"))) continue
+                val thumbnails = item.optJSONArray("thumbnails")
+                val thumb = if (thumbnails != null && thumbnails.length() > 0) {
+                    thumbnails.optJSONObject(thumbnails.length() - 1)?.optString("url").orEmpty()
+                } else {
+                    item.optString("thumbnail")
+                }
+                add(
+                    PlaylistEntry(
+                        videoId = id,
+                        title = item.optString("title").ifBlank { "YouTube video" },
+                        uploader = item.optString("channel")
+                            .ifBlank { item.optString("uploader") }
+                            .ifBlank { "YouTube" },
+                        durationSeconds = item.optDouble("duration", 0.0).toLong().coerceAtLeast(0L),
+                        thumbnailUrl = thumb.ifBlank { "https://i.ytimg.com/vi/$id/hqdefault.jpg" },
+                        viewCount = item.optLong("view_count", -1L)
+                    )
+                )
+                if (size >= maxItems) break
+            }
+        }.distinctBy { it.videoId }
+    }
 
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0 Mobile Safari/537.36"

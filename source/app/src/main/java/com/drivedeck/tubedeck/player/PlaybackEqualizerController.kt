@@ -1,16 +1,17 @@
 package com.drivedeck.tubedeck.player
 
+import android.content.Context
 import android.media.audiofx.Equalizer
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Small lifecycle-safe wrapper around Android's platform Equalizer.
+ * Lifecycle-safe wrapper around Android's platform Equalizer.
  *
- * The controller keeps the requested curve when ExoPlayer rotates its audio session so playback,
- * seeks, source changes and decoder recovery do not unexpectedly reset the user's EQ.
+ * The controller keeps the active curve, view preferences and saved User preset when ExoPlayer
+ * rotates its audio session, so seeks/source changes/decoder recovery do not reset the EQ.
  */
-class PlaybackEqualizerController {
+class PlaybackEqualizerController(context: Context) {
 
     data class Band(
         val index: Int,
@@ -25,24 +26,46 @@ class PlaybackEqualizerController {
         val presetId: String,
         val bands: List<Band>,
         val minDb: Float,
-        val maxDb: Float
+        val maxDb: Float,
+        val layoutId: String,
+        val styleId: String,
+        val userPresetName: String,
+        val hasUserPreset: Boolean
     ) {
         companion object {
-            fun unavailable(enabled: Boolean = false, presetId: String = "flat") = Snapshot(
+            fun unavailable(
+                enabled: Boolean = false,
+                presetId: String = "flat",
+                layoutId: String = "horizontal",
+                styleId: String = "classic",
+                userPresetName: String = "User",
+                hasUserPreset: Boolean = false
+            ) = Snapshot(
                 supported = false,
                 enabled = enabled,
                 presetId = presetId,
                 bands = emptyList(),
                 minDb = -15f,
-                maxDb = 15f
+                maxDb = 15f,
+                layoutId = layoutId,
+                styleId = styleId,
+                userPresetName = userPresetName,
+                hasUserPreset = hasUserPreset
             )
         }
     }
 
+    private val prefs = context.applicationContext
+        .getSharedPreferences("mytube_playback_equalizer_v2", Context.MODE_PRIVATE)
+
     private var effect: Equalizer? = null
-    private var requestedEnabled = false
-    private var requestedPresetId = "flat"
-    private var requestedCurve: MutableList<Float> = mutableListOf()
+    private var requestedEnabled = prefs.getBoolean(KEY_ENABLED, false)
+    private var requestedPresetId = prefs.getString(KEY_PRESET, "flat") ?: "flat"
+    private var requestedLayoutId = prefs.getString(KEY_LAYOUT, "horizontal") ?: "horizontal"
+    private var requestedStyleId = prefs.getString(KEY_STYLE, "classic") ?: "classic"
+    private var requestedUserName = prefs.getString(KEY_USER_NAME, "User")?.ifBlank { "User" } ?: "User"
+    private var requestedCurve: MutableList<Float> = decodeCurve(prefs.getString(KEY_CURRENT_CURVE, null))
+    private var savedUserCurve: MutableList<Float> = decodeCurve(prefs.getString(KEY_USER_CURVE, null))
     private var attachedSessionId = 0
 
     fun attach(audioSessionId: Int): Snapshot {
@@ -54,33 +77,58 @@ class PlaybackEqualizerController {
         return try {
             val equalizer = Equalizer(0, audioSessionId)
             effect = equalizer
-            ensureCurveSize(equalizer.numberOfBands.toInt())
+            val bandCount = equalizer.numberOfBands.toInt()
 
-            if (requestedPresetId != "custom") {
-                requestedCurve = presetCurve(requestedPresetId, equalizer)
-                    .toMutableList()
+            requestedCurve = when (requestedPresetId) {
+                "custom" -> resampleCurve(requestedCurve, bandCount)
+                "user" -> if (savedUserCurve.isNotEmpty()) resampleCurve(savedUserCurve, bandCount)
+                    else presetCurve("flat", equalizer).toMutableList()
+                else -> presetCurve(requestedPresetId, equalizer).toMutableList()
             }
+
             applyCurve(equalizer)
             equalizer.enabled = requestedEnabled
+            persistCurrentState()
             snapshot()
         } catch (_: Throwable) {
             releaseEffect()
-            Snapshot.unavailable(requestedEnabled, requestedPresetId)
+            unavailableSnapshot()
         }
     }
 
     fun setEnabled(enabled: Boolean): Snapshot {
         requestedEnabled = enabled
         runCatching { effect?.enabled = enabled }
+        persistCurrentState()
+        return snapshot()
+    }
+
+    fun setLayout(layoutId: String): Snapshot {
+        requestedLayoutId = if (layoutId == "vertical") "vertical" else "horizontal"
+        persistCurrentState()
+        return snapshot()
+    }
+
+    fun setStyle(styleId: String): Snapshot {
+        requestedStyleId = if (styleId == "graphic") "graphic" else "classic"
+        persistCurrentState()
         return snapshot()
     }
 
     fun applyPreset(presetId: String): Snapshot {
+        val equalizer = effect
+        if (presetId == "user" && savedUserCurve.isEmpty()) return snapshot()
+
         requestedPresetId = presetId
-        effect?.let { equalizer ->
-            requestedCurve = presetCurve(presetId, equalizer).toMutableList()
+        if (equalizer != null) {
+            requestedCurve = when (presetId) {
+                "custom" -> resampleCurve(requestedCurve, equalizer.numberOfBands.toInt())
+                "user" -> resampleCurve(savedUserCurve, equalizer.numberOfBands.toInt())
+                else -> presetCurve(presetId, equalizer).toMutableList()
+            }
             applyCurve(equalizer)
         }
+        persistCurrentState()
         return snapshot()
     }
 
@@ -92,11 +140,33 @@ class PlaybackEqualizerController {
         requestedPresetId = "custom"
         requestedCurve[index] = normalized.coerceIn(-1f, 1f)
         setEffectBand(equalizer, index, requestedCurve[index])
+        persistCurrentState()
         return snapshot()
     }
 
+    fun saveUserPreset(name: String): Snapshot {
+        val equalizer = effect
+        if (equalizer != null) ensureCurveSize(equalizer.numberOfBands.toInt())
+        if (requestedCurve.isEmpty()) return snapshot()
+
+        requestedUserName = name.trim().ifBlank { "User" }.take(24)
+        savedUserCurve = requestedCurve.toMutableList()
+        requestedPresetId = "user"
+        prefs.edit()
+            .putString(KEY_USER_NAME, requestedUserName)
+            .putString(KEY_USER_CURVE, encodeCurve(savedUserCurve))
+            .apply()
+        persistCurrentState()
+        return snapshot()
+    }
+
+    fun recallUserPreset(): Snapshot {
+        if (savedUserCurve.isEmpty()) return snapshot()
+        return applyPreset("user")
+    }
+
     fun snapshot(): Snapshot {
-        val equalizer = effect ?: return Snapshot.unavailable(requestedEnabled, requestedPresetId)
+        val equalizer = effect ?: return unavailableSnapshot()
         return runCatching {
             val range = equalizer.bandLevelRange
             val minMb = range[0].toInt()
@@ -118,27 +188,42 @@ class PlaybackEqualizerController {
                     )
                 },
                 minDb = minMb / 100f,
-                maxDb = maxMb / 100f
+                maxDb = maxMb / 100f,
+                layoutId = requestedLayoutId,
+                styleId = requestedStyleId,
+                userPresetName = requestedUserName,
+                hasUserPreset = savedUserCurve.isNotEmpty()
             )
-        }.getOrElse {
-            Snapshot.unavailable(requestedEnabled, requestedPresetId)
-        }
+        }.getOrElse { unavailableSnapshot() }
     }
 
     fun release() {
         releaseEffect()
-        requestedCurve.clear()
-        requestedEnabled = false
-        requestedPresetId = "flat"
+        persistCurrentState()
     }
+
+    private fun unavailableSnapshot() = Snapshot.unavailable(
+        enabled = requestedEnabled,
+        presetId = requestedPresetId,
+        layoutId = requestedLayoutId,
+        styleId = requestedStyleId,
+        userPresetName = requestedUserName,
+        hasUserPreset = savedUserCurve.isNotEmpty()
+    )
 
     private fun ensureCurveSize(count: Int) {
         if (requestedCurve.size == count) return
-        val old = requestedCurve.toList()
-        requestedCurve = MutableList(count) { index ->
-            if (old.isEmpty()) 0f
-            else old[((index.toFloat() / (count - 1).coerceAtLeast(1)) * (old.size - 1)).roundToInt()]
-                .coerceIn(-1f, 1f)
+        requestedCurve = resampleCurve(requestedCurve, count)
+    }
+
+    private fun resampleCurve(source: List<Float>, count: Int): MutableList<Float> {
+        if (count <= 0) return mutableListOf()
+        if (source.isEmpty()) return MutableList(count) { 0f }
+        if (source.size == count) return source.map { it.coerceIn(-1f, 1f) }.toMutableList()
+        return MutableList(count) { index ->
+            val sourceIndex = if (count == 1) 0 else
+                ((index.toFloat() / (count - 1)) * (source.size - 1)).roundToInt()
+            source[sourceIndex.coerceIn(0, source.lastIndex)].coerceIn(-1f, 1f)
         }
     }
 
@@ -166,36 +251,58 @@ class PlaybackEqualizerController {
             val hz = equalizer.getCenterFreq(index.toShort()) / 1000
             when (presetId) {
                 "bass" -> when {
-                    hz < 120 -> .72f
-                    hz < 300 -> .52f
-                    hz < 700 -> .22f
-                    hz < 3000 -> .02f
+                    hz < 80 -> .78f
+                    hz < 180 -> .68f
+                    hz < 400 -> .42f
+                    hz < 900 -> .15f
+                    hz < 3500 -> .02f
                     else -> .12f
                 }
                 "voice" -> when {
-                    hz < 120 -> -.40f
+                    hz < 100 -> -.45f
                     hz < 350 -> -.18f
                     hz < 900 -> .18f
-                    hz < 4000 -> .48f
-                    hz < 8000 -> .20f
-                    else -> -.06f
+                    hz < 4000 -> .50f
+                    hz < 8000 -> .22f
+                    else -> -.05f
                 }
                 "music" -> when {
-                    hz < 180 -> .40f
+                    hz < 180 -> .42f
                     hz < 600 -> .20f
                     hz < 2500 -> .06f
-                    hz < 7000 -> .22f
-                    else -> .38f
+                    hz < 7000 -> .24f
+                    else -> .40f
                 }
                 "treble" -> when {
-                    hz < 250 -> -.12f
+                    hz < 250 -> -.14f
                     hz < 1500 -> .02f
-                    hz < 5000 -> .30f
-                    else -> .58f
+                    hz < 5000 -> .32f
+                    else -> .60f
                 }
                 else -> 0f
             }
         }
+    }
+
+    private fun persistCurrentState() {
+        prefs.edit()
+            .putBoolean(KEY_ENABLED, requestedEnabled)
+            .putString(KEY_PRESET, requestedPresetId)
+            .putString(KEY_LAYOUT, requestedLayoutId)
+            .putString(KEY_STYLE, requestedStyleId)
+            .putString(KEY_USER_NAME, requestedUserName)
+            .putString(KEY_CURRENT_CURVE, encodeCurve(requestedCurve))
+            .apply()
+    }
+
+    private fun encodeCurve(values: List<Float>): String =
+        values.joinToString(",") { String.format(java.util.Locale.ROOT, "%.5f", it.coerceIn(-1f, 1f)) }
+
+    private fun decodeCurve(raw: String?): MutableList<Float> {
+        if (raw.isNullOrBlank()) return mutableListOf()
+        return raw.split(',')
+            .mapNotNull { it.toFloatOrNull()?.coerceIn(-1f, 1f) }
+            .toMutableList()
     }
 
     private fun releaseEffect() {
@@ -205,5 +312,15 @@ class PlaybackEqualizerController {
         }
         effect = null
         attachedSessionId = 0
+    }
+
+    private companion object {
+        const val KEY_ENABLED = "enabled"
+        const val KEY_PRESET = "preset"
+        const val KEY_LAYOUT = "layout"
+        const val KEY_STYLE = "style"
+        const val KEY_USER_NAME = "user_name"
+        const val KEY_CURRENT_CURVE = "current_curve"
+        const val KEY_USER_CURVE = "user_curve"
     }
 }

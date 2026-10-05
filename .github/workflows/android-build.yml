@@ -173,7 +173,11 @@ jobs:
           grep -Fq 'cancelYoutubeAuthorization' "$NATIVE"
           grep -Fq 'Cancel sign-in' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
           grep -Fq 'searchLiveVideos' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
-          grep -Fq 'repository.searchLive(query, googleSession.currentYoutubeAccessToken())' "$MAIN"
+          grep -Fq 'repository.searchLive(' "$MAIN"
+          grep -Fq 'googleSession.currentYoutubeAccessToken()' "$MAIN"
+          grep -Fq 'repository.searchPlaylists(query)' "$MAIN"
+          grep -Fq 'YoutubeStreamResolver.searchPlaylists' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'searchPlaceholder = if (playlistMode)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
           grep -Fq 'Live now' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
           grep -Fq 'eventType=live' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/YoutubeHomeFeedClient.kt
           grep -Fq 'viewStateKey = currentScreen.name' "$MAIN"

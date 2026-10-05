@@ -557,10 +557,23 @@ class NativePlayerActivity : ComponentActivity() {
                                     .onFailure { Toast.makeText(this@NativePlayerActivity, it.message ?: "Download unavailable", Toast.LENGTH_LONG).show() }
                             },
                             onDownloadPlaylist = { items, mode, quality ->
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    repository.enqueuePlaylist(items, mode, quality)
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(this@NativePlayerActivity, "Selected videos queued", Toast.LENGTH_SHORT).show()
+                                lifecycleScope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            repository.enqueuePlaylist(items, mode, quality)
+                                        }
+                                    }.onSuccess { queued ->
+                                        Toast.makeText(
+                                            this@NativePlayerActivity,
+                                            if (queued > 0) "$queued playlist items queued" else "No playlist items selected",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }.onFailure { error ->
+                                        Toast.makeText(
+                                            this@NativePlayerActivity,
+                                            error.message ?: "Playlist download could not start",
+                                            Toast.LENGTH_LONG
+                                        ).show()
                                     }
                                 }
                             },

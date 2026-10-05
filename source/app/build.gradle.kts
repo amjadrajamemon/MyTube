@@ -146,6 +146,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.newpipe.extractor)
     implementation(libs.mlkit.translate)
+    // Bundled (~0.9 MB) language identification keeps Live Dub auto-detect fully on-device.
+    implementation("com.google.mlkit:language-id:17.0.6")
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")

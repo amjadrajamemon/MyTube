@@ -66,6 +66,7 @@ fun BrowserScreen(
     val pendingHistoryReset = remember { mutableIntStateOf(0) }
     val appliedHistoryReset = remember { mutableIntStateOf(0) }
     val appliedNavigationGeneration = remember { mutableIntStateOf(-1) }
+    var rendererGeneration by remember { mutableIntStateOf(0) }
 
     fun observeUrl(view: WebView?, url: String?, explicitNavigation: Boolean = false) {
         if (url?.startsWith("https://") != true) return
@@ -189,8 +190,10 @@ fun BrowserScreen(
     }
     val currentScript by rememberUpdatedState(tubeDeckInjectedScript)
 
-    // Persistent WebView instance
-    val persistentWebView = remember {
+    // Persistent WebView instance. A Chromium renderer crash makes its WebView permanently
+    // unusable; rendererGeneration creates a fresh instance while retaining MyTube's logical URL.
+    val persistentWebView = remember(rendererGeneration) {
+        val generationAtCreation = rendererGeneration
         WebView(context).apply {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             CookieManager.getInstance().setAcceptCookie(true)
@@ -285,6 +288,25 @@ fun BrowserScreen(
                     onCanGoForwardChanged(view?.canGoForward() == true)
                 }
 
+                override fun onRenderProcessGone(
+                    view: WebView?,
+                    detail: RenderProcessGoneDetail?
+                ): Boolean {
+                    isLoading = true
+                    currentOnPlaybackStateChanged(false, 0L)
+                    view?.post {
+                        if (rendererGeneration == generationAtCreation) {
+                            runCatching {
+                                (view.parent as? ViewGroup)?.removeView(view)
+                                view.destroy()
+                            }
+                            appliedNavigationGeneration.intValue = -1
+                            rendererGeneration += 1
+                        }
+                    }
+                    return true
+                }
+
                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                     val liveSettings = currentSettings
                     if (!liveSettings.adBlockEnabled) return super.shouldInterceptRequest(view, request)
@@ -333,7 +355,7 @@ fun BrowserScreen(
 
     LaunchedEffect(persistentWebView, lifecycleOwner) {
         while (true) {
-            delay(1500)
+            delay(2500)
             if (
                 !currentIsActive ||
                 !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
@@ -378,7 +400,7 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(navigationGeneration) {
+    LaunchedEffect(navigationGeneration, persistentWebView) {
         // Only an explicit MyTube navigation command may call loadUrl(). URL observations from
         // WebView/YouTube SPA history update currentUrl in MainActivity but never feed back into
         // another network load.

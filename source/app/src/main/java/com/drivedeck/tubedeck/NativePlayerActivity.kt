@@ -34,6 +34,7 @@ import androidx.lifecycle.lifecycleScope
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.data.model.PlaylistItem
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.screens.PlayerScreen
@@ -96,6 +97,10 @@ class NativePlayerActivity : ComponentActivity() {
     private var pipExitPendingStop = false
     private var explicitAudioHandoff = false
     private var pendingFreshResumeFromPip = false
+    private var playlistLoadJob: Job? = null
+    private var activePlaylistId by mutableStateOf<String?>(null)
+    private var activePlaylistItems by mutableStateOf<List<PlaylistItem>>(emptyList())
+    private var activePlaylistIndex by mutableStateOf(-1)
     private val playbackBackStack = ArrayDeque<OfflineMedia>()
     private val playbackForwardStack = ArrayDeque<OfflineMedia>()
     private var currentMedia by mutableStateOf(
@@ -437,11 +442,28 @@ class NativePlayerActivity : ComponentActivity() {
                         { playlistMode = true; showDownload = true }
                     } else null,
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
-                    onPreviousItem = if (playbackBackStack.isNotEmpty()) {
-                        { playPreviousItem() }
-                    } else null,
-                    onNextItem = if (playbackForwardStack.isNotEmpty()) {
-                        { playForwardItem() }
+                    onPreviousItem = when {
+                        activePlaylistId != null && activePlaylistIndex > 0 ->
+                            { { playPlaylistItem(activePlaylistIndex - 1) } }
+                        playbackBackStack.isNotEmpty() ->
+                            { { playPreviousItem() } }
+                        else -> null
+                    },
+                    onNextItem = when {
+                        activePlaylistId != null &&
+                            activePlaylistIndex >= 0 &&
+                            activePlaylistIndex < activePlaylistItems.lastIndex ->
+                            { { playPlaylistItem(activePlaylistIndex + 1) } }
+                        playbackForwardStack.isNotEmpty() ->
+                            { { playForwardItem() } }
+                        else -> null
+                    },
+                    onPlaybackEnded = if (
+                        activePlaylistId != null &&
+                        activePlaylistIndex >= 0 &&
+                        activePlaylistIndex < activePlaylistItems.lastIndex
+                    ) {
+                        { playPlaylistItem(activePlaylistIndex + 1) }
                     } else null,
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
@@ -651,12 +673,76 @@ class NativePlayerActivity : ComponentActivity() {
         playerActive = true
         currentPlaybackPositionMs = initialPlaybackPositionMs
         currentMedia = media
+        syncPlaylistQueue(media)
         if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
             repository.recordWatch(media)
         }
-        if (media.videoId.isNotBlank()) {
-            repository.fetchSponsorSegments(media.videoId)
+        val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        if (videoId.isNotBlank()) {
+            repository.fetchSponsorSegments(videoId)
         }
+    }
+
+    private fun syncPlaylistQueue(media: OfflineMedia) {
+        val playlistId = YoutubeUrls.playlistId(media.mediaUri)
+        val currentVideoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        if (playlistId == null) {
+            playlistLoadJob?.cancel()
+            playlistLoadJob = null
+            activePlaylistId = null
+            activePlaylistItems = emptyList()
+            activePlaylistIndex = -1
+            return
+        }
+
+        if (activePlaylistId == playlistId && activePlaylistItems.isNotEmpty()) {
+            activePlaylistIndex = activePlaylistItems.indexOfFirst { it.videoId == currentVideoId }
+            prefetchNextPlaylistItem()
+            return
+        }
+
+        playlistLoadJob?.cancel()
+        activePlaylistId = playlistId
+        activePlaylistItems = emptyList()
+        activePlaylistIndex = -1
+        playlistLoadJob = lifecycleScope.launch(Dispatchers.IO) {
+            val items = runCatching { repository.fetchPlaylistItems(media.mediaUri) }
+                .getOrDefault(emptyList())
+            withContext(Dispatchers.Main) {
+                if (activePlaylistId != playlistId || closingPlayer) return@withContext
+                activePlaylistItems = items
+                activePlaylistIndex = items.indexOfFirst { it.videoId == currentVideoId }
+                prefetchNextPlaylistItem()
+            }
+        }
+    }
+
+    private fun prefetchNextPlaylistItem() {
+        val playlistId = activePlaylistId ?: return
+        val next = activePlaylistItems.getOrNull(activePlaylistIndex + 1) ?: return
+        val url = YoutubeUrls.playlistVideoUrl(next.videoId, playlistId) ?: return
+        YoutubeStreamResolver.prefetch(applicationContext, url)
+    }
+
+    private fun playPlaylistItem(index: Int) {
+        if (closingPlayer) return
+        val playlistId = activePlaylistId ?: return
+        val item = activePlaylistItems.getOrNull(index) ?: return
+        val url = YoutubeUrls.playlistVideoUrl(item.videoId, playlistId) ?: return
+        val target = OfflineMedia(
+            id = UUID.randomUUID().toString(),
+            title = item.title.ifBlank { "YouTube video" },
+            videoId = item.videoId,
+            thumbnailUrl = item.thumbnailUrl.ifBlank {
+                repository.getVideoThumbnail(item.videoId)
+            },
+            mediaUri = url
+        )
+        initialPlaybackPositionMs = 0L
+        currentPlaybackPositionMs = 0L
+        com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(url)
+        YoutubeStreamResolver.prefetch(applicationContext, url)
+        replaceMedia(target, recordWatch = true)
     }
 
 
@@ -923,6 +1009,8 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        playlistLoadJob?.cancel()
+        playlistLoadJob = null
         pipExitResolutionJob?.cancel()
         pipExitResolutionJob = null
         playbackBackDecisionJob?.cancel()

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.telephony.TelephonyManager
 import java.util.Locale
+import com.drivedeck.tubedeck.player.PlaylistQueuePolicy
 import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
@@ -621,8 +622,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         // RD* identifiers are dynamic Mix/radio queues: their order belongs to the current watch
         // context. Ordinary PL/UU/OL/etc. playlists must be fully paginated first instead of being
         // truncated to the small Watch Next panel.
-        val dynamicMix = playlistId.startsWith("RD", ignoreCase = true)
-        if (dynamicMix && currentVideoId != null) {
+        if (PlaylistQueuePolicy.preferContextualWatchNext(playlistId, currentVideoId)) {
             contextual().takeIf { it.isNotEmpty() }?.let { return cache(it) }
         }
 

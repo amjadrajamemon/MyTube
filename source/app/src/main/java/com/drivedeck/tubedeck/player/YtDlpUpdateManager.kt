@@ -41,7 +41,7 @@ object YtDlpUpdateManager {
     private const val PREFS = "mytube_ytdlp_update"
     private const val KEY_LAST_CHECK = "last_check"
     private const val KEY_LATEST_VERSION = "latest_version"
-    private const val UNIQUE_WEEKLY_WORK = "mytube-ytdlp-weekly-stable-update"
+    private const val UNIQUE_WEEKLY_WORK = "mytube-ytdlp-weekly-stable-check"
     private const val LATEST_RELEASE_URL = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
     private val initMutex = Mutex()
     private val updateMutex = Mutex()
@@ -217,7 +217,10 @@ class YtDlpUpdateWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val result = YtDlpUpdateManager.updateNow(applicationContext)
+        // Periodic background work is check-only. Executable mutation is reserved for the
+        // explicit Settings action or the downloader's one-shot self-repair after extraction
+        // actually fails, so an otherwise healthy install cannot silently change every week.
+        val result = YtDlpUpdateManager.refreshLatestVersion(applicationContext)
         return if (result.isSuccess) Result.success() else Result.retry()
     }
 }

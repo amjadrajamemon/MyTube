@@ -36,6 +36,7 @@ fun BrowserScreen(
     currentUrl: String,
     onUrlChanged: (String) -> Unit,
     onNativeVideo: (String) -> Unit,
+    onNativePlaylist: (String) -> Unit = {},
     onCanGoBackChanged: (Boolean) -> Unit,
     onCanGoForwardChanged: (Boolean) -> Unit,
     settings: TubeDeckSettings,
@@ -54,6 +55,7 @@ fun BrowserScreen(
     val activity = context as? Activity
     val currentOnUrlChanged by rememberUpdatedState(onUrlChanged)
     val currentOnNativeVideo by rememberUpdatedState(onNativeVideo)
+    val currentOnNativePlaylist by rememberUpdatedState(onNativePlaylist)
     val currentOnAdBlocked by rememberUpdatedState(onAdBlocked)
     val currentOnPlaybackStateChanged by rememberUpdatedState(onPlaybackStateChanged)
     val currentSettings by rememberUpdatedState(settings)
@@ -226,9 +228,17 @@ fun BrowserScreen(
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: ""
                     if (!url.startsWith("https://")) return true
-                    if (request?.isForMainFrame == true && currentSettings.playerMode == PlayerMode.NATIVE && YoutubeUrls.videoId(url) != null) {
-                        observeUrl(view, url, explicitNavigation = true)
-                        return true
+                    if (request?.isForMainFrame == true && currentSettings.playerMode == PlayerMode.NATIVE) {
+                        if (YoutubeUrls.videoId(url) != null) {
+                            observeUrl(view, url, explicitNavigation = true)
+                            return true
+                        }
+                        if (YoutubeUrls.playlistId(url) != null) {
+                            // Playlist-only results are opened natively instead of loading a
+                            // playlist page that can bounce through YouTube SPA redirects.
+                            currentOnNativePlaylist(url)
+                            return true
+                        }
                     }
                     return false
                 }

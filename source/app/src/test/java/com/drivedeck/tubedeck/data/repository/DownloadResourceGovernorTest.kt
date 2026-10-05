@@ -5,9 +5,9 @@ import org.junit.Test
 
 class DownloadResourceGovernorTest {
     @Test
-    fun highEndUnmeteredDeviceCanUseHighParallelism() {
+    fun highEndUnmeteredDeviceUsesSafeParallelism() {
         assertEquals(
-            16,
+            4,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 4_096,
                 cpuCores = 8,
@@ -22,7 +22,7 @@ class DownloadResourceGovernorTest {
     @Test
     fun meteredNetworkReducesNewHeavyTransfersWithoutSerializingQueue() {
         assertEquals(
-            6,
+            1,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 2_048,
                 cpuCores = 8,
@@ -37,7 +37,7 @@ class DownloadResourceGovernorTest {
     @Test
     fun powerSaverTakesPriorityOverFastHardware() {
         assertEquals(
-            3,
+            1,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 4_096,
                 cpuCores = 12,
@@ -50,9 +50,9 @@ class DownloadResourceGovernorTest {
     }
 
     @Test
-    fun thermalOrLowMemoryPressureKeepsTwoSafeSlots() {
+    fun thermalOrLowMemoryPressureSerializesHeavyWork() {
         assertEquals(
-            2,
+            1,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 512,
                 cpuCores = 4,
@@ -63,7 +63,7 @@ class DownloadResourceGovernorTest {
             )
         )
         assertEquals(
-            2,
+            1,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 512,
                 cpuCores = 4,

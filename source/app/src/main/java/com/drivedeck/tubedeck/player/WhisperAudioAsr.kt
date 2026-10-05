@@ -4,6 +4,7 @@ import android.content.Context
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
+import com.google.mlkit.nl.languageid.LanguageIdentification
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -19,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -54,6 +56,7 @@ class WhisperAudioAsr(
     }
 
     private data class PcmPacket(val bytes: ByteArray, val sampleRate: Int, val channels: Int)
+    private data class SpeechClip(val samples: ShortArray, val sampleRate: Int)
 
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,7 +67,9 @@ class WhisperAudioAsr(
         capacity = 10,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-    private val transcribing = AtomicBoolean(false)
+    // Completed speech clips are serialized instead of being dropped while native Whisper is busy.
+    private val clipChannel = Channel<SpeechClip>(capacity = 8)
+    private val languageIdentifier = LanguageIdentification.getClient()
     private val loadingModel = AtomicBoolean(false)
     private val lock = Any()
 
@@ -82,6 +87,12 @@ class WhisperAudioAsr(
             for (packet in pcmChannel) {
                 if (!enabled || closing) continue
                 processPcm(packet.bytes, packet.sampleRate, packet.channels)
+            }
+        }
+        scope.launch {
+            for (clip in clipChannel) {
+                if (!enabled || closing) continue
+                transcribeClip(clip)
             }
         }
     }
@@ -103,7 +114,7 @@ class WhisperAudioAsr(
         }
     }
 
-    fun isCapturing(): Boolean = enabled && !closing && model != null && !transcribing.get()
+    fun isCapturing(): Boolean = enabled && !closing && model != null
 
     fun modelInstalled(): Boolean = modelFile.isFile && modelFile.length() > 25_000_000L
 
@@ -187,35 +198,45 @@ class WhisperAudioAsr(
 
     private fun submitClip(samples: ShortArray, sampleRate: Int) {
         if (closing || !enabled || samples.isEmpty()) return
-        if (!transcribing.compareAndSet(false, true)) return
-        onStatus("Whisper is processing locally…")
-
+        val copy = samples.copyOf()
         scope.launch {
-            val wav = File(appContext.cacheDir, "livedub-${System.nanoTime()}.wav")
-            try {
-                inferenceMutex.withLock {
-                    if (closing || !enabled) return@withLock
-                    val whisperModel = model ?: return@withLock
-                    val resampled = resampleTo16k(samples, sampleRate)
-                    if (resampled.size < (WHISPER_SAMPLE_RATE * MIN_CLIP_SECONDS).toInt()) return@withLock
-                    writeWav(wav, resampled, WHISPER_SAMPLE_RATE)
+            if (!closing && enabled) clipChannel.send(SpeechClip(copy, sampleRate))
+        }
+    }
 
-                    // One native worker is intentionally conservative on mobile. It avoids the
-                    // native ggml graph race/pressure seen on some Android 15 ARM64 devices.
-                    val config = sourceLanguage?.let {
-                        WhisperConfig(language = it, threads = 1, printTimestamps = false)
-                    } ?: WhisperConfig(threads = 1, printTimestamps = false)
-                    val result = Whisper.transcribe(whisperModel, wav.absolutePath, config)
-                    if (closing || !enabled) return@withLock
-                    val text = result.text.trim()
-                    if (text.isNotBlank()) onText(text, sourceLanguage)
+    private suspend fun transcribeClip(clip: SpeechClip) {
+        if (closing || !enabled) return
+        onStatus("Whisper is processing locally…")
+        val wav = File(appContext.cacheDir, "livedub-${System.nanoTime()}.wav")
+        try {
+            inferenceMutex.withLock {
+                if (closing || !enabled) return@withLock
+                val whisperModel = model ?: return@withLock
+                val resampled = resampleTo16k(clip.samples, clip.sampleRate)
+                if (resampled.size < (WHISPER_SAMPLE_RATE * MIN_CLIP_SECONDS).toInt()) return@withLock
+                writeWav(wav, resampled, WHISPER_SAMPLE_RATE)
+
+                // One native worker is intentionally conservative on mobile. It avoids the
+                // native ggml graph race/pressure seen on Android 15 ARM64 devices.
+                val configuredLanguage = sourceLanguage
+                val config = configuredLanguage?.let {
+                    WhisperConfig(language = it, threads = 1, printTimestamps = false)
+                } ?: WhisperConfig(threads = 1, printTimestamps = false)
+                val result = Whisper.transcribe(whisperModel, wav.absolutePath, config)
+                if (closing || !enabled) return@withLock
+                val text = result.text.trim()
+                if (text.isNotBlank()) {
+                    val detected = configuredLanguage ?: runCatching {
+                        languageIdentifier.identifyLanguage(text).await()
+                            .takeUnless { it.equals("und", ignoreCase = true) }
+                    }.getOrNull()
+                    onText(text, detected)
                 }
-            } catch (t: Throwable) {
-                if (!closing) onStatus("Whisper transcription error: ${t.message ?: t.javaClass.simpleName}")
-            } finally {
-                wav.delete()
-                transcribing.set(false)
             }
+        } catch (t: Throwable) {
+            if (!closing) onStatus("Whisper transcription error: ${t.message ?: t.javaClass.simpleName}")
+        } finally {
+            wav.delete()
         }
     }
 
@@ -331,6 +352,8 @@ class WhisperAudioAsr(
         closing = true
         enabled = false
         pcmChannel.close()
+        clipChannel.close()
+        languageIdentifier.close()
         synchronized(lock) { resetLocked() }
         scope.launch {
             try {

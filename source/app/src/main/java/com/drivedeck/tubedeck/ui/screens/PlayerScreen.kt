@@ -64,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
@@ -464,7 +465,7 @@ fun NativeExoPlayer(
     var dubOriginalVolume by rememberSaveable(media.id) { mutableFloatStateOf(0.18f) }
     var dubStatus by remember(media.id) { mutableStateOf("Live Dub off") }
     var showEqualizer by rememberSaveable(media.id) { mutableStateOf(false) }
-    val equalizerController = remember(media.id) { PlaybackEqualizerController() }
+    val equalizerController = remember(media.id) { PlaybackEqualizerController(context.applicationContext) }
     var equalizerSnapshot by remember(media.id) { mutableStateOf(equalizerController.snapshot()) }
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
@@ -1669,13 +1670,25 @@ fun NativeExoPlayer(
                     onBandChanged = { index, value ->
                         equalizerSnapshot = equalizerController.setBandNormalized(index, value)
                     },
+                    onLayout = { layout ->
+                        equalizerSnapshot = equalizerController.setLayout(layout)
+                    },
+                    onStyle = { style ->
+                        equalizerSnapshot = equalizerController.setStyle(style)
+                    },
+                    onSaveUser = { name ->
+                        equalizerSnapshot = equalizerController.saveUserPreset(name)
+                    },
+                    onRecallUser = {
+                        equalizerSnapshot = equalizerController.recallUserPreset()
+                    },
                     onMinimize = { showEqualizer = false },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(horizontal = 8.dp, vertical = 44.dp)
                         .zIndex(70f)
-                        .fillMaxWidth(if (compactPortrait) .92f else .42f)
-                        .widthIn(max = 360.dp)
+                        .fillMaxWidth(if (compactPortrait) .95f else .50f)
+                        .widthIn(max = 430.dp)
                 )
             }
 
@@ -1872,22 +1885,34 @@ private fun PlaybackEqualizerOverlay(
     onEnabled: (Boolean) -> Unit,
     onPreset: (String) -> Unit,
     onBandChanged: (Int, Float) -> Unit,
+    onLayout: (String) -> Unit,
+    onStyle: (String) -> Unit,
+    onSaveUser: (String) -> Unit,
+    onRecallUser: () -> Unit,
     onMinimize: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var userPresetName by rememberSaveable { mutableStateOf(snapshot.userPresetName) }
+
+    LaunchedEffect(snapshot.userPresetName) {
+        if (userPresetName.isBlank() || userPresetName == "User") {
+            userPresetName = snapshot.userPresetName
+        }
+    }
+
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = .90f),
+        color = Color.Black.copy(alpha = .92f),
         shape = RoundedCornerShape(18.dp),
         tonalElevation = 8.dp,
         shadowElevation = 10.dp
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 300.dp)
+                .heightIn(max = 390.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1911,6 +1936,35 @@ private fun PlaybackEqualizerOverlay(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("View", color = Color.White.copy(alpha = .66f), fontSize = 9.sp)
+                FilterChip(
+                    selected = snapshot.layoutId == "horizontal",
+                    onClick = { onLayout("horizontal") },
+                    label = { Text("↔ H", fontSize = 9.sp) }
+                )
+                FilterChip(
+                    selected = snapshot.layoutId == "vertical",
+                    onClick = { onLayout("vertical") },
+                    label = { Text("↕ V", fontSize = 9.sp) }
+                )
+                Spacer(Modifier.width(4.dp))
+                FilterChip(
+                    selected = snapshot.styleId == "classic",
+                    onClick = { onStyle("classic") },
+                    label = { Text("Classic", fontSize = 9.sp) }
+                )
+                FilterChip(
+                    selected = snapshot.styleId == "graphic",
+                    onClick = { onStyle("graphic") },
+                    label = { Text("Graphic", fontSize = 9.sp) }
+                )
             }
 
             if (!snapshot.supported) {
@@ -1945,31 +1999,120 @@ private fun PlaybackEqualizerOverlay(
                             label = { Text("Custom", fontSize = 9.sp) }
                         )
                     }
+                    if (snapshot.hasUserPreset) {
+                        FilterChip(
+                            selected = snapshot.presetId == "user",
+                            onClick = onRecallUser,
+                            label = { Text(snapshot.userPresetName, fontSize = 9.sp) }
+                        )
+                    }
                 }
 
-                snapshot.bands.forEach { band ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(34.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = userPresetName,
+                        onValueChange = { userPresetName = it.take(24) },
+                        singleLine = true,
+                        label = { Text("Custom / User preset", fontSize = 9.sp) },
+                        placeholder = { Text("e.g. My Speakers", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 10.sp)
+                    )
+                    Button(
+                        onClick = { onSaveUser(userPresetName) },
+                        enabled = snapshot.bands.isNotEmpty(),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        modifier = Modifier.height(42.dp)
                     ) {
-                        Text(
-                            equalizerFrequencyLabel(band.centerFrequencyHz),
-                            color = Color.White.copy(alpha = .82f),
-                            fontSize = 9.sp,
-                            modifier = Modifier.width(48.dp)
-                        )
-                        Slider(
-                            value = band.normalizedLevel,
-                            onValueChange = { onBandChanged(band.index, it) },
-                            valueRange = -1f..1f,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            String.format(Locale.ROOT, "%+.1f", band.levelDb),
-                            color = Color.White.copy(alpha = .78f),
-                            fontSize = 9.sp,
-                            modifier = Modifier.width(42.dp)
-                        )
+                        Text("Save User", fontSize = 9.sp)
+                    }
+                }
+
+                if (snapshot.styleId == "graphic") {
+                    EqualizerGraphicCurve(snapshot = snapshot)
+                }
+
+                if (snapshot.layoutId == "vertical") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        snapshot.bands.forEach { band ->
+                            Column(
+                                modifier = Modifier.width(60.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    equalizerBandName(band.centerFrequencyHz),
+                                    color = TubeDeckAccentCyan,
+                                    fontSize = 8.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    String.format(Locale.ROOT, "%+.1f dB", band.levelDb),
+                                    color = Color.White.copy(alpha = .72f),
+                                    fontSize = 8.sp
+                                )
+                                Box(
+                                    modifier = Modifier.height(112.dp).width(50.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Slider(
+                                        value = band.normalizedLevel,
+                                        onValueChange = { onBandChanged(band.index, it) },
+                                        valueRange = -1f..1f,
+                                        modifier = Modifier.width(105.dp).rotate(-90f)
+                                    )
+                                }
+                                Text(
+                                    equalizerFrequencyLabel(band.centerFrequencyHz),
+                                    color = Color.White.copy(alpha = .82f),
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    snapshot.bands.forEach { band ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(38.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.width(86.dp)) {
+                                Text(
+                                    equalizerBandName(band.centerFrequencyHz),
+                                    color = TubeDeckAccentCyan,
+                                    fontSize = 8.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    equalizerFrequencyLabel(band.centerFrequencyHz),
+                                    color = Color.White.copy(alpha = .82f),
+                                    fontSize = 8.sp
+                                )
+                            }
+                            Slider(
+                                value = band.normalizedLevel,
+                                onValueChange = { onBandChanged(band.index, it) },
+                                valueRange = -1f..1f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                String.format(Locale.ROOT, "%+.1f", band.levelDb),
+                                color = Color.White.copy(alpha = .78f),
+                                fontSize = 9.sp,
+                                modifier = Modifier.width(42.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1977,12 +2120,102 @@ private fun PlaybackEqualizerOverlay(
     }
 }
 
+@Composable
+private fun EqualizerGraphicCurve(
+    snapshot: PlaybackEqualizerController.Snapshot,
+    modifier: Modifier = Modifier
+) {
+    if (snapshot.bands.isEmpty()) return
+
+    Surface(
+        color = Color.White.copy(alpha = .055f),
+        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(132.dp)
+                .padding(horizontal = 10.dp, vertical = 10.dp)
+        ) {
+            val centerY = size.height / 2f
+            val usableHeight = size.height * .80f
+            val stepX = if (snapshot.bands.size <= 1) 0f else
+                size.width / (snapshot.bands.size - 1).toFloat()
+
+            drawLine(
+                color = Color.White.copy(alpha = .24f),
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = 1.5f
+            )
+
+            snapshot.bands.forEachIndexed { index, band ->
+                val x = if (snapshot.bands.size <= 1) size.width / 2f else index * stepX
+                drawLine(
+                    color = Color.White.copy(alpha = .10f),
+                    start = Offset(x, 0f),
+                    end = Offset(x, size.height),
+                    strokeWidth = 1f
+                )
+                val y = centerY - band.normalizedLevel * usableHeight / 2f
+                drawLine(
+                    color = TubeDeckAccentCyan.copy(alpha = .30f),
+                    start = Offset(x, centerY),
+                    end = Offset(x, y),
+                    strokeWidth = 5f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            snapshot.bands.zipWithNext().forEachIndexed { index, pair ->
+                val first = pair.first
+                val second = pair.second
+                val x1 = index * stepX
+                val x2 = (index + 1) * stepX
+                val y1 = centerY - first.normalizedLevel * usableHeight / 2f
+                val y2 = centerY - second.normalizedLevel * usableHeight / 2f
+                drawLine(
+                    color = TubeDeckAccentMint,
+                    start = Offset(x1, y1),
+                    end = Offset(x2, y2),
+                    strokeWidth = 4f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            snapshot.bands.forEachIndexed { index, band ->
+                val x = if (snapshot.bands.size <= 1) size.width / 2f else index * stepX
+                val y = centerY - band.normalizedLevel * usableHeight / 2f
+                drawCircle(
+                    color = TubeDeckAccentCyan,
+                    radius = 5.5f,
+                    center = Offset(x, y)
+                )
+            }
+        }
+    }
+}
+
+private fun equalizerBandName(hz: Int): String = when {
+    hz < 45 -> "Sub Woofer"
+    hz < 80 -> "Sub Bass"
+    hz < 160 -> "Deep Bass"
+    hz < 300 -> "Bass"
+    hz < 600 -> "Low Mid"
+    hz < 1_200 -> "Mid"
+    hz < 2_500 -> "Upper Mid"
+    hz < 5_000 -> "Presence"
+    hz < 10_000 -> "Treble"
+    else -> "Air / High"
+}
+
 private fun equalizerFrequencyLabel(hz: Int): String {
     return if (hz >= 1000) {
         val khz = hz / 1000f
-        if (khz >= 10f) "${khz.roundToInt()}k" else String.format(Locale.ROOT, "%.1fk", khz)
+        if (khz >= 10f) "${khz.roundToInt()} kHz" else String.format(Locale.ROOT, "%.1f kHz", khz)
     } else {
-        "${hz}Hz"
+        "${hz} Hz"
     }
 }
 

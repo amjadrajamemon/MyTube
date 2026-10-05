@@ -472,6 +472,36 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun openNativePlaylist(url: String) {
+                    val playlistId = YoutubeUrls.playlistId(url) ?: return
+                    lifecycleScope.launch {
+                        val result = runCatching { repository.fetchPlaylistItems(url) }
+                        val items = result.getOrNull().orEmpty()
+                        val first = items.firstOrNull()
+                        if (first == null) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                result.exceptionOrNull()?.message ?: "Playlist or Mix could not be loaded",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@launch
+                        }
+                        val watchUrl = YoutubeUrls.playlistVideoUrl(first.videoId, playlistId)
+                            ?: return@launch
+                        openOnlineMedia(
+                            OfflineMedia(
+                                id = UUID.randomUUID().toString(),
+                                title = first.title,
+                                videoId = first.videoId,
+                                thumbnailUrl = first.thumbnailUrl.ifBlank {
+                                    repository.getVideoThumbnail(first.videoId)
+                                },
+                                mediaUri = watchUrl
+                            )
+                        )
+                    }
+                }
+
                 LaunchedEffect(currentScreen, homeRefreshRequest, settings.homeSuggestionsEnabled,
                     settings.homeTrendingEnabled, googleAuthStatus.youtubeAuthorized) {
                     if (currentScreen == ActiveScreen.HOME) {
@@ -596,6 +626,11 @@ class MainActivity : ComponentActivity() {
                                     mediaUri = it
                                 )
                             )
+                        } else if (
+                            YoutubeUrls.playlistId(it) != null &&
+                            settings.playerMode == PlayerMode.NATIVE
+                        ) {
+                            openNativePlaylist(it)
                         } else {
                             browserHistoryResetGeneration += 1
                             navigateTo(ActiveScreen.BROWSER, it)
@@ -810,6 +845,12 @@ class MainActivity : ComponentActivity() {
                                                     mediaUri = url
                                                 )
                                             )
+                                        }
+                                    },
+                                    onNativePlaylist = { url ->
+                                        if (currentScreen == ActiveScreen.BROWSER) {
+                                            webViewInstance?.stopLoading()
+                                            openNativePlaylist(url)
                                         }
                                     },
                                     onCanGoBackChanged = { webCanGoBack = it },
@@ -1057,10 +1098,23 @@ class MainActivity : ComponentActivity() {
                                         .onFailure { Toast.makeText(applicationContext, it.message ?: "Invalid video URL", Toast.LENGTH_LONG).show() }
                                 },
                                 onDownloadPlaylist = { items, mode, quality ->
-                                    lifecycleScope.launch(Dispatchers.IO) {
-                                        repository.enqueuePlaylist(items, mode, quality)
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(applicationContext, "Playlist items queued", Toast.LENGTH_SHORT).show()
+                                    lifecycleScope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                repository.enqueuePlaylist(items, mode, quality)
+                                            }
+                                        }.onSuccess { queued ->
+                                            Toast.makeText(
+                                                applicationContext,
+                                                if (queued > 0) "$queued playlist items queued" else "No playlist items selected",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }.onFailure { error ->
+                                            Toast.makeText(
+                                                applicationContext,
+                                                error.message ?: "Playlist download could not start",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                         }
                                     }
                                 },

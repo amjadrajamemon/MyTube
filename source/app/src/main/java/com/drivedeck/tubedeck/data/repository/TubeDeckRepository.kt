@@ -600,7 +600,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             return stable
         }
 
-        fun contextual(): List<PlaylistItem> = runCatching {
+        suspend fun contextual(): List<PlaylistItem> = runCatching {
             val videoId = currentVideoId ?: return@runCatching emptyList()
             val resolved = YoutubeWatchNextClient.resolve(url, videoId)
             val selected = resolved.playlists.firstOrNull { it.playlistId == playlistId }

@@ -5,15 +5,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YoutubeSearchPolicyTest {
-    @Test fun aryNewsLiveUsesLiveFeatureFilter() {
-        val url = YoutubeSearchPolicy.buildSearchUrl("ARY News live")
+    @Test fun aryNewsLiveIsRecognizedWithoutVolatileWebFilter() {
+        val query = "ARY News live"
+        val url = YoutubeSearchPolicy.buildSearchUrl(query)
+        assertTrue(YoutubeSearchPolicy.isLiveIntent(query))
         assertTrue(url.contains("search_query=ARY+News+live"))
-        assertTrue(url.contains("sp=EgJAAQ%253D%253D"))
+        assertFalse(url.contains("sp=EgJAAQ%253D%253D"))
     }
 
-    @Test fun geoNewsLiveStreamingUsesLiveFeatureFilter() {
-        val url = YoutubeSearchPolicy.buildSearchUrl("Geo News live streaming")
-        assertTrue(url.contains("sp=EgJAAQ%253D%253D"))
+    @Test fun geoNewsLiveStreamingIsRecognizedWithoutVolatileWebFilter() {
+        val query = "Geo News live streaming"
+        val url = YoutubeSearchPolicy.buildSearchUrl(query)
+        assertTrue(YoutubeSearchPolicy.isLiveIntent(query))
+        assertFalse(url.contains("sp=EgJAAQ%253D%253D"))
     }
 
     @Test fun ordinarySearchDoesNotForceLiveFilter() {

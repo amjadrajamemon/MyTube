@@ -22,7 +22,7 @@ class DownloadResourceGovernorTest {
     @Test
     fun meteredNetworkReducesNewHeavyTransfersWithoutSerializingQueue() {
         assertEquals(
-            1,
+            2,
             DownloadResourceGovernor.computeTarget(
                 memoryClassMb = 2_048,
                 cpuCores = 8,

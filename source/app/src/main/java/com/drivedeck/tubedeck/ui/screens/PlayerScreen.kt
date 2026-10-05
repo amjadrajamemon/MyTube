@@ -65,7 +65,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1682,6 +1684,15 @@ fun NativeExoPlayer(
                     onRecallUser = {
                         equalizerSnapshot = equalizerController.recallUserPreset()
                     },
+                    onSurroundEnabled = { enabled ->
+                        equalizerSnapshot = equalizerController.setSurroundEnabled(enabled)
+                    },
+                    onSurroundStrength = { strength ->
+                        equalizerSnapshot = equalizerController.setSurroundStrength(strength)
+                    },
+                    onDtsEnabled = { enabled ->
+                        equalizerSnapshot = equalizerController.setDtsEnabled(enabled)
+                    },
                     onMinimize = { showEqualizer = false },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -1889,6 +1900,9 @@ private fun PlaybackEqualizerOverlay(
     onStyle: (String) -> Unit,
     onSaveUser: (String) -> Unit,
     onRecallUser: () -> Unit,
+    onSurroundEnabled: (Boolean) -> Unit,
+    onSurroundStrength: (Float) -> Unit,
+    onDtsEnabled: (Boolean) -> Unit,
     onMinimize: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2032,6 +2046,75 @@ private fun PlaybackEqualizerOverlay(
                     }
                 }
 
+                Surface(
+                    color = Color.White.copy(alpha = .045f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Surround / Spatial", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 10.sp)
+                                Text(
+                                    if (snapshot.surroundAvailable) "Session surround" else "Not supported on this audio route",
+                                    color = Color.White.copy(alpha = .58f),
+                                    fontSize = 8.sp
+                                )
+                            }
+                            Switch(
+                                checked = snapshot.surroundEnabled,
+                                onCheckedChange = onSurroundEnabled,
+                                enabled = snapshot.surroundAvailable,
+                                modifier = Modifier.height(28.dp)
+                            )
+                        }
+                        if (snapshot.surroundAvailable && snapshot.surroundEnabled) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Depth", color = Color.White.copy(alpha = .72f), fontSize = 8.sp, modifier = Modifier.width(46.dp))
+                                Slider(
+                                    value = snapshot.surroundStrength,
+                                    onValueChange = onSurroundStrength,
+                                    valueRange = 0f..1f,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    "${(snapshot.surroundStrength * 100).roundToInt()}%",
+                                    color = Color.White.copy(alpha = .72f),
+                                    fontSize = 8.sp,
+                                    modifier = Modifier.width(34.dp)
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = Color.White.copy(alpha = .08f))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("DTS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 10.sp)
+                                Text(
+                                    when {
+                                        snapshot.dtsAvailable && !snapshot.dtsEffectName.isNullOrBlank() ->
+                                            snapshot.dtsEffectName
+                                        snapshot.dtsAvailable -> "Device DTS effect"
+                                        else -> "No DTS effect exposed by this device"
+                                    },
+                                    color = if (snapshot.dtsAvailable) TubeDeckAccentMint else Color.White.copy(alpha = .52f),
+                                    fontSize = 8.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Switch(
+                                checked = snapshot.dtsEnabled,
+                                onCheckedChange = onDtsEnabled,
+                                enabled = snapshot.dtsAvailable,
+                                modifier = Modifier.height(28.dp)
+                            )
+                        }
+                    }
+                }
+
                 if (snapshot.styleId == "graphic") {
                     EqualizerGraphicCurve(snapshot = snapshot)
                 }
@@ -2127,75 +2210,192 @@ private fun EqualizerGraphicCurve(
 ) {
     if (snapshot.bands.isEmpty()) return
 
+    val dbTicks = listOf(
+        snapshot.maxDb,
+        snapshot.maxDb / 2f,
+        0f,
+        snapshot.minDb / 2f,
+        snapshot.minDb
+    )
+
     Surface(
         color = Color.White.copy(alpha = .055f),
         shape = RoundedCornerShape(14.dp),
         modifier = modifier.fillMaxWidth()
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(132.dp)
-                .padding(horizontal = 10.dp, vertical = 10.dp)
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            val centerY = size.height / 2f
-            val usableHeight = size.height * .80f
-            val stepX = if (snapshot.bands.size <= 1) 0f else
-                size.width / (snapshot.bands.size - 1).toFloat()
-
-            drawLine(
-                color = Color.White.copy(alpha = .24f),
-                start = Offset(0f, centerY),
-                end = Offset(size.width, centerY),
-                strokeWidth = 1.5f
-            )
-
-            snapshot.bands.forEachIndexed { index, band ->
-                val x = if (snapshot.bands.size <= 1) size.width / 2f else index * stepX
-                drawLine(
-                    color = Color.White.copy(alpha = .10f),
-                    start = Offset(x, 0f),
-                    end = Offset(x, size.height),
-                    strokeWidth = 1f
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Graphic equalizer",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 10.sp,
+                    modifier = Modifier.weight(1f)
                 )
-                val y = centerY - band.normalizedLevel * usableHeight / 2f
-                drawLine(
-                    color = TubeDeckAccentCyan.copy(alpha = .30f),
-                    start = Offset(x, centerY),
-                    end = Offset(x, y),
-                    strokeWidth = 5f,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            snapshot.bands.zipWithNext().forEachIndexed { index, pair ->
-                val first = pair.first
-                val second = pair.second
-                val x1 = index * stepX
-                val x2 = (index + 1) * stepX
-                val y1 = centerY - first.normalizedLevel * usableHeight / 2f
-                val y2 = centerY - second.normalizedLevel * usableHeight / 2f
-                drawLine(
-                    color = TubeDeckAccentMint,
-                    start = Offset(x1, y1),
-                    end = Offset(x2, y2),
-                    strokeWidth = 4f,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            snapshot.bands.forEachIndexed { index, band ->
-                val x = if (snapshot.bands.size <= 1) size.width / 2f else index * stepX
-                val y = centerY - band.normalizedLevel * usableHeight / 2f
-                drawCircle(
+                Text(
+                    when (snapshot.presetId) {
+                        "user" -> snapshot.userPresetName
+                        "custom" -> "Custom"
+                        else -> snapshot.presetId.replaceFirstChar { it.uppercase() }
+                    },
                     color = TubeDeckAccentCyan,
-                    radius = 5.5f,
-                    center = Offset(x, y)
+                    fontSize = 9.sp
                 )
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().height(168.dp)) {
+                Column(
+                    modifier = Modifier.width(34.dp).fillMaxHeight().padding(top = 2.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.End
+                ) {
+                    dbTicks.forEach { value ->
+                        Text(
+                            String.format(Locale.ROOT, "%.1f", value),
+                            color = Color.White.copy(alpha = .54f),
+                            fontSize = 7.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(5.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 2.dp, vertical = 2.dp)
+                    ) {
+                        val top = 4f
+                        val bottom = size.height - 4f
+                        val centerY = (top + bottom) / 2f
+                        val usableHeight = bottom - top
+                        val stepX = if (snapshot.bands.size <= 1) 0f else
+                            size.width / (snapshot.bands.size - 1).toFloat()
+
+                        val points = snapshot.bands.mapIndexed { index, band ->
+                            val x = if (snapshot.bands.size <= 1) size.width / 2f else index * stepX
+                            val y = centerY - band.normalizedLevel.coerceIn(-1f, 1f) * usableHeight / 2f
+                            Offset(x, y.coerceIn(top, bottom))
+                        }
+
+                        repeat(5) { row ->
+                            val y = top + (usableHeight * row / 4f)
+                            drawLine(
+                                color = Color.White.copy(alpha = if (row == 2) .22f else .10f),
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = if (row == 2) 1.5f else 1f
+                            )
+                        }
+
+                        points.forEach { point ->
+                            drawLine(
+                                color = Color.White.copy(alpha = .065f),
+                                start = Offset(point.x, top),
+                                end = Offset(point.x, bottom),
+                                strokeWidth = 1f
+                            )
+                        }
+
+                        if (points.isNotEmpty()) {
+                            val curve = Path().apply {
+                                moveTo(points.first().x, points.first().y)
+                                for (index in 0 until points.lastIndex) {
+                                    val p1 = points[index]
+                                    val p2 = points[index + 1]
+                                    val midX = (p1.x + p2.x) / 2f
+                                    cubicTo(midX, p1.y, midX, p2.y, p2.x, p2.y)
+                                }
+                            }
+
+                            val fill = Path().apply {
+                                moveTo(points.first().x, bottom)
+                                lineTo(points.first().x, points.first().y)
+                                for (index in 0 until points.lastIndex) {
+                                    val p1 = points[index]
+                                    val p2 = points[index + 1]
+                                    val midX = (p1.x + p2.x) / 2f
+                                    cubicTo(midX, p1.y, midX, p2.y, p2.x, p2.y)
+                                }
+                                lineTo(points.last().x, bottom)
+                                close()
+                            }
+
+                            drawPath(
+                                path = fill,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        TubeDeckAccentCyan.copy(alpha = .32f),
+                                        TubeDeckAccentCyan.copy(alpha = .06f)
+                                    ),
+                                    startY = top,
+                                    endY = bottom
+                                )
+                            )
+
+                            drawPath(
+                                path = curve,
+                                color = TubeDeckAccentCyan,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                    width = 4f,
+                                    cap = StrokeCap.Round
+                                )
+                            )
+
+                            points.forEach { point ->
+                                drawCircle(
+                                    color = TubeDeckAccentMint,
+                                    radius = 4.5f,
+                                    center = point
+                                )
+                            }
+                        }
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        val indices = when {
+                            snapshot.bands.size <= 5 -> snapshot.bands.indices.toList()
+                            else -> listOf(
+                                0,
+                                snapshot.bands.lastIndex / 4,
+                                snapshot.bands.lastIndex / 2,
+                                snapshot.bands.lastIndex * 3 / 4,
+                                snapshot.bands.lastIndex
+                            ).distinct()
+                        }
+                        indices.forEachIndexed { itemIndex, bandIndex ->
+                            val band = snapshot.bands[bandIndex]
+                            Text(
+                                equalizerFrequencyCompactLabel(band.centerFrequencyHz),
+                                color = Color.White.copy(alpha = .67f),
+                                fontSize = 7.sp,
+                                textAlign = when (itemIndex) {
+                                    0 -> androidx.compose.ui.text.style.TextAlign.Start
+                                    indices.lastIndex -> androidx.compose.ui.text.style.TextAlign.End
+                                    else -> androidx.compose.ui.text.style.TextAlign.Center
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+private fun equalizerFrequencyCompactLabel(hz: Int): String =
+    if (hz >= 1000) {
+        val khz = hz / 1000f
+        if (khz >= 10f) "${khz.roundToInt()}k" else String.format(Locale.ROOT, "%.1fk", khz)
+    } else {
+        hz.toString()
+    }
 
 private fun equalizerBandName(hz: Int): String = when {
     hz < 45 -> "Sub Woofer"

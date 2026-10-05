@@ -1,5 +1,8 @@
 package com.drivedeck.tubedeck.ui.theme
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
 private val DefaultBackground = Color(0xFF080B11)
@@ -7,11 +10,13 @@ private val DefaultAccent = Color(0xFF00D2FF)
 private val DefaultText = Color(0xFFFFFFFF)
 
 internal object TubeDeckRuntimeStyle {
-    var background: Color = DefaultBackground
+    // Compose-observable process state keeps MainActivity, native player and PiP/theme preview
+    // surfaces synchronized instead of mutating invisible plain globals.
+    var background: Color by mutableStateOf(DefaultBackground)
         private set
-    var accent: Color = DefaultAccent
+    var accent: Color by mutableStateOf(DefaultAccent)
         private set
-    var textPrimary: Color = DefaultText
+    var textPrimary: Color by mutableStateOf(DefaultText)
         private set
 
     fun apply(

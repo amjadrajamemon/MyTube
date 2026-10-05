@@ -337,6 +337,9 @@ class MainActivity : ComponentActivity() {
                 val liveSearchResults by repository.liveSearchResults.collectAsStateWithLifecycle()
                 val liveSearchQuery by repository.liveSearchQuery.collectAsStateWithLifecycle()
                 val liveSearchStatus by repository.liveSearchStatus.collectAsStateWithLifecycle()
+                val playlistSearchResults by repository.playlistSearchResults.collectAsStateWithLifecycle()
+                val playlistSearchQuery by repository.playlistSearchQuery.collectAsStateWithLifecycle()
+                val playlistSearchStatus by repository.playlistSearchStatus.collectAsStateWithLifecycle()
                 val homeCountry by repository.homeCountry.collectAsStateWithLifecycle()
                 val homeTrendingStatus by repository.homeTrendingStatus.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
@@ -351,7 +354,8 @@ class MainActivity : ComponentActivity() {
                 // URL to restore underneath the native player. Native /watch URLs are never
                 // inserted into NavigationCoordinator history.
                 var browserReturnUrl by rememberSaveable { mutableStateOf("https://www.youtube.com/") }
-                var deckSearchQuery by rememberSaveable { mutableStateOf("") }
+                var homeSearchQuery by rememberSaveable { mutableStateOf("") }
+                var mixesSearchQuery by rememberSaveable { mutableStateOf("Playlist") }
                 var browserSessionCreated by rememberSaveable {
                     mutableStateOf(currentScreen == ActiveScreen.BROWSER)
                 }
@@ -801,8 +805,11 @@ class MainActivity : ComponentActivity() {
                                 activeDownloadCount = activeDownloads.size,
                                 blockedAdsCount = blockedAdsCount,
                                 onNavigate = { screen ->
-                                    if (screen == ActiveScreen.MIXES && deckSearchQuery.isEmpty()) {
-                                        deckSearchQuery = "Playlist"
+                                    if (screen == ActiveScreen.MIXES &&
+                                        playlistSearchResults.isEmpty() &&
+                                        playlistSearchStatus.isBlank()
+                                    ) {
+                                        repository.searchPlaylists(mixesSearchQuery)
                                     }
                                     if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
                                     else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
@@ -893,26 +900,37 @@ class MainActivity : ComponentActivity() {
                         when (currentScreen) {
                             ActiveScreen.HOME, ActiveScreen.MIXES -> {
                                 DriveDeckScreen(
-                                    searchQuery = deckSearchQuery,
-                                    onSearchQueryChange = { deckSearchQuery = it },
+                                    searchQuery = if (currentScreen == ActiveScreen.MIXES) {
+                                        mixesSearchQuery
+                                    } else {
+                                        homeSearchQuery
+                                    },
+                                    onSearchQueryChange = { value ->
+                                        if (currentScreen == ActiveScreen.MIXES) mixesSearchQuery = value
+                                        else homeSearchQuery = value
+                                    },
                                     onExecuteSearch = { query ->
                                         if (query.isNotBlank()) {
                                             repository.recordSearch(query)
-                                            if (
-                                                currentScreen == ActiveScreen.HOME &&
-                                                YoutubeSearchPolicy.isLiveIntent(query)
-                                            ) {
-                                                // Live discovery stays native so it is not dependent on
-                                                // YouTube's volatile web Live-filter token.
-                                                repository.searchLive(query, googleSession.currentYoutubeAccessToken())
-                                            } else {
-                                                repository.clearLiveSearch()
-                                                browserHistoryResetGeneration += 1
-                                                val destination = YoutubeSearchPolicy.buildSearchUrl(
-                                                    query = query,
-                                                    playlistOnly = currentScreen == ActiveScreen.MIXES
-                                                )
-                                                navigateTo(ActiveScreen.BROWSER, destination)
+                                            when {
+                                                currentScreen == ActiveScreen.MIXES -> {
+                                                    repository.clearLiveSearch()
+                                                    repository.searchPlaylists(query)
+                                                }
+                                                YoutubeSearchPolicy.isLiveIntent(query) -> {
+                                                    // Live discovery stays native so it is not dependent on
+                                                    // YouTube's volatile web Live-filter token.
+                                                    repository.searchLive(
+                                                        query,
+                                                        googleSession.currentYoutubeAccessToken()
+                                                    )
+                                                }
+                                                else -> {
+                                                    repository.clearLiveSearch()
+                                                    browserHistoryResetGeneration += 1
+                                                    val destination = YoutubeSearchPolicy.buildSearchUrl(query)
+                                                    navigateTo(ActiveScreen.BROWSER, destination)
+                                                }
                                             }
                                         }
                                     },
@@ -930,6 +948,11 @@ class MainActivity : ComponentActivity() {
                                     liveSearchResults = liveSearchResults,
                                     liveSearchQuery = liveSearchQuery,
                                     liveSearchStatus = liveSearchStatus,
+                                    playlistMode = currentScreen == ActiveScreen.MIXES,
+                                    playlistResults = playlistSearchResults,
+                                    playlistSearchQuery = playlistSearchQuery,
+                                    playlistSearchStatus = playlistSearchStatus,
+                                    onOpenPlaylist = { playlist -> openNativePlaylist(playlist.url) },
                                     suggestionsEnabled = settings.homeSuggestionsEnabled,
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     countryCode = homeCountry,

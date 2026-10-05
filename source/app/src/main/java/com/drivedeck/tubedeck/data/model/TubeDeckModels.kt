@@ -120,6 +120,7 @@ data class HomeVideo(
     val thumbnailUrl: String,
     val channelTitle: String = "YouTube",
     val durationText: String = "",
+    val viewCount: Long = -1L,
     val watchedAt: Long = System.currentTimeMillis()
 )
 
@@ -139,6 +140,7 @@ data class PlaylistItem(
     val channel: String = "YouTube",
     val duration: String = "",
     val thumbnailUrl: String = "",
+    val viewCount: Long = -1L,
     var isSelected: Boolean = true
 )
 

@@ -869,6 +869,10 @@ class NativePlayerActivity : ComponentActivity() {
     private fun handoffToBackgroundAudio() {
         pipChoicePending = false
         val media = currentMedia
+        // Freeze the video host before starting the service. This prevents the old ExoPlayer and
+        // the new audio-only ExoPlayer from speaking simultaneously during the startup handshake.
+        foregroundPlaybackAllowed = false
+        pauseGeneration += 1
         lifecycleScope.launch {
             BackgroundAudioController.handoff(
                 context = this@NativePlayerActivity,
@@ -886,6 +890,9 @@ class NativePlayerActivity : ComponentActivity() {
                 moveTaskToBack(true)
                 finish()
             }.onFailure {
+                // Handoff failed: resume the existing video instead of leaving it silently paused.
+                foregroundPlaybackAllowed = true
+                resumeGeneration += 1
                 Toast.makeText(
                     this@NativePlayerActivity,
                     it.message ?: "Background audio could not start",

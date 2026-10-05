@@ -155,6 +155,7 @@ fun PlayerScreen(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    onPlaybackEnded: (() -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -238,6 +239,7 @@ fun PlayerScreen(
             onPlayRelated = onPlayRelated,
             onPreviousItem = onPreviousItem,
             onNextItem = onNextItem,
+            onPlaybackEnded = onPlaybackEnded,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             onPlaybackPositionChanged = onPlaybackPositionChanged,
@@ -394,6 +396,7 @@ fun NativeExoPlayer(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    onPlaybackEnded: (() -> Unit)? = null,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
@@ -453,6 +456,7 @@ fun NativeExoPlayer(
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
+    var endActionDispatched by remember(media.id) { mutableStateOf(false) }
     var isPreparing by remember(media.id) { mutableStateOf(true) }
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
@@ -611,10 +615,15 @@ fun NativeExoPlayer(
                     // Keep the central loading indicator until onRenderedFirstFrame().
                     duration = exoPlayer.duration.coerceAtLeast(1L)
                     playbackRecoveryAttempts = 0
+                    endActionDispatched = false
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
                 } else if (state == Player.STATE_ENDED || state == Player.STATE_IDLE) {
                     isPreparing = false
                     isBuffering = false
+                    if (state == Player.STATE_ENDED && !endActionDispatched) {
+                        endActionDispatched = true
+                        onPlaybackEnded?.invoke()
+                    }
                 }
             }
             override fun onRenderedFirstFrame() {
@@ -1924,8 +1933,6 @@ private fun PortraitCompanionPanel(
                     displayTitle,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     fontSize = 15.sp
                 )
             }

@@ -552,8 +552,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
             )
         }
 
-    suspend fun fetchPlaylistItems(url: String): List<PlaylistItem> =
-        YoutubeStreamResolver.playlistItems(url).mapNotNull { item ->
+    suspend fun fetchPlaylistItems(url: String): List<PlaylistItem> {
+        val playlistId = YoutubeUrls.playlistId(url)
+            ?: throw IllegalArgumentException("Enter a valid YouTube playlist or Mix URL")
+        val playlistUrl = "https://www.youtube.com/playlist?list=$playlistId"
+        return YoutubeStreamResolver.playlistItems(playlistUrl).mapNotNull { item ->
             val id = YoutubeUrls.videoId(item.url) ?: return@mapNotNull null
             PlaylistItem(
                 videoId = id, title = item.name, channel = item.uploaderName ?: "YouTube",
@@ -570,6 +573,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 }.getOrDefault(-1L)
             )
         }.distinctBy { it.videoId }
+    }
 
     fun incrementBlockedAds(count: Int = 1) {
         _blockedAdsCount.value += count

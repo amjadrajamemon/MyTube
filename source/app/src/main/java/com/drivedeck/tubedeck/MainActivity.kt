@@ -447,18 +447,11 @@ class MainActivity : ComponentActivity() {
 
                 fun openOnlineMedia(media: OfflineMedia) {
                     val playbackHost = PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
-                    val nativeMedia = if (
-                        playbackHost == PlaybackHost.NATIVE &&
-                        YoutubeUrls.playlistId(media.mediaUri) != null
-                    ) {
-                        YoutubeUrls.canonicalVideoUrl(media.mediaUri)
-                            ?.let { media.copy(mediaUri = it) }
-                            ?: media
-                    } else {
-                        media
-                    }
+                    // Preserve the complete watch URL, including list=/mix context. The resolver
+                    // canonicalizes internally for stream extraction; the player needs the original
+                    // playlist context for queue loading, Previous/Next and continuous playback.
                     when (playbackHost) {
-                        PlaybackHost.NATIVE -> launchNativePlayer(nativeMedia)
+                        PlaybackHost.NATIVE -> launchNativePlayer(media)
                         PlaybackHost.WEB -> {
                             val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
                             val targetUrl =
@@ -900,6 +893,7 @@ class MainActivity : ComponentActivity() {
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,
+                                    viewStateKey = currentScreen.name,
                                     onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
                                     onClearLiveSearch = { repository.clearLiveSearch() },
                                     onOpenVideo = { item ->

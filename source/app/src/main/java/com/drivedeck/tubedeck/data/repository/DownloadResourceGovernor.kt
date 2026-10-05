@@ -43,18 +43,19 @@ internal object DownloadResourceGovernor {
         severeThermal: Boolean,
         meteredNetwork: Boolean
     ): Int {
+        // yt-dlp extraction + FFmpeg muxing are heavyweight mobile workloads. Keep the visible
+        // queue unlimited, but never turn a phone into a 16-process transcode host.
         var target = when {
-            memoryClassMb <= 256 -> 3
-            memoryClassMb <= 512 -> 5
-            memoryClassMb <= 1_024 -> 8
-            memoryClassMb <= 2_048 -> 12
-            else -> 16
+            memoryClassMb <= 256 -> 1
+            memoryClassMb <= 512 -> 2
+            memoryClassMb <= 1_024 -> 3
+            else -> 4
         }
 
-        target = minOf(target, (cpuCores.coerceAtLeast(1) * 2).coerceIn(2, 16))
-        if (meteredNetwork) target = minOf(target, 6)
-        if (powerSave) target = minOf(target, 3)
-        if (lowMemory || severeThermal) target = minOf(target, 2)
-        return target.coerceIn(2, 16)
+        target = minOf(target, cpuCores.coerceIn(1, 4))
+        if (meteredNetwork) target = minOf(target, 2)
+        if (powerSave) target = minOf(target, 1)
+        if (lowMemory || severeThermal) target = 1
+        return target.coerceIn(1, 4)
     }
 }

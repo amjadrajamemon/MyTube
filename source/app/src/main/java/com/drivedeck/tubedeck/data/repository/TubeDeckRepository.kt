@@ -84,6 +84,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val currentSponsorSegments: StateFlow<List<SponsorSegment>> = _currentSponsorSegments.asStateFlow()
 
     init {
+        // A process restart must not bypass Android's foreground-service timeout. Keep those tasks
+        // paused until MainActivity is user-visible and explicitly resumes them from onStart().
+        schedulingSuspendedBySystem = _downloadQueue.value.any {
+            it.status == TaskStatus.PAUSED && it.errorMessage == SYSTEM_TIMEOUT_MESSAGE
+        }
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
     }
@@ -968,6 +973,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
     fun suspendDownloadsForSystemTimeout() {
         val jobs = synchronized(lock) {
             schedulingSuspendedBySystem = true
+            val runningTasks = _downloadQueue.value.filter {
+                it.status == TaskStatus.DOWNLOADING || it.status == TaskStatus.QUEUED
+            }
+            // Coroutine cancellation does not reliably kill the native yt-dlp/FFmpeg process.
+            // Terminate each process explicitly before cancelling its owning coroutine.
+            runningTasks.forEach { MediaDownloader.cancel(it.id) }
             val running = activeJobs.values.toList()
             val updated = _downloadQueue.value.map { task ->
                 if (task.status == TaskStatus.DOWNLOADING || task.status == TaskStatus.QUEUED) {
@@ -1230,7 +1241,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 progress = item.optDouble("progress", 0.0).toFloat(),
                 downloadedBytes = item.optLong("downloadedBytes"), totalBytes = item.optLong("totalBytes"),
                 status = when {
-                    systemTimedOut -> TaskStatus.QUEUED
+                    systemTimedOut -> TaskStatus.PAUSED
                     status == TaskStatus.DOWNLOADING -> TaskStatus.QUEUED
                     status == TaskStatus.FAILED -> {
                         if (

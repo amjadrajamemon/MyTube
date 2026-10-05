@@ -201,6 +201,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             thumbnailUrl = item.thumbnailUrl.ifBlank { getVideoThumbnail(item.videoId) },
             channelTitle = item.channelTitle.ifBlank { "YouTube" },
             durationText = if (live) "LIVE" else formatDurationLabel(item.durationSeconds),
+            viewCount = item.viewCount,
             watchedAt = 0L
         )
 
@@ -557,7 +558,16 @@ class TubeDeckRepository private constructor(private val context: Context) {
             PlaylistItem(
                 videoId = id, title = item.name, channel = item.uploaderName ?: "YouTube",
                 duration = if (item.duration > 0) "${item.duration / 60}:${(item.duration % 60).toString().padStart(2, '0')}" else "",
-                thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: getVideoThumbnail(id)
+                thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: getVideoThumbnail(id),
+                viewCount = runCatching {
+                    val value = item.javaClass.methods
+                        .firstOrNull { method ->
+                            method.parameterCount == 0 &&
+                                (method.name == "getViewCount" || method.name == "viewCount")
+                        }
+                        ?.invoke(item)
+                    (value as? Number)?.toLong() ?: -1L
+                }.getOrDefault(-1L)
             )
         }.distinctBy { it.videoId }
 
@@ -1291,6 +1301,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("thumbnailUrl", video.thumbnailUrl)
                 put("channelTitle", video.channelTitle)
                 put("durationText", video.durationText)
+                put("viewCount", video.viewCount)
                 put("watchedAt", video.watchedAt)
             })
         }
@@ -1312,6 +1323,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 thumbnailUrl = item.optString("thumbnailUrl"),
                 channelTitle = item.optString("channelTitle", "YouTube"),
                 durationText = item.optString("durationText"),
+                viewCount = item.optLong("viewCount", -1L),
                 watchedAt = item.optLong("watchedAt")
             )
         }.filter { it.videoId.isNotBlank() && YoutubeUrls.videoId(it.url) != null }

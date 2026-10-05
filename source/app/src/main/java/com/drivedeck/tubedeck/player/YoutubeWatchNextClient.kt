@@ -24,7 +24,8 @@ object YoutubeWatchNextClient {
         val title: String,
         val uploader: String,
         val durationSeconds: Long,
-        val thumbnailUrl: String
+        val thumbnailUrl: String,
+        val viewCount: Long = -1L
     )
 
     data class ContextPlaylist(
@@ -321,12 +322,17 @@ object YoutubeWatchNextClient {
             "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
         }
 
+        val viewCountText = textOf(renderer.opt("viewCountText")).ifBlank {
+            textOf(renderer.opt("shortViewCountText"))
+        }
+
         return ContextVideo(
             videoId = videoId,
             title = title,
             uploader = uploader,
             durationSeconds = parseDuration(durationText),
-            thumbnailUrl = thumbnail
+            thumbnailUrl = thumbnail,
+            viewCount = parseViewCount(viewCountText)
         )
     }
 
@@ -350,6 +356,21 @@ object YoutubeWatchNextClient {
         val parts = text.trim().split(':').mapNotNull { it.toLongOrNull() }
         if (parts.isEmpty()) return 0L
         return parts.fold(0L) { total, part -> total * 60L + part }
+    }
+
+    private fun parseViewCount(text: String): Long {
+        val clean = text.lowercase().replace(",", "").trim()
+        Regex("(\\d+(?:\\.\\d+)?)\\s*([kmb])?").find(clean)?.let { match ->
+            val value = match.groupValues[1].toDoubleOrNull() ?: return -1L
+            val multiplier = when (match.groupValues[2]) {
+                "k" -> 1_000.0
+                "m" -> 1_000_000.0
+                "b" -> 1_000_000_000.0
+                else -> 1.0
+            }
+            return (value * multiplier).toLong().coerceAtLeast(0L)
+        }
+        return -1L
     }
 
     private fun firstGroup(input: String, vararg patterns: String): String? {

@@ -2394,8 +2394,6 @@ private fun EpisodeVideoCard(
             episode.title,
             color = Color.White,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
             fontSize = 10.5.sp,
             lineHeight = 13.sp
         )
@@ -2448,8 +2446,6 @@ private fun RelatedVideoRow(
                 video.title,
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
                 fontSize = 12.sp,
                 lineHeight = 15.sp
             )
@@ -2457,10 +2453,15 @@ private fun RelatedVideoRow(
             Text(
                 video.channelTitle,
                 color = TubeDeckTextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 fontSize = 10.sp
             )
+            if (video.viewCount >= 0L) {
+                Text(
+                    String.format(Locale.US, "%,d views", video.viewCount),
+                    color = TubeDeckTextSecondary,
+                    fontSize = 9.5.sp
+                )
+            }
         }
         Icon(
             Icons.Default.MoreVert,

@@ -1064,6 +1064,12 @@ class MainActivity : ComponentActivity() {
                     inPictureInPicture = isPipMode,
                                         autoLoadEpisodes = settings.autoLoadEpisodes,
                                         autoLoadUpNext = settings.autoLoadUpNext,
+                                        playbackContinuationMode = settings.playbackContinuationMode,
+                                        onPlaybackContinuationModeChanged = { mode ->
+                                            repository.updateSettings(
+                                                repository.settings.value.copy(playbackContinuationMode = mode)
+                                            )
+                                        },
                                         preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                                         preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                                         seekIntervalSeconds = settings.seekIntervalSeconds,

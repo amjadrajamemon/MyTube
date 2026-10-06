@@ -1424,10 +1424,16 @@ fun NativeExoPlayer(
                     selectedMode = playbackContinuationMode,
                     episodesLoading = continuationEpisodesLoading,
                     nextEpisodeTitle = nextEpisodeTitle,
+                    currentVideoId = currentVideoId,
+                    relatedVideos = resolved?.relatedVideos.orEmpty(),
+                    episodeShelf = continuationEpisodeShelf,
                     onSelect = { mode ->
                         onPlaybackContinuationModeChanged(mode)
-                        showPlaybackModeCards = false
                         controlsVisible = true
+                    },
+                    onPlayMedia = { selected ->
+                        showPlaybackModeCards = false
+                        onPlayRelated?.invoke(selected)
                     }
                 )
             }
@@ -2741,51 +2747,151 @@ private fun PlaybackContinuationCards(
     selectedMode: PlaybackContinuationMode,
     episodesLoading: Boolean,
     nextEpisodeTitle: String?,
-    onSelect: (PlaybackContinuationMode) -> Unit
+    currentVideoId: String,
+    relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
+    onSelect: (PlaybackContinuationMode) -> Unit,
+    onPlayMedia: (OfflineMedia) -> Unit
 ) {
+    val episodeCards = remember(episodeShelf, currentVideoId) {
+        val episodes = episodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
+        val currentIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+        if (currentIndex >= 0) {
+            episodes.drop(currentIndex + 1).take(8)
+        } else {
+            episodes.filterNot { it.videoId == currentVideoId }.take(8)
+        }
+    }
+    val relatedCards = remember(relatedVideos, currentVideoId) {
+        relatedVideos
+            .filterNot { it.videoId == currentVideoId }
+            .distinctBy { it.videoId }
+            .take(8)
+    }
+
     Surface(
-        color = Color.Black.copy(alpha = .90f),
+        color = Color.Black.copy(alpha = .92f),
         shape = RoundedCornerShape(18.dp),
         tonalElevation = 6.dp,
         shadowElevation = 10.dp
     ) {
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 2.dp)
-        ) {
-            item(key = "loop-current") {
-                PlaybackContinuationCard(
-                    title = "Loop",
-                    subtitle = "Keep this video",
-                    icon = Icons.Default.Repeat,
-                    selected = selectedMode == PlaybackContinuationMode.LOOP_CURRENT,
-                    onClick = { onSelect(PlaybackContinuationMode.LOOP_CURRENT) }
-                )
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp)
+            ) {
+                item(key = "loop-current") {
+                    PlaybackContinuationCard(
+                        title = "Loop",
+                        subtitle = "Keep this video",
+                        icon = Icons.Default.Repeat,
+                        selected = selectedMode == PlaybackContinuationMode.LOOP_CURRENT,
+                        onClick = { onSelect(PlaybackContinuationMode.LOOP_CURRENT) }
+                    )
+                }
+                item(key = "auto-next") {
+                    PlaybackContinuationCard(
+                        title = "Auto next",
+                        subtitle = "Play next video",
+                        icon = Icons.Default.SkipNext,
+                        selected = selectedMode == PlaybackContinuationMode.AUTO_NEXT,
+                        onClick = { onSelect(PlaybackContinuationMode.AUTO_NEXT) }
+                    )
+                }
+                item(key = "episodes") {
+                    PlaybackContinuationCard(
+                        title = "Episodes",
+                        subtitle = when {
+                            episodesLoading -> "Finding episodes…"
+                            !nextEpisodeTitle.isNullOrBlank() -> nextEpisodeTitle
+                            else -> "Continue the series"
+                        },
+                        icon = Icons.Default.PlaylistPlay,
+                        selected = selectedMode == PlaybackContinuationMode.EPISODES,
+                        onClick = { onSelect(PlaybackContinuationMode.EPISODES) }
+                    )
+                }
             }
-            item(key = "auto-next") {
-                PlaybackContinuationCard(
-                    title = "Auto next",
-                    subtitle = "Play next video",
-                    icon = Icons.Default.SkipNext,
-                    selected = selectedMode == PlaybackContinuationMode.AUTO_NEXT,
-                    onClick = { onSelect(PlaybackContinuationMode.AUTO_NEXT) }
-                )
-            }
-            item(key = "episodes") {
-                PlaybackContinuationCard(
-                    title = "Episodes",
-                    subtitle = when {
-                        episodesLoading -> "Finding episodes…"
-                        !nextEpisodeTitle.isNullOrBlank() -> nextEpisodeTitle
-                        else -> "Continue the series"
-                    },
-                    icon = Icons.Default.PlaylistPlay,
-                    selected = selectedMode == PlaybackContinuationMode.EPISODES,
-                    onClick = { onSelect(PlaybackContinuationMode.EPISODES) }
-                )
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
+            Spacer(Modifier.height(8.dp))
+
+            when {
+                selectedMode == PlaybackContinuationMode.EPISODES && episodesLoading -> {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    }
+                }
+
+                selectedMode == PlaybackContinuationMode.EPISODES && episodeCards.isNotEmpty() -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        items(
+                            items = episodeCards,
+                            key = { "gesture-episode-${it.videoId}" }
+                        ) { episode ->
+                            EpisodeVideoCard(episode) {
+                                onPlayMedia(
+                                    OfflineMedia(
+                                        id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
+                                        title = episode.title,
+                                        videoId = episode.videoId,
+                                        thumbnailUrl = episode.thumbnailUrl,
+                                        mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                relatedCards.isNotEmpty() -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        items(
+                            items = relatedCards,
+                            key = { "gesture-related-${it.videoId}" }
+                        ) { related ->
+                            RelatedVideoCard(related) {
+                                onPlayMedia(
+                                    OfflineMedia(
+                                        id = "gesture-related-${related.videoId}-${System.nanoTime()}",
+                                        title = related.title,
+                                        videoId = related.videoId,
+                                        thumbnailUrl = related.thumbnailUrl,
+                                        mediaUri = related.url
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    Text(
+                        if (selectedMode == PlaybackContinuationMode.EPISODES) {
+                            "No additional episode cards found"
+                        } else {
+                            "No up-next cards available yet"
+                        },
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
             }
         }
     }
@@ -3592,6 +3698,58 @@ private fun EpisodeVideoCard(
         )
         Text(
             episode.uploader,
+            color = TubeDeckTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun RelatedVideoCard(
+    video: YoutubeStreamResolver.RelatedVideo,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(148.dp)
+            .clickable(enabled = true, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+            )
+            if (video.durationSeconds > 0L) {
+                Surface(
+                    color = Color.Black.copy(alpha = .82f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                ) {
+                    Text(
+                        formatDuration(video.durationSeconds * 1000L),
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            video.title,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 10.5.sp,
+            lineHeight = 13.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            video.channelTitle,
             color = TubeDeckTextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

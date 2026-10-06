@@ -751,7 +751,6 @@ fun NativeExoPlayer(
                                         latestOnPlayPlaylistItem?.invoke(latestPlaylistIndex + 1)
                                     }
 
-                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
                                     else -> latestOnPlaybackEnded?.invoke()
                                 }
                             }
@@ -1360,12 +1359,8 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                if (
-                                    playbackCardsSwipeZone &&
-                                    dragging &&
-                                    totalDy < -(size.height * .08f)
-                                ) {
-                                    showPlaybackModeCards = true
+                                if (playbackCardsSwipeZone && dragging) {
+                                    showPlaybackModeCards = totalDy < -(size.height * .08f)
                                     controlsVisible = true
                                     gestureOverlayVisible = false
                                 } else if (centerZone && dragging) {

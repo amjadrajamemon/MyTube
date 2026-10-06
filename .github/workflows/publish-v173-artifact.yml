@@ -1,0 +1,49 @@
+name: Publish MyTube v1.7.3 verified APKs
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/publish-v173-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download already-verified v1.7.3 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "/repos/${GITHUB_REPOSITORY}/actions/artifacts/11363909234/zip"             > /tmp/MyTube-v1.7.3-verified-build.zip
+          unzip -q /tmp/MyTube-v1.7.3-verified-build.zip -d dist
+          test -s dist/MyTube-v1.7.3-ARM64-Whisper-DownloadEngine-debug.apk
+          test -s dist/MyTube-v1.7.3-Universal-Older-Rooted-debug.apk
+          sha256sum -c dist/MyTube-v1.7.3-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum -c dist/MyTube-v1.7.3-Universal-Older-Rooted-debug.apk.sha256
+
+      - name: Publish separate direct-download APK assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v1.7.3-dual-arm64-universal-debug"
+          ASSETS=(
+            dist/MyTube-v1.7.3-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.7.3-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.7.3-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.7.3-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-v1.7.3-OAuth-Registration.txt
+            dist/MyTube-v1.7.3-Install-Compatibility.txt
+          )
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${ASSETS[@]}"               --repo "$GITHUB_REPOSITORY"               --target eafb89eee7c8933821c06ce047c49fe02baed209               --title "MyTube v1.7.3 ARM64 + Universal"               --notes "Verified MyTube v1.7.3 build from CI run #587, including TV-box safe playback startup, deferred AudioFX/DTS initialization, decoder fallback and conservative progressive MP4 startup."
+          fi

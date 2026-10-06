@@ -1403,6 +1403,40 @@ fun NativeExoPlayer(
                 )
             }
 
+            AnimatedVisibility(
+                visible = showPlaybackModeCards && !inPictureInPicture,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        start = 10.dp,
+                        end = 10.dp,
+                        bottom = if (compactPortrait) 70.dp else 78.dp
+                    )
+                    .zIndex(80f)
+            ) {
+                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                val episodes = continuationEpisodeShelf?.episodes.orEmpty()
+                val episodeIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+                val nextEpisodeTitle = if (episodeIndex >= 0 && episodeIndex < episodes.lastIndex) {
+                    episodes[episodeIndex + 1].title
+                } else {
+                    null
+                }
+
+                PlaybackContinuationCards(
+                    selectedMode = playbackContinuationMode,
+                    episodesLoading = continuationEpisodesLoading,
+                    nextEpisodeTitle = nextEpisodeTitle,
+                    onSelect = { mode ->
+                        onPlaybackContinuationModeChanged(mode)
+                        showPlaybackModeCards = false
+                        controlsVisible = true
+                    }
+                )
+            }
+
             if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive) &&
                 resolveError == null && !inPictureInPicture) {
                 Surface(
@@ -1606,6 +1640,24 @@ fun NativeExoPlayer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
+                            IconButton(
+                                onClick = {
+                                    showPlaybackModeCards = !showPlaybackModeCards
+                                    controlsVisible = true
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = when (playbackContinuationMode) {
+                                        PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat
+                                        PlaybackContinuationMode.AUTO_NEXT -> Icons.Default.SkipNext
+                                        PlaybackContinuationMode.EPISODES -> Icons.Default.PlaylistPlay
+                                    },
+                                    contentDescription = "Playback mode: ${playbackContinuationMode.label}",
+                                    tint = TubeDeckAccentCyan,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                             TextButton(
                                 onClick = {
                                     playbackSpeed = cycleSpeed(exoPlayer)
@@ -2686,6 +2738,107 @@ private fun equalizerFrequencyLabel(hz: Int): String {
         if (khz >= 10f) "${khz.roundToInt()} kHz" else String.format(Locale.ROOT, "%.1f kHz", khz)
     } else {
         "${hz} Hz"
+    }
+}
+
+@Composable
+private fun PlaybackContinuationCards(
+    selectedMode: PlaybackContinuationMode,
+    episodesLoading: Boolean,
+    nextEpisodeTitle: String?,
+    onSelect: (PlaybackContinuationMode) -> Unit
+) {
+    Surface(
+        color = Color.Black.copy(alpha = .90f),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 6.dp,
+        shadowElevation = 10.dp
+    ) {
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp)
+        ) {
+            item(key = "loop-current") {
+                PlaybackContinuationCard(
+                    title = "Loop",
+                    subtitle = "Keep this video",
+                    icon = Icons.Default.Repeat,
+                    selected = selectedMode == PlaybackContinuationMode.LOOP_CURRENT,
+                    onClick = { onSelect(PlaybackContinuationMode.LOOP_CURRENT) }
+                )
+            }
+            item(key = "auto-next") {
+                PlaybackContinuationCard(
+                    title = "Auto next",
+                    subtitle = "Play next video",
+                    icon = Icons.Default.SkipNext,
+                    selected = selectedMode == PlaybackContinuationMode.AUTO_NEXT,
+                    onClick = { onSelect(PlaybackContinuationMode.AUTO_NEXT) }
+                )
+            }
+            item(key = "episodes") {
+                PlaybackContinuationCard(
+                    title = "Episodes",
+                    subtitle = when {
+                        episodesLoading -> "Finding episodes…"
+                        !nextEpisodeTitle.isNullOrBlank() -> nextEpisodeTitle
+                        else -> "Continue the series"
+                    },
+                    icon = Icons.Default.PlaylistPlay,
+                    selected = selectedMode == PlaybackContinuationMode.EPISODES,
+                    onClick = { onSelect(PlaybackContinuationMode.EPISODES) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackContinuationCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) TubeDeckAccentCyan.copy(alpha = .22f) else TubeDeckSurfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = if (selected) 5.dp else 1.dp,
+        modifier = Modifier.width(142.dp).heightIn(min = 70.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) TubeDeckAccentCyan else Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(
+                    subtitle,
+                    color = TubeDeckTextSecondary,
+                    fontSize = 9.5.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 

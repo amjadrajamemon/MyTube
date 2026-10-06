@@ -2599,25 +2599,56 @@ private fun PortraitCompanionPanel(
     var commentsLoading by remember(media.id) { mutableStateOf(false) }
     var commentsLoaded by remember(media.id) { mutableStateOf(false) }
     var commentsError by remember(media.id) { mutableStateOf<String?>(null) }
+    var commentsDisabled by remember(media.id) { mutableStateOf(false) }
+    var commentsHasMore by remember(media.id) { mutableStateOf(true) }
+    var commentsLimit by remember(media.id) { mutableIntStateOf(20) }
+    var commentsForceRefresh by remember(media.id) { mutableStateOf(false) }
     var showDescription by rememberSaveable(media.id) { mutableStateOf(false) }
     var episodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var episodesLoading by remember(media.id) { mutableStateOf(false) }
 
     fun refreshComments() {
+        if (commentsLoading) return
+        comments = emptyList()
         commentsLoaded = false
         commentsError = null
+        commentsDisabled = false
+        commentsHasMore = true
+        commentsLimit = 20
+        commentsForceRefresh = true
+    }
+
+    fun loadMoreComments() {
+        if (commentsLoading || !commentsHasMore || commentsLimit >= 80) return
+        commentsLimit = (commentsLimit + 20).coerceAtMost(80)
+        commentsLoaded = false
+        commentsError = null
+        commentsForceRefresh = false
     }
 
     BackHandler(enabled = showDescription) {
         showDescription = false
     }
 
-    LaunchedEffect(showComments, media.mediaUri, commentsLoaded) {
+    LaunchedEffect(showComments, media.mediaUri, commentsLoaded, commentsLimit) {
         if (!showComments || !commentsAvailable || commentsLoaded || commentsLoading) return@LaunchedEffect
         commentsLoading = true
         commentsError = null
+        val previousCount = comments.size
         try {
-            comments = YoutubeStreamResolver.comments(context, media.mediaUri)
+            val batch = YoutubeStreamResolver.commentsBatch(
+                context = context,
+                url = media.mediaUri,
+                limit = commentsLimit,
+                forceRefresh = commentsForceRefresh
+            )
+            commentsForceRefresh = false
+            comments = batch.items
+            commentsDisabled = batch.commentsDisabled
+            commentsHasMore =
+                batch.hasMore &&
+                batch.items.size < 80 &&
+                (previousCount == 0 || batch.items.size > previousCount)
             commentsLoaded = true
         } catch (cancel: CancellationException) {
             throw cancel
@@ -2742,7 +2773,7 @@ private fun PortraitCompanionPanel(
                 }
 
                 if (showComments) {
-                    IconButton(onClick = ::refreshComments, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = ::refreshComments, enabled = !commentsLoading, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Icons.Default.Refresh,
                             "Refresh comments",
@@ -2807,7 +2838,7 @@ private fun PortraitCompanionPanel(
                     }
                 }
 
-                showComments && commentsLoading -> {
+                showComments && commentsLoading && comments.isEmpty() -> {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2816,6 +2847,18 @@ private fun PortraitCompanionPanel(
                         CircularProgressIndicator(modifier = Modifier.size(32.dp))
                         Spacer(Modifier.height(12.dp))
                         Text("Loading comments…", color = TubeDeckTextSecondary, fontSize = 12.sp)
+                    }
+                }
+
+                showComments && commentsDisabled -> {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Comment, null, tint = TubeDeckTextSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Comments are disabled for this video", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -2831,7 +2874,7 @@ private fun PortraitCompanionPanel(
                         Spacer(Modifier.height(5.dp))
                         Text(commentsError.orEmpty(), color = TubeDeckTextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(10.dp))
-                        OutlinedButton(onClick = ::refreshComments) { Text("Retry") }
+                        OutlinedButton(onClick = ::refreshComments, enabled = !commentsLoading) { Text("Retry") }
                     }
                 }
 
@@ -2848,6 +2891,28 @@ private fun PortraitCompanionPanel(
                         ) {
                             items(comments, key = { it.id }) { comment ->
                                 NativeCommentRow(comment)
+                            }
+
+                            if (commentsLoading) {
+                                item(key = "comments-loading-more") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Loading more comments…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                                    }
+                                }
+                            } else if (commentsHasMore && comments.size < 80) {
+                                item(key = "comments-load-more") {
+                                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        OutlinedButton(onClick = ::loadMoreComments) {
+                                            Text("Load more")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

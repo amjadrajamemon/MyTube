@@ -110,6 +110,7 @@ import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
 import com.drivedeck.tubedeck.data.model.PlayerMode
+import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
 import com.drivedeck.tubedeck.data.model.PlaylistItem
 import com.drivedeck.tubedeck.data.model.SponsorSegment
 import com.drivedeck.tubedeck.player.LiveDubEngine
@@ -145,6 +146,8 @@ fun PlayerScreen(
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
+    onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit = {},
     preferredPlaybackQualityHeight: Int = 0,
     preferredPlaybackSpeed: Float = 1.0f,
     seekIntervalSeconds: Int = 10,
@@ -231,6 +234,8 @@ fun PlayerScreen(
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            playbackContinuationMode = playbackContinuationMode,
+            onPlaybackContinuationModeChanged = onPlaybackContinuationModeChanged,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
             preferredPlaybackSpeed = preferredPlaybackSpeed,
             seekIntervalSeconds = seekIntervalSeconds,
@@ -391,6 +396,8 @@ fun NativeExoPlayer(
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    playbackContinuationMode: PlaybackContinuationMode,
+    onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit,
     preferredPlaybackQualityHeight: Int,
     preferredPlaybackSpeed: Float,
     seekIntervalSeconds: Int,
@@ -452,6 +459,10 @@ fun NativeExoPlayer(
     var showSettings by remember { mutableStateOf(false) }
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
+    var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
+    var continuationEpisodesLoaded by remember(media.id) { mutableStateOf(false) }
     var scrubFraction by remember(media.id) { mutableStateOf<Float?>(null) }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
@@ -527,6 +538,54 @@ fun NativeExoPlayer(
     LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
         playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)
         exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
+    LaunchedEffect(exoPlayer, playbackContinuationMode) {
+        exoPlayer.repeatMode = if (playbackContinuationMode == PlaybackContinuationMode.LOOP_CURRENT) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+    }
+
+    LaunchedEffect(showPlaybackModeCards) {
+        if (showPlaybackModeCards) {
+            delay(6_000L)
+            showPlaybackModeCards = false
+        }
+    }
+
+    LaunchedEffect(
+        showPlaybackModeCards,
+        playbackContinuationMode,
+        firstFrameRendered,
+        media.mediaUri,
+        resolved?.title
+    ) {
+        if (!youtubeVideo || !firstFrameRendered) return@LaunchedEffect
+        if (!showPlaybackModeCards && playbackContinuationMode != PlaybackContinuationMode.EPISODES) {
+            return@LaunchedEffect
+        }
+        if (continuationEpisodesLoaded || continuationEpisodesLoading) return@LaunchedEffect
+
+        val titleHint = resolved?.title?.takeIf { it.isNotBlank() }
+            ?: media.title.takeIf { it.isNotBlank() }
+            ?: return@LaunchedEffect
+
+        continuationEpisodesLoading = true
+        try {
+            continuationEpisodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(
+                url = media.mediaUri,
+                titleHint = titleHint
+            )
+            continuationEpisodesLoaded = true
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Throwable) {
+            continuationEpisodeShelf = null
+        } finally {
+            continuationEpisodesLoading = false
+        }
     }
 
     LaunchedEffect(pauseGeneration) {
@@ -621,6 +680,15 @@ fun NativeExoPlayer(
         }
         controlsVisible = true
     }
+
+    val latestContinuationMode by rememberUpdatedState(playbackContinuationMode)
+    val latestResolvedMedia by rememberUpdatedState(resolved)
+    val latestContinuationEpisodeShelf by rememberUpdatedState(continuationEpisodeShelf)
+    val latestOnNextItem by rememberUpdatedState(onNextItem)
+    val latestOnPlayRelated by rememberUpdatedState(onPlayRelated)
+    val latestOnPlayPlaylistItem by rememberUpdatedState(onPlayPlaylistItem)
+    val latestPlaylistItems by rememberUpdatedState(playlistItems)
+    val latestPlaylistIndex by rememberUpdatedState(playlistIndex)
 
     DisposableEffect(exoPlayer, mediaSession) {
         val listener = object : Player.Listener {

@@ -1401,10 +1401,10 @@ fun NativeExoPlayer(
                 )
             }
 
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = showPlaybackModeCards && !inPictureInPicture,
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(

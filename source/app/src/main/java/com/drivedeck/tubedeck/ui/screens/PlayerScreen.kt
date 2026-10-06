@@ -562,7 +562,7 @@ fun NativeExoPlayer(
         media.mediaUri,
         resolved?.title
     ) {
-        if (!youtubeVideo || !firstFrameRendered) return@LaunchedEffect
+        if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
         if (!showPlaybackModeCards && playbackContinuationMode != PlaybackContinuationMode.EPISODES) {
             return@LaunchedEffect
         }

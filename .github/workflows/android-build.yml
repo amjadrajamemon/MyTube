@@ -162,6 +162,16 @@ jobs:
           grep -Fq 'YoutubeStreamResolver.commentsBatch(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'Comments are disabled for this video' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'Text("Load more")' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'enum class PlaybackContinuationMode' source/app/src/main/java/com/drivedeck/tubedeck/data/model/TubeDeckModels.kt
+          grep -Fq 'putString("playbackContinuationMode", next.playbackContinuationMode.name)' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'playbackCardsSwipeZone' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'showPlaybackModeCards = totalDy < -(size.height * .08f)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'private fun PlaybackContinuationCards(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Player.REPEAT_MODE_ONE' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'PlaybackContinuationMode.EPISODES ->' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$MAIN"
+          grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$NATIVE"
           grep -Fq '.pointerInput(snapshot.bands.size)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'setBandNormalizedRealtime' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt
           grep -Fq 'commitCustomCurve' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackEqualizerController.kt

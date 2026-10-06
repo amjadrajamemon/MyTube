@@ -36,6 +36,8 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -377,8 +379,8 @@ fun WebPlayer(
 
             AnimatedVisibility(
                 visible = downloadActionsVisible && (onDownloadVideo != null || onDownloadPlaylist != null),
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 68.dp, end = 12.dp)
             ) {
                 DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
@@ -571,6 +573,7 @@ fun NativeExoPlayer(
         val titleHint = resolved?.title?.takeIf { it.isNotBlank() }
             ?: media.title.takeIf { it.isNotBlank() }
             ?: return@LaunchedEffect
+        if (titleHint.equals("Now Playing", ignoreCase = true)) return@LaunchedEffect
 
         continuationEpisodesLoading = true
         try {
@@ -2855,7 +2858,7 @@ private fun PlaybackContinuationCards(
                     }
                 }
 
-                relatedCards.isNotEmpty() -> {
+                selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty() -> {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),

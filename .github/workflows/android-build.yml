@@ -170,6 +170,10 @@ jobs:
           grep -Fq 'PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'Player.REPEAT_MODE_ONE' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'PlaybackContinuationMode.EPISODES ->' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Finding episode cards…' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'private fun RelatedVideoCard(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'slideInVertically(initialOffsetY = { it })' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$MAIN"
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$NATIVE"
           grep -Fq '.pointerInput(snapshot.bands.size)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt

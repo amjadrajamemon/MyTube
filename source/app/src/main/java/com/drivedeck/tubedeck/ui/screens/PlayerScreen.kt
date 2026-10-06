@@ -1286,6 +1286,9 @@ fun NativeExoPlayer(
                                 var pinchDistance = 0f
                                 val rightSide = down.position.x > size.width / 2f
                                 val centerZone = down.position.x in (size.width * .30f)..(size.width * .70f)
+                                val playbackCardsSwipeZone =
+                                    down.position.y >= size.height * .68f &&
+                                    down.position.x in (size.width * .12f)..(size.width * .88f)
                                 val startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                                 val startBrightness = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: .5f
@@ -1326,7 +1329,11 @@ fun NativeExoPlayer(
                                     if (dragging) {
                                         change.consume()
                                         val fraction = (-totalDy / size.height.toFloat()).coerceIn(-1f, 1f)
-                                        if (centerZone) {
+                                        if (playbackCardsSwipeZone && totalDy < -12f) {
+                                            showPlaybackModeCards = true
+                                            gestureOverlayVisible = false
+                                            controlsVisible = true
+                                        } else if (centerZone) {
                                             val action = PlaybackSurfaceGesturePolicy.verticalRelease(
                                                 down.position.x, size.width.toFloat(), totalDy,
                                                 size.height.toFloat(), isFullscreen, pipEnabled
@@ -1353,7 +1360,15 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                if (centerZone && dragging) {
+                                if (
+                                    playbackCardsSwipeZone &&
+                                    dragging &&
+                                    totalDy < -(size.height * .08f)
+                                ) {
+                                    showPlaybackModeCards = true
+                                    controlsVisible = true
+                                    gestureOverlayVisible = false
+                                } else if (centerZone && dragging) {
                                     when (PlaybackSurfaceGesturePolicy.verticalRelease(
                                         down.position.x, size.width.toFloat(), totalDy,
                                         size.height.toFloat(), isFullscreen, pipEnabled

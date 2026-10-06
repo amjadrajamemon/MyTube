@@ -710,7 +710,74 @@ fun NativeExoPlayer(
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
                         endActionDispatched = true
-                        latestOnPlaybackEnded?.invoke()
+                        when (latestContinuationMode) {
+                            PlaybackContinuationMode.LOOP_CURRENT -> {
+                                exoPlayer.seekTo(0L)
+                                exoPlayer.playWhenReady = true
+                                exoPlayer.play()
+                                endActionDispatched = false
+                            }
+
+                            PlaybackContinuationMode.EPISODES -> {
+                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                                val episodes = latestContinuationEpisodeShelf?.episodes.orEmpty()
+                                    .distinctBy { it.videoId }
+                                val currentEpisodeIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+                                val nextEpisode = if (
+                                    currentEpisodeIndex >= 0 &&
+                                    currentEpisodeIndex < episodes.lastIndex
+                                ) {
+                                    episodes[currentEpisodeIndex + 1]
+                                } else {
+                                    null
+                                }
+
+                                when {
+                                    nextEpisode != null && latestOnPlayRelated != null -> {
+                                        latestOnPlayRelated?.invoke(
+                                            OfflineMedia(
+                                                id = "episode-${nextEpisode.videoId}-${System.nanoTime()}",
+                                                title = nextEpisode.title,
+                                                videoId = nextEpisode.videoId,
+                                                thumbnailUrl = nextEpisode.thumbnailUrl,
+                                                mediaUri = "https://www.youtube.com/watch?v=${nextEpisode.videoId}"
+                                            )
+                                        )
+                                    }
+
+                                    latestPlaylistIndex >= 0 &&
+                                        latestPlaylistIndex < latestPlaylistItems.lastIndex &&
+                                        latestOnPlayPlaylistItem != null -> {
+                                        latestOnPlayPlaylistItem?.invoke(latestPlaylistIndex + 1)
+                                    }
+
+                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
+                                    else -> latestOnPlaybackEnded?.invoke()
+                                }
+                            }
+
+                            PlaybackContinuationMode.AUTO_NEXT -> {
+                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                                val suggested = latestResolvedMedia?.relatedVideos
+                                    ?.firstOrNull { it.videoId.isNotBlank() && it.videoId != currentVideoId }
+
+                                when {
+                                    latestOnPlaybackEnded != null -> latestOnPlaybackEnded?.invoke()
+                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
+                                    suggested != null && latestOnPlayRelated != null -> {
+                                        latestOnPlayRelated?.invoke(
+                                            OfflineMedia(
+                                                id = "auto-next-${suggested.videoId}-${System.nanoTime()}",
+                                                title = suggested.title,
+                                                videoId = suggested.videoId,
+                                                thumbnailUrl = suggested.thumbnailUrl,
+                                                mediaUri = suggested.url
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

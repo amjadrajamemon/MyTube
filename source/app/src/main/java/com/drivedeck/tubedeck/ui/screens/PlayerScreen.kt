@@ -295,6 +295,8 @@ fun WebPlayer(
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var isCustomViewShowing by remember { mutableStateOf(false) }
     var downloadActionsVisible by remember { mutableStateOf(true) }
+    var webRenderCrashed by remember(media.id) { mutableStateOf(false) }
+    var webViewGeneration by remember(media.id) { mutableIntStateOf(0) }
 
     LaunchedEffect(downloadActionsVisible, isCustomViewShowing) {
         if (downloadActionsVisible && !isCustomViewShowing) {
@@ -311,6 +313,7 @@ fun WebPlayer(
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+        key(webViewGeneration) {
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
@@ -333,6 +336,17 @@ fun WebPlayer(
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
                             request?.url?.scheme != "https"
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: android.webkit.RenderProcessGoneDetail?
+                        ): Boolean {
+                            // Returning true contains a renderer crash inside the player instead of
+                            // letting Android terminate the MyTube process. The dead WebView is
+                            // replaced only when the user taps Retry.
+                            webRenderCrashed = true
+                            return true
+                        }
                     }
                     webChromeClient = object : WebChromeClient() {
                         override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
@@ -370,8 +384,37 @@ fun WebPlayer(
                 }
             },
             modifier = Modifier.fillMaxSize(),
-            onRelease = { view -> view.stopLoading(); view.destroy() }
+            onRelease = { view ->
+                runCatching { view.stopLoading() }
+                runCatching { view.destroy() }
+            }
         )
+        }
+
+        if (webRenderCrashed) {
+            Surface(
+                color = Color.Black.copy(alpha = .92f),
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Web player stopped", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        "The Android WebView renderer exited. MyTube stayed open.",
+                        color = Color.White.copy(alpha = .8f),
+                        fontSize = 12.sp
+                    )
+                    TextButton(
+                        onClick = {
+                            webRenderCrashed = false
+                            webViewGeneration += 1
+                        }
+                    ) { Text("Retry web player") }
+                }
+            }
+        }
 
         if (!isCustomViewShowing) {
             IconButton(

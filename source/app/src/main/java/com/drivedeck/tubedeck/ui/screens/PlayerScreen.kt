@@ -565,9 +565,9 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(showPlaybackModeCards) {
-        if (showPlaybackModeCards) {
-            delay(6_000L)
+    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading) {
+        if (showPlaybackModeCards && !continuationEpisodesLoading) {
+            delay(10_000L)
             showPlaybackModeCards = false
         }
     }

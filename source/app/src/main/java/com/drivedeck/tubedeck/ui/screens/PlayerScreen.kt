@@ -3616,7 +3616,7 @@ private fun RichYoutubeDescription(
 @Composable
 private fun EpisodeVideoCard(
     episode: YoutubeStreamResolver.DiscoveredEpisode,
-    cardWidth: Dp,
+    cardWidth: Dp = 132.dp,
     onClick: () -> Unit
 ) {
     Column(

@@ -2772,6 +2772,8 @@ private fun PlaybackContinuationCards(
     currentVideoId: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
+    showRelevantShelf: Boolean,
+    showEpisodesShelf: Boolean,
     onSelect: (PlaybackContinuationMode) -> Unit,
     onPlayMedia: (OfflineMedia) -> Unit
 ) {
@@ -2840,44 +2842,24 @@ private fun PlaybackContinuationCards(
             HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
             Spacer(Modifier.height(8.dp))
 
-            when {
-                selectedMode == PlaybackContinuationMode.EPISODES && episodesLoading -> {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
-                    }
-                }
+            if (!showRelevantShelf && !showEpisodesShelf) {
+                Text(
+                    "Relevant and Episodes rows are disabled in Settings",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
 
-                selectedMode == PlaybackContinuationMode.EPISODES && episodeCards.isNotEmpty() -> {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp)
-                    ) {
-                        items(
-                            items = episodeCards,
-                            key = { "gesture-episode-${it.videoId}" }
-                        ) { episode ->
-                            EpisodeVideoCard(episode) {
-                                onPlayMedia(
-                                    OfflineMedia(
-                                        id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
-                                        title = episode.title,
-                                        videoId = episode.videoId,
-                                        thumbnailUrl = episode.thumbnailUrl,
-                                        mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty() -> {
+            if (showRelevantShelf) {
+                Text(
+                    "Relevant",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+                if (relatedCards.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2900,19 +2882,75 @@ private fun PlaybackContinuationCards(
                             }
                         }
                     }
-                }
-
-                else -> {
+                } else {
                     Text(
-                        if (selectedMode == PlaybackContinuationMode.EPISODES) {
-                            "No additional episode cards found"
-                        } else {
-                            "No up-next cards available yet"
-                        },
+                        "No relevant cards available yet",
                         color = TubeDeckTextSecondary,
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     )
+                }
+            }
+
+            if (showRelevantShelf && showEpisodesShelf) {
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .52f))
+                Spacer(Modifier.height(4.dp))
+            }
+
+            if (showEpisodesShelf) {
+                Text(
+                    "Episodes",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+                when {
+                    episodesLoading -> {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                        }
+                    }
+
+                    episodeCards.isNotEmpty() -> {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp)
+                        ) {
+                            items(
+                                items = episodeCards,
+                                key = { "gesture-episode-${it.videoId}" }
+                            ) { episode ->
+                                EpisodeVideoCard(episode) {
+                                    onPlayMedia(
+                                        OfflineMedia(
+                                            id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
+                                            title = episode.title,
+                                            videoId = episode.videoId,
+                                            thumbnailUrl = episode.thumbnailUrl,
+                                            mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        Text(
+                            "No additional episode cards found",
+                            color = TubeDeckTextSecondary,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }

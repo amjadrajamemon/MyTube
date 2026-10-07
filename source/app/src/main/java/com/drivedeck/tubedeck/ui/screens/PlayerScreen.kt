@@ -526,6 +526,8 @@ fun NativeExoPlayer(
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showCaptionMenu by remember { mutableStateOf(false) }
+    var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
+    var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
@@ -767,6 +769,102 @@ fun NativeExoPlayer(
         controlsVisible = true
     }
 
+    fun selectCaptionLanguage(tag: String) {
+        val requestedBase = tag.substringBefore('-').lowercase(Locale.US)
+        if (tag == "auto") {
+            captionLanguageTag = "auto"
+            captionsEnabled = true
+            controlsVisible = true
+            return
+        }
+
+        val existing = resolved?.subtitles.orEmpty().firstOrNull {
+            it.languageTag.substringBefore('-').equals(requestedBase, ignoreCase = true)
+        }
+        if (existing != null) {
+            captionLanguageTag = existing.languageTag
+            captionsEnabled = true
+            controlsVisible = true
+            return
+        }
+
+        if (requestedBase !in setOf("en", "ur") || captionTrackFetchInProgress) return
+        captionTrackFetchInProgress = true
+        pendingCaptionLanguage = requestedBase
+        controlsVisible = true
+        Toast.makeText(
+            context,
+            if (requestedBase == "ur") "Loading Urdu captions…" else "Loading English captions…",
+            Toast.LENGTH_SHORT
+        ).show()
+
+        playbackScope.launch {
+            try {
+                val extra = YoutubeStreamResolver.preferredSubtitleTracks(
+                    context = context,
+                    url = media.mediaUri,
+                    languages = setOf(requestedBase)
+                )
+                val track = extra.firstOrNull {
+                    it.languageTag.substringBefore('-').equals(requestedBase, ignoreCase = true)
+                }
+                val current = resolved
+                if (track == null || current == null) {
+                    Toast.makeText(
+                        context,
+                        if (requestedBase == "ur") {
+                            "Urdu captions are not exposed by YouTube for this video"
+                        } else {
+                            "English captions are not exposed by YouTube for this video"
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+
+                val updated = current.copy(
+                    subtitles = YoutubeStreamResolver.prioritizeSubtitlesForPlayer(
+                        current.subtitles + extra,
+                        preferredLanguage = requestedBase
+                    )
+                )
+                resolved = updated
+                hasCaptions = true
+                captionLanguageTag = track.languageTag
+                captionsEnabled = true
+
+                val target = if (autoQuality) {
+                    chooseAutoHeight(
+                        context,
+                        updated.options.map { it.height },
+                        bandwidthMeter.bitrateEstimate
+                    )
+                } else {
+                    selectedHeight.takeIf { it > 0 }
+                        ?: updated.options.maxOfOrNull { it.height }
+                        ?: 720
+                }
+                loadResolvedStream(
+                    sourceMedia = updated,
+                    requestedHeight = target,
+                    autoSelected = autoQuality,
+                    preservePosition = true
+                )
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Throwable) {
+                Toast.makeText(
+                    context,
+                    "Could not load the requested caption language",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                captionTrackFetchInProgress = false
+                pendingCaptionLanguage = null
+            }
+        }
+    }
+
     fun rotatePlayer() {
         activity ?: return
         activity.requestedOrientation = if (isPortrait) {
@@ -885,7 +983,9 @@ fun NativeExoPlayer(
                 }
             }
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                hasCaptions = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSupported } || resolved?.subtitles?.isNotEmpty() == true
+                hasCaptions = youtubeVideo ||
+                    tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSupported } ||
+                    resolved?.subtitles?.isNotEmpty() == true
             }
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 equalizerSnapshot = equalizerController.attach(audioSessionId)
@@ -943,7 +1043,7 @@ fun NativeExoPlayer(
                                 forceRefresh = true
                             )
                             resolved = fresh
-                            hasCaptions = fresh.subtitles.isNotEmpty()
+                            hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
 
                             val decoderSafeHeight = fresh.progressiveOptions
                                 .filter { it.videoMimeType == "video/mp4" && it.height <= 720 }
@@ -1014,7 +1114,7 @@ fun NativeExoPlayer(
                 val result = YoutubeStreamResolver.resolve(context, media.mediaUri)
                 resolved = result
                 result.title.takeIf { it.isNotBlank() }?.let(onResolvedTitleChanged)
-                hasCaptions = result.subtitles.isNotEmpty()
+                hasCaptions = result.subtitles.isNotEmpty() || youtubeVideo
                 if (tvSafePlayback) {
                     // TV boxes frequently ship fragile vendor codecs. Start on a single-file MP4
                     // representation at a conservative height; higher qualities remain selectable.
@@ -1107,7 +1207,7 @@ fun NativeExoPlayer(
                 media.mediaUri
             )
             resolved = fresh
-            hasCaptions = fresh.subtitles.isNotEmpty()
+            hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
             val target = if (autoQuality) {
                 chooseAutoHeight(
                     context,
@@ -1898,7 +1998,7 @@ fun NativeExoPlayer(
                                             showCaptionMenu = true
                                             controlsVisible = true
                                         },
-                                        enabled = hasCaptions,
+                                        enabled = hasCaptions || youtubeVideo,
                                         modifier = Modifier.size(controllerHeight)
                                     ) {
                                         Icon(
@@ -1947,32 +2047,39 @@ fun NativeExoPlayer(
                                                 captionsEnabled = true
                                             }
                                         )
-                                        resolved?.subtitles.orEmpty()
-                                            .distinctBy { it.languageTag.lowercase(Locale.US) }
-                                            .forEach { subtitle ->
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            if (
-                                                                captionsEnabled &&
-                                                                captionLanguageTag.equals(subtitle.languageTag, ignoreCase = true)
-                                                            ) {
-                                                                Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                                                                Spacer(Modifier.width(6.dp))
-                                                            }
-                                                            Text(
-                                                                subtitle.displayName +
-                                                                    if (subtitle.autoGenerated) " • Auto-generated" else ""
-                                                            )
-                                                        }
-                                                    },
-                                                    onClick = {
-                                                        showCaptionMenu = false
-                                                        captionLanguageTag = subtitle.languageTag
-                                                        captionsEnabled = true
-                                                    }
-                                                )
+                                        listOf("en" to "English", "ur" to "Urdu").forEach { (tag, label) ->
+                                            val selectedTrack = resolved?.subtitles.orEmpty().firstOrNull {
+                                                it.languageTag.substringBefore('-').equals(tag, ignoreCase = true)
                                             }
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (
+                                                            captionsEnabled &&
+                                                            captionLanguageTag.substringBefore('-')
+                                                                .equals(tag, ignoreCase = true)
+                                                        ) {
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                            Spacer(Modifier.width(6.dp))
+                                                        }
+                                                        Text(
+                                                            when {
+                                                                pendingCaptionLanguage == tag && captionTrackFetchInProgress ->
+                                                                    label + " • Loading…"
+                                                                selectedTrack?.autoGenerated == true ->
+                                                                    label + " • Auto-translated"
+                                                                else -> label
+                                                            }
+                                                        )
+                                                    }
+                                                },
+                                                enabled = !captionTrackFetchInProgress || pendingCaptionLanguage == tag,
+                                                onClick = {
+                                                    showCaptionMenu = false
+                                                    selectCaptionLanguage(tag)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                                 TextButton(
@@ -2272,10 +2379,7 @@ fun NativeExoPlayer(
             availableSubtitles = resolved?.subtitles.orEmpty(),
             onLiveDub = { liveDubEnabled = it },
             onDubMethod = { dubMethod = it },
-            onCaptionLanguage = { tag ->
-                captionLanguageTag = tag
-                captionsEnabled = true
-            },
+            onCaptionLanguage = ::selectCaptionLanguage,
             onDubSource = { dubSourceCode = it },
             onDubTarget = { dubTargetCode = it },
             onDubVoiceProfile = { dubVoiceProfile = it; liveDubEngine.setVoiceProfile(it) },
@@ -2957,7 +3061,9 @@ private fun PlaybackContinuationCards(
         val episodes = episodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
         val currentIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
         if (currentIndex >= 0) {
-            episodes.drop(currentIndex + 1).take(12)
+            (episodes.drop(currentIndex + 1) + episodes.take(currentIndex))
+                .filterNot { it.videoId == currentVideoId }
+                .take(12)
         } else {
             episodes.filterNot { it.videoId == currentVideoId }.take(12)
         }
@@ -4072,9 +4178,14 @@ private fun PlayerSettingsDialog(
                     Box {
                         OutlinedButton(onClick = { captionMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                if (captionLanguageTag == "auto") "Auto"
-                                else availableSubtitles.firstOrNull { it.languageTag == captionLanguageTag }?.displayName
-                                    ?: captionLanguageTag
+                                when (captionLanguageTag.substringBefore('-').lowercase(Locale.US)) {
+                                    "auto" -> "Auto"
+                                    "en" -> "English"
+                                    "ur" -> "Urdu"
+                                    else -> availableSubtitles.firstOrNull {
+                                        it.languageTag == captionLanguageTag
+                                    }?.displayName ?: captionLanguageTag
+                                }
                             )
                             Spacer(Modifier.weight(1f))
                             Icon(Icons.Default.ArrowDropDown, null)
@@ -4084,14 +4195,17 @@ private fun PlayerSettingsDialog(
                                 text = { Text("Auto") },
                                 onClick = { captionMenuExpanded = false; onCaptionLanguage("auto") }
                             )
-                            availableSubtitles.distinctBy { it.languageTag + ":" + it.autoGenerated }.forEach { subtitle ->
+                            listOf("en" to "English", "ur" to "Urdu").forEach { (tag, label) ->
+                                val track = availableSubtitles.firstOrNull {
+                                    it.languageTag.substringBefore('-').equals(tag, ignoreCase = true)
+                                }
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            subtitle.displayName + if (subtitle.autoGenerated) " • Auto-generated" else ""
+                                            label + if (track?.autoGenerated == true) " • Auto-translated" else ""
                                         )
                                     },
-                                    onClick = { captionMenuExpanded = false; onCaptionLanguage(subtitle.languageTag) }
+                                    onClick = { captionMenuExpanded = false; onCaptionLanguage(tag) }
                                 )
                             }
                         }

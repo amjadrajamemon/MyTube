@@ -376,6 +376,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
     fun clearWatchHistory() {
         homeSuggestionsJob?.cancel()
+        homeSuggestionsJob = null
         _watchHistory.value = emptyList()
         _homeSuggestions.value = emptyList()
         prefs.edit().remove("watch_history_json").remove("home_suggestions_json")

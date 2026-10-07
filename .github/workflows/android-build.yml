@@ -164,6 +164,12 @@ jobs:
           grep -Fq 'Text("Load more")' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'enum class PlaybackContinuationMode' source/app/src/main/java/com/drivedeck/tubedeck/data/model/TubeDeckModels.kt
           grep -Fq 'putString("playbackContinuationMode", next.playbackContinuationMode.name)' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'putFloat("playerControllerScale"' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'putBoolean("showRelevantShelf"' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'putBoolean("showEpisodesShelf"' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'Controller size ·' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
+          grep -Fq 'Swipe shelf · Relevant row' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
+          grep -Fq 'Swipe shelf · Episodes row' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
           grep -Fq 'playbackCardsSwipeZone' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'showPlaybackModeCards = totalDy < -(size.height * .08f)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'private fun PlaybackContinuationCards(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
@@ -173,7 +179,10 @@ jobs:
           grep -Fq 'Finding episode cards…' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'private fun RelatedVideoCard(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'slideInVertically(initialOffsetY = { it })' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
-          grep -Fq 'selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'if (showRelevantShelf)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'if (showEpisodesShelf)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Arrangement.CenterHorizontally' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'playerControllerScale' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$MAIN"
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$NATIVE"
           grep -Fq '.pointerInput(snapshot.bands.size)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
@@ -216,7 +225,10 @@ jobs:
           grep -Fq 'repository.searchPlaylists(query)' "$MAIN"
           grep -Fq 'YoutubeStreamResolver.searchPlaylists' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
           grep -Fq 'searchPlaceholder = if (playlistMode)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
-          grep -Fq 'Live now' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq '"Relevant"' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq '"History"' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq '"Trending · $countryCode"' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          ! grep -Fq '"Live now · $countryCode"' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
           grep -Fq 'eventType=live' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/YoutubeHomeFeedClient.kt
           grep -Fq 'viewStateKey = currentScreen.name' "$MAIN"
           grep -Fq 'ContentViewModeBar' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt

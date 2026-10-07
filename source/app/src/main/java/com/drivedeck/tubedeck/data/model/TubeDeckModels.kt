@@ -111,6 +111,11 @@ data class TubeDeckSettings(
     val autoLoadEpisodes: Boolean = false,
     val autoLoadUpNext: Boolean = false,
 
+    // Native-player controller and upward-swipe continuation shelf.
+    val playerControllerScale: Float = 1.20f,
+    val showRelevantShelf: Boolean = true,
+    val showEpisodesShelf: Boolean = true,
+
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",
     val fontScale: Float = 1.0f,

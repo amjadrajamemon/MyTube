@@ -1092,7 +1092,7 @@ class MainActivity : ComponentActivity() {
                                             val latest = repository.settings.value
                                             repository.updateSettings(
                                                 latest.copy(
-                                                    preferredPlaybackSpeed = speed.coerceIn(0.25f, 2.0f),
+                                                    preferredPlaybackSpeed = speed.coerceIn(0.25f, 5.0f),
                                                     preferredPlaybackQualityHeight = qualityHeight.coerceAtLeast(0),
                                                     seekIntervalSeconds = seekSeconds.coerceIn(5, 60)
                                                 )

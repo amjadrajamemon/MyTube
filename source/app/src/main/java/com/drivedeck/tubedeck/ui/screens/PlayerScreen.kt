@@ -44,6 +44,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -152,6 +153,7 @@ fun PlayerScreen(
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
     playerControllerScale: Float = 1.20f,
+    equalizerTextScale: Float = 1.25f,
     playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit = {},
     preferredPlaybackQualityHeight: Int = 0,
@@ -243,6 +245,7 @@ fun PlayerScreen(
             showRelevantShelf = showRelevantShelf,
             showEpisodesShelf = showEpisodesShelf,
             playerControllerScale = playerControllerScale,
+            equalizerTextScale = equalizerTextScale,
             playbackContinuationMode = playbackContinuationMode,
             onPlaybackContinuationModeChanged = onPlaybackContinuationModeChanged,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
@@ -408,6 +411,7 @@ fun NativeExoPlayer(
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
     playerControllerScale: Float,
+    equalizerTextScale: Float,
     playbackContinuationMode: PlaybackContinuationMode,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit,
     preferredPlaybackQualityHeight: Int,
@@ -468,7 +472,7 @@ fun NativeExoPlayer(
     var controlsVisible by remember { mutableStateOf(true) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
-    var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
+    var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var captionsEnabled by remember { mutableStateOf(true) }
     var captionLanguageTag by rememberSaveable(media.id) { mutableStateOf("auto") }
     var qualityLabel by remember { mutableStateOf("Auto") }
@@ -477,6 +481,7 @@ fun NativeExoPlayer(
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
     var continuationEpisodesLoaded by remember(media.id) { mutableStateOf(false) }
@@ -553,7 +558,7 @@ fun NativeExoPlayer(
             .build()
     }
     LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
-        playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)
+        playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)
         exoPlayer.setPlaybackSpeed(playbackSpeed)
     }
 
@@ -572,6 +577,13 @@ fun NativeExoPlayer(
         }
     }
 
+    LaunchedEffect(continuationModeHint) {
+        if (continuationModeHint != null) {
+            delay(1_500L)
+            continuationModeHint = null
+        }
+    }
+
     LaunchedEffect(
         showPlaybackModeCards,
         showEpisodesShelf,
@@ -582,7 +594,8 @@ fun NativeExoPlayer(
     ) {
         if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
         if ((!showPlaybackModeCards || !showEpisodesShelf) &&
-            playbackContinuationMode != PlaybackContinuationMode.EPISODES
+            playbackContinuationMode != PlaybackContinuationMode.EPISODES &&
+            !autoLoadEpisodes
         ) {
             return@LaunchedEffect
         }
@@ -599,7 +612,7 @@ fun NativeExoPlayer(
                 url = media.mediaUri,
                 titleHint = titleHint
             )
-            continuationEpisodesLoaded = true
+            continuationEpisodesLoaded = continuationEpisodeShelf?.episodes?.isNotEmpty() == true
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Throwable) {

@@ -1444,6 +1444,24 @@ fun NativeExoPlayer(
                         end = 10.dp,
                         bottom = if (compactPortrait) 70.dp else 78.dp
                     )
+                    .pointerInput(showPlaybackModeCards) {
+                        var downwardDrag = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { downwardDrag = 0f },
+                            onVerticalDrag = { change, dragAmount ->
+                                downwardDrag = (downwardDrag + dragAmount).coerceAtLeast(0f)
+                                if (downwardDrag > 24f) change.consume()
+                            },
+                            onDragEnd = {
+                                if (downwardDrag > 72f) {
+                                    showPlaybackModeCards = false
+                                    controlsVisible = true
+                                }
+                                downwardDrag = 0f
+                            },
+                            onDragCancel = { downwardDrag = 0f }
+                        )
+                    }
                     .zIndex(80f)
             ) {
                 val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
@@ -1659,134 +1677,269 @@ fun NativeExoPlayer(
                             Spacer(Modifier.weight(1f))
                             Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(
-                                controllerGap,
-                                Alignment.CenterHorizontally
-                            )
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val nextMode = when (playbackContinuationMode) {
-                                        PlaybackContinuationMode.LOOP_CURRENT -> PlaybackContinuationMode.AUTO_NEXT
-                                        PlaybackContinuationMode.AUTO_NEXT -> PlaybackContinuationMode.EPISODES
-                                        PlaybackContinuationMode.EPISODES -> PlaybackContinuationMode.LOOP_CURRENT
-                                    }
-                                    onPlaybackContinuationModeChanged(nextMode)
-                                    controlsVisible = true
-                                },
-                                modifier = Modifier.size(controllerHeight)
-                            ) {
-                                Icon(
-                                    imageVector = when (playbackContinuationMode) {
-                                        PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat
-                                        PlaybackContinuationMode.AUTO_NEXT -> Icons.Default.SkipNext
-                                        PlaybackContinuationMode.EPISODES -> Icons.Default.PlaylistPlay
-                                    },
-                                    contentDescription = "Playback continuation: ${playbackContinuationMode.label}. Tap to change mode.",
-                                    tint = TubeDeckAccentCyan,
-                                    modifier = Modifier.size(controllerIconSize)
+                        val displayControlsReserve = (132f * controllerScale).dp
+                        Box(Modifier.fillMaxWidth()) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(end = displayControlsReserve)
+                                    .horizontalScroll(rememberScrollState()),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(
+                                    controllerGap,
+                                    Alignment.CenterHorizontally
                                 )
-                            }
-                            TextButton(
-                                onClick = {
-                                    playbackSpeed = cycleSpeed(exoPlayer)
-                                    onPlaybackPreferenceChanged(
-                                        playbackSpeed,
-                                        if (autoQuality) 0 else selectedHeight,
-                                        seekIntervalSeconds
-                                    )
-                                    controlsVisible = true
-                                },
-                                modifier = Modifier.height(controllerHeight),
-                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                             ) {
-                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
-                            }
-                            Box {
+                                IconButton(
+                                    onClick = {
+                                        val nextMode = when (playbackContinuationMode) {
+                                            PlaybackContinuationMode.LOOP_CURRENT -> PlaybackContinuationMode.AUTO_NEXT
+                                            PlaybackContinuationMode.AUTO_NEXT -> PlaybackContinuationMode.EPISODES
+                                            PlaybackContinuationMode.EPISODES -> PlaybackContinuationMode.LOOP_CURRENT
+                                        }
+                                        onPlaybackContinuationModeChanged(nextMode)
+                                        continuationModeHint = when (nextMode) {
+                                            PlaybackContinuationMode.LOOP_CURRENT -> "Loop · repeat the current video"
+                                            PlaybackContinuationMode.AUTO_NEXT -> "Relevant next · play the next relevant video"
+                                            PlaybackContinuationMode.EPISODES -> "Episode next · continue with the next detected episode"
+                                        }
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.size(controllerHeight)
+                                ) {
+                                    Icon(
+                                        imageVector = when (playbackContinuationMode) {
+                                            PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat
+                                            PlaybackContinuationMode.AUTO_NEXT -> Icons.Default.SkipNext
+                                            PlaybackContinuationMode.EPISODES -> Icons.Default.PlaylistPlay
+                                        },
+                                        contentDescription = "Playback continuation: ${playbackContinuationMode.label}. Tap to change mode.",
+                                        tint = TubeDeckAccentCyan,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(0.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            playbackSpeed = stepPlaybackSpeed(exoPlayer, -1)
+                                            onPlaybackPreferenceChanged(
+                                                playbackSpeed,
+                                                if (autoQuality) 0 else selectedHeight,
+                                                seekIntervalSeconds
+                                            )
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.size((30f * controllerScale).dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.KeyboardArrowLeft,
+                                            "Decrease playback speed",
+                                            tint = Color.White,
+                                            modifier = Modifier.size((18f * controllerScale).dp)
+                                        )
+                                    }
+                                    Text(
+                                        "${playbackSpeed}x",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = controllerFontSize,
+                                        modifier = Modifier.widthIn(min = (42f * controllerScale).dp)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            playbackSpeed = stepPlaybackSpeed(exoPlayer, 1)
+                                            onPlaybackPreferenceChanged(
+                                                playbackSpeed,
+                                                if (autoQuality) 0 else selectedHeight,
+                                                seekIntervalSeconds
+                                            )
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.size((30f * controllerScale).dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.KeyboardArrowRight,
+                                            "Increase playback speed up to 5x",
+                                            tint = Color.White,
+                                            modifier = Modifier.size((18f * controllerScale).dp)
+                                        )
+                                    }
+                                }
+
+                                Box {
+                                    TextButton(
+                                        onClick = {
+                                            showQualityMenu = true
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.height(controllerHeight),
+                                        contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
+                                    ) {
+                                        Text(
+                                            if (autoQuality) "Auto" else qualityLabel,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = controllerFontSize
+                                        )
+                                        Icon(
+                                            Icons.Default.ArrowDropDown,
+                                            "Video quality",
+                                            tint = Color.White,
+                                            modifier = Modifier.size((17f * controllerScale).dp)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showQualityMenu,
+                                        onDismissRequest = { showQualityMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (autoQuality) {
+                                                        Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    Text("Auto")
+                                                }
+                                            },
+                                            onClick = {
+                                                showQualityMenu = false
+                                                switchQuality(null)
+                                            }
+                                        )
+                                        resolved?.options
+                                            ?.map { it.height }
+                                            ?.distinct()
+                                            ?.sortedDescending()
+                                            .orEmpty()
+                                            .forEach { height ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            if (!autoQuality && selectedHeight == height) {
+                                                                Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
+                                                                Spacer(Modifier.width(6.dp))
+                                                            }
+                                                            Text(height.toString() + "p")
+                                                        }
+                                                    },
+                                                    onClick = {
+                                                        showQualityMenu = false
+                                                        switchQuality(height)
+                                                    }
+                                                )
+                                            }
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        captionsEnabled = !captionsEnabled
+                                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !captionsEnabled && !captionDubbingActive)
+                                            .build()
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.size(controllerHeight)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ClosedCaption,
+                                        "Captions",
+                                        tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
                                 TextButton(
                                     onClick = {
-                                        showQualityMenu = true
+                                        liveDubEnabled = !liveDubEnabled
                                         controlsVisible = true
                                     },
                                     modifier = Modifier.height(controllerHeight),
                                     contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                 ) {
+                                    Icon(
+                                        Icons.Default.RecordVoiceOver,
+                                        "Live Dub",
+                                        tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                    Spacer(Modifier.width(controllerGap))
                                     Text(
-                                        if (autoQuality) "Auto" else qualityLabel,
+                                        if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = controllerFontSize
                                     )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (!showEqualizer) {
+                                            equalizerSnapshot = equalizerController.prepareEqualizer()
+                                            equalizerSnapshot = equalizerController.probeDts()
+                                            showEqualizer = true
+                                        } else {
+                                            showEqualizer = false
+                                        }
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.height(controllerHeight),
+                                    contentPadding = PaddingValues(horizontal = (8f * controllerScale).dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        "EQ",
+                                        color = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = controllerFontSize
+                                    )
                                     Icon(
-                                        Icons.Default.ArrowDropDown,
-                                        "Video quality",
-                                        tint = Color.White,
+                                        if (showEqualizer) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                        if (showEqualizer) "Minimize equalizer" else "Open equalizer",
+                                        tint = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
                                         modifier = Modifier.size((17f * controllerScale).dp)
                                     )
                                 }
-                                DropdownMenu(
-                                    expanded = showQualityMenu,
-                                    onDismissRequest = { showQualityMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (autoQuality) {
-                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                Text("Auto")
-                                            }
-                                        },
-                                        onClick = {
-                                            showQualityMenu = false
-                                            switchQuality(null)
-                                        }
-                                    )
-                                    resolved?.options
-                                        ?.map { it.height }
-                                        ?.distinct()
-                                        ?.sortedDescending()
-                                        .orEmpty()
-                                        .forEach { height ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        if (!autoQuality && selectedHeight == height) {
-                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
-                                                            Spacer(Modifier.width(6.dp))
-                                                        }
-                                                        Text(height.toString() + "p")
-                                                    }
-                                                },
-                                                onClick = {
-                                                    showQualityMenu = false
-                                                    switchQuality(height)
-                                                }
-                                            )
-                                        }
-                                }
                             }
-                            Surface(
-                                color = Color.Black.copy(alpha = .42f),
-                                shape = RoundedCornerShape(14.dp)
+
+                            Row(
+                                modifier = Modifier.align(Alignment.CenterEnd),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    color = Color.Black.copy(alpha = .36f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
                                     TextButton(
                                         onClick = {
                                             resizeMode = nextResizeMode(resizeMode)
                                             controlsVisible = true
                                         },
                                         modifier = Modifier.height(controllerHeight),
-                                        contentPadding = PaddingValues(start = (8f * controllerScale).dp, end = (4f * controllerScale).dp, top = 0.dp, bottom = 0.dp)
+                                        contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                     ) {
-                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size((17f * controllerScale).dp))
+                                        Icon(
+                                            Icons.Default.AspectRatio,
+                                            "Video size",
+                                            tint = Color.White,
+                                            modifier = Modifier.size((17f * controllerScale).dp)
+                                        )
                                         Spacer(Modifier.width(controllerGap))
-                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
+                                        Text(
+                                            resizeModeLabel(resizeMode),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = controllerFontSize
+                                        )
                                     }
+                                }
+                                Surface(
+                                    color = Color.Black.copy(alpha = .36f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
                                     IconButton(
                                         onClick = {
                                             isFullscreen = !isFullscreen
@@ -1802,72 +1955,6 @@ fun NativeExoPlayer(
                                         )
                                     }
                                 }
-                            }
-                            IconButton(
-                                onClick = {
-                                    captionsEnabled = !captionsEnabled
-                                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
-                                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !captionsEnabled && !captionDubbingActive)
-                                        .build()
-                                    controlsVisible = true
-                                },
-                                modifier = Modifier.size(controllerHeight)
-                            ) {
-                                Icon(
-                                    Icons.Default.ClosedCaption,
-                                    "Captions",
-                                    tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(controllerIconSize)
-                                )
-                            }
-                            TextButton(
-                                onClick = {
-                                    liveDubEnabled = !liveDubEnabled
-                                    controlsVisible = true
-                                },
-                                modifier = Modifier.height(controllerHeight),
-                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.RecordVoiceOver,
-                                    "Live Dub",
-                                    tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
-                                    modifier = Modifier.size(controllerIconSize)
-                                )
-                                Spacer(Modifier.width(controllerGap))
-                                Text(
-                                    if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = controllerFontSize
-                                )
-                            }
-                            TextButton(
-                                onClick = {
-                                    if (!showEqualizer) {
-                                        equalizerSnapshot = equalizerController.prepareEqualizer()
-                                        equalizerSnapshot = equalizerController.probeDts()
-                                        showEqualizer = true
-                                    } else {
-                                        showEqualizer = false
-                                    }
-                                    controlsVisible = true
-                                },
-                                modifier = Modifier.height(controllerHeight),
-                                contentPadding = PaddingValues(horizontal = (8f * controllerScale).dp, vertical = 0.dp)
-                            ) {
-                                Text(
-                                    "EQ",
-                                    color = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = controllerFontSize
-                                )
-                                Icon(
-                                    if (showEqualizer) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                                    if (showEqualizer) "Minimize equalizer" else "Open equalizer",
-                                    tint = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size((17f * controllerScale).dp)
-                                )
                             }
                         }
                         resolved?.chapters

@@ -670,7 +670,11 @@ class NativePlayerActivity : ComponentActivity() {
         val incomingSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
         initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(incomingSessionId)) {
-            closePlaybackCompletely()
+            // A stale/malformed internal intent must never tear down an already healthy
+            // playback session. This can occur during OEM task/PiP restoration.
+            if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
+                closePlaybackCompletely()
+            }
             return
         }
         if (incomingSessionId != playbackSessionId) {
@@ -1000,11 +1004,10 @@ class NativePlayerActivity : ComponentActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         if (pipExitPendingStop && !closingPlayer) {
-            // Android's system PiP X does not invoke our RemoteAction. A PiP exit followed by
-            // onStop (without onResume) is therefore a dismissal: stop every playback path.
-            pipExitPendingStop = false
+            // Do not hard-finish synchronously from onStop. Some OEMs briefly stop the Activity
+            // while expanding/restoring PiP; treating that transient stop as the system X made
+            // playback appear to close by itself. The PiP watchdog below owns final dismissal.
             foregroundPlaybackAllowed = false
-            closePlaybackCompletely()
             super.onStop()
             return
         }
@@ -1089,7 +1092,7 @@ class NativePlayerActivity : ComponentActivity() {
                 // Normal PiP expansion reaches onResume quickly and cancels this watchdog.
                 // If neither the close PendingIntent nor onStop arrives (observed on some OEMs),
                 // treat a non-resumed PiP exit as dismissal and hard-stop every playback path.
-                delay(850L)
+                delay(1_800L)
                 if (
                     pipExitPendingStop &&
                     !isPipMode &&

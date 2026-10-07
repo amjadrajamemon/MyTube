@@ -47,6 +47,7 @@ fun SettingsScreen(
     onPreviewSettings: (TubeDeckSettings) -> Unit,
     onSaveSettings: (TubeDeckSettings) -> Unit,
     onResetAdBlockStats: () -> Unit,
+    onClearWatchHistory: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -123,6 +124,7 @@ fun SettingsScreen(
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
     var themeTextArgb by remember { mutableLongStateOf(currentSettings.themeTextArgb) }
     var previewApplied by remember { mutableStateOf(false) }
+    var showClearWatchHistoryConfirm by remember { mutableStateOf(false) }
 
     fun appearanceOnlySettings(): TubeDeckSettings =
         currentSettings.copy(
@@ -134,6 +136,45 @@ fun SettingsScreen(
         )
 
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
+
+    if (showClearWatchHistoryConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearWatchHistoryConfirm = false },
+            icon = {
+                Icon(
+                    Icons.Default.DeleteSweep,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Clear watch history?") },
+            text = {
+                Text(
+                    "This clears MyTube's local watch history and resets the Relevant feed. " +
+                        "Downloads, saved files, searches and your Google/YouTube account stay intact."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearWatchHistoryConfirm = false
+                        onClearWatchHistory()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Clear & refresh")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearWatchHistoryConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -563,6 +604,21 @@ fun SettingsScreen(
                 ToggleRow("Relevant", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
                 ToggleRow("History", homeHistoryEnabled) { homeHistoryEnabled = it }
                 ToggleRow("Trending", homeTrendingEnabled) { homeTrendingEnabled = it }
+                HorizontalDivider()
+                Text(
+                    "Reset the local viewing profile used by MyTube to shape Relevant videos.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = { showClearWatchHistoryConfirm = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Clear watch history & reset Relevant")
+                }
             }
 
             // Blocking Toggle

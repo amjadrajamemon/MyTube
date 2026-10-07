@@ -148,6 +148,9 @@ fun PlayerScreen(
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    showRelevantShelf: Boolean = true,
+    showEpisodesShelf: Boolean = true,
+    playerControllerScale: Float = 1.20f,
     playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit = {},
     preferredPlaybackQualityHeight: Int = 0,
@@ -236,6 +239,9 @@ fun PlayerScreen(
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            showRelevantShelf = showRelevantShelf,
+            showEpisodesShelf = showEpisodesShelf,
+            playerControllerScale = playerControllerScale,
             playbackContinuationMode = playbackContinuationMode,
             onPlaybackContinuationModeChanged = onPlaybackContinuationModeChanged,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
@@ -398,6 +404,9 @@ fun NativeExoPlayer(
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    showRelevantShelf: Boolean,
+    showEpisodesShelf: Boolean,
+    playerControllerScale: Float,
     playbackContinuationMode: PlaybackContinuationMode,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit,
     preferredPlaybackQualityHeight: Int,
@@ -431,6 +440,11 @@ fun NativeExoPlayer(
     val activity = context as? Activity
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
+    val controllerHeight = (34f * controllerScale).dp
+    val controllerIconSize = (19f * controllerScale).dp
+    val controllerFontSize = (11f * controllerScale).sp
+    val controllerGap = (4f * controllerScale).dp
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val trackSelector = remember(media.id) { DefaultTrackSelector(context) }
     val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
@@ -559,13 +573,16 @@ fun NativeExoPlayer(
 
     LaunchedEffect(
         showPlaybackModeCards,
+        showEpisodesShelf,
         playbackContinuationMode,
         firstFrameRendered,
         media.mediaUri,
         resolved?.title
     ) {
         if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
-        if (!showPlaybackModeCards && playbackContinuationMode != PlaybackContinuationMode.EPISODES) {
+        if ((!showPlaybackModeCards || !showEpisodesShelf) &&
+            playbackContinuationMode != PlaybackContinuationMode.EPISODES
+        ) {
             return@LaunchedEffect
         }
         if (continuationEpisodesLoaded || continuationEpisodesLoading) return@LaunchedEffect
@@ -1430,6 +1447,8 @@ fun NativeExoPlayer(
                     currentVideoId = currentVideoId,
                     relatedVideos = resolved?.relatedVideos.orEmpty(),
                     episodeShelf = continuationEpisodeShelf,
+                    showRelevantShelf = showRelevantShelf,
+                    showEpisodesShelf = showEpisodesShelf,
                     onSelect = { mode ->
                         onPlaybackContinuationModeChanged(mode)
                         controlsVisible = true
@@ -1642,14 +1661,17 @@ fun NativeExoPlayer(
                         Row(
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(
+                                controllerGap,
+                                Alignment.CenterHorizontally
+                            )
                         ) {
                             IconButton(
                                 onClick = {
                                     showPlaybackModeCards = !showPlaybackModeCards
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(controllerHeight)
                             ) {
                                 Icon(
                                     imageVector = when (playbackContinuationMode) {
@@ -1659,7 +1681,7 @@ fun NativeExoPlayer(
                                     },
                                     contentDescription = "Playback mode: ${playbackContinuationMode.label}",
                                     tint = TubeDeckAccentCyan,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
                             }
                             TextButton(
@@ -1672,10 +1694,10 @@ fun NativeExoPlayer(
                                     )
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                             ) {
-                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
                             }
                             Box {
                                 TextButton(
@@ -1683,20 +1705,20 @@ fun NativeExoPlayer(
                                         showQualityMenu = true
                                         controlsVisible = true
                                     },
-                                    modifier = Modifier.height(30.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                    modifier = Modifier.height(controllerHeight),
+                                    contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                 ) {
                                     Text(
                                         if (autoQuality) "Auto" else qualityLabel,
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 10.sp
+                                        fontSize = controllerFontSize
                                     )
                                     Icon(
                                         Icons.Default.ArrowDropDown,
                                         "Video quality",
                                         tint = Color.White,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size((17f * controllerScale).dp)
                                     )
                                 }
                                 DropdownMenu(
@@ -1707,7 +1729,7 @@ fun NativeExoPlayer(
                                         text = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 if (autoQuality) {
-                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
                                                     Spacer(Modifier.width(6.dp))
                                                 }
                                                 Text("Auto")
@@ -1728,7 +1750,7 @@ fun NativeExoPlayer(
                                                 text = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         if (!autoQuality && selectedHeight == height) {
-                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
                                                             Spacer(Modifier.width(6.dp))
                                                         }
                                                         Text(height.toString() + "p")
@@ -1752,25 +1774,25 @@ fun NativeExoPlayer(
                                             resizeMode = nextResizeMode(resizeMode)
                                             controlsVisible = true
                                         },
-                                        modifier = Modifier.height(30.dp),
-                                        contentPadding = PaddingValues(start = 7.dp, end = 3.dp, top = 0.dp, bottom = 0.dp)
+                                        modifier = Modifier.height(controllerHeight),
+                                        contentPadding = PaddingValues(start = (8f * controllerScale).dp, end = (4f * controllerScale).dp, top = 0.dp, bottom = 0.dp)
                                     ) {
-                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size(15.dp))
-                                        Spacer(Modifier.width(3.dp))
-                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size((17f * controllerScale).dp))
+                                        Spacer(Modifier.width(controllerGap))
+                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
                                     }
                                     IconButton(
                                         onClick = {
                                             isFullscreen = !isFullscreen
                                             controlsVisible = true
                                         },
-                                        modifier = Modifier.size(30.dp)
+                                        modifier = Modifier.size(controllerHeight)
                                     ) {
                                         Icon(
                                             if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                                             if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
                                             tint = Color.White,
-                                            modifier = Modifier.size(17.dp)
+                                            modifier = Modifier.size(controllerIconSize)
                                         )
                                     }
                                 }
@@ -1783,13 +1805,13 @@ fun NativeExoPlayer(
                                         .build()
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(controllerHeight)
                             ) {
                                 Icon(
                                     Icons.Default.ClosedCaption,
                                     "Captions",
                                     tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(17.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
                             }
                             TextButton(
@@ -1797,21 +1819,21 @@ fun NativeExoPlayer(
                                     liveDubEnabled = !liveDubEnabled
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                             ) {
                                 Icon(
                                     Icons.Default.RecordVoiceOver,
                                     "Live Dub",
                                     tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(controllerGap))
                                 Text(
                                     if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
+                                    fontSize = controllerFontSize
                                 )
                             }
                             TextButton(
@@ -1825,20 +1847,20 @@ fun NativeExoPlayer(
                                     }
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (8f * controllerScale).dp, vertical = 0.dp)
                             ) {
                                 Text(
                                     "EQ",
                                     color = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 10.sp
+                                    fontSize = controllerFontSize
                                 )
                                 Icon(
                                     if (showEqualizer) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                                     if (showEqualizer) "Minimize equalizer" else "Open equalizer",
                                     tint = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size((17f * controllerScale).dp)
                                 )
                             }
                         }
@@ -2753,6 +2775,8 @@ private fun PlaybackContinuationCards(
     currentVideoId: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
+    showRelevantShelf: Boolean,
+    showEpisodesShelf: Boolean,
     onSelect: (PlaybackContinuationMode) -> Unit,
     onPlayMedia: (OfflineMedia) -> Unit
 ) {
@@ -2821,44 +2845,24 @@ private fun PlaybackContinuationCards(
             HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
             Spacer(Modifier.height(8.dp))
 
-            when {
-                selectedMode == PlaybackContinuationMode.EPISODES && episodesLoading -> {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
-                    }
-                }
+            if (!showRelevantShelf && !showEpisodesShelf) {
+                Text(
+                    "Relevant and Episodes rows are disabled in Settings",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
 
-                selectedMode == PlaybackContinuationMode.EPISODES && episodeCards.isNotEmpty() -> {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp)
-                    ) {
-                        items(
-                            items = episodeCards,
-                            key = { "gesture-episode-${it.videoId}" }
-                        ) { episode ->
-                            EpisodeVideoCard(episode) {
-                                onPlayMedia(
-                                    OfflineMedia(
-                                        id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
-                                        title = episode.title,
-                                        videoId = episode.videoId,
-                                        thumbnailUrl = episode.thumbnailUrl,
-                                        mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty() -> {
+            if (showRelevantShelf) {
+                Text(
+                    "Relevant",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+                if (relatedCards.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2881,19 +2885,75 @@ private fun PlaybackContinuationCards(
                             }
                         }
                     }
-                }
-
-                else -> {
+                } else {
                     Text(
-                        if (selectedMode == PlaybackContinuationMode.EPISODES) {
-                            "No additional episode cards found"
-                        } else {
-                            "No up-next cards available yet"
-                        },
+                        "No relevant cards available yet",
                         color = TubeDeckTextSecondary,
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     )
+                }
+            }
+
+            if (showRelevantShelf && showEpisodesShelf) {
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .52f))
+                Spacer(Modifier.height(4.dp))
+            }
+
+            if (showEpisodesShelf) {
+                Text(
+                    "Episodes",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+                when {
+                    episodesLoading -> {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                        }
+                    }
+
+                    episodeCards.isNotEmpty() -> {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp)
+                        ) {
+                            items(
+                                items = episodeCards,
+                                key = { "gesture-episode-${it.videoId}" }
+                            ) { episode ->
+                                EpisodeVideoCard(episode) {
+                                    onPlayMedia(
+                                        OfflineMedia(
+                                            id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
+                                            title = episode.title,
+                                            videoId = episode.videoId,
+                                            thumbnailUrl = episode.thumbnailUrl,
+                                            mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        Text(
+                            "No additional episode cards found",
+                            color = TubeDeckTextSecondary,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }

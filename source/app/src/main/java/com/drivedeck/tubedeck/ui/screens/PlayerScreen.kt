@@ -480,6 +480,7 @@ fun NativeExoPlayer(
     var showSettings by remember { mutableStateOf(false) }
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showPlaybackSpeedMenu by remember { mutableStateOf(false) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
@@ -1702,12 +1703,10 @@ fun NativeExoPlayer(
                             Spacer(Modifier.weight(1f))
                             Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
-                        val displayControlsReserve = (132f * controllerScale).dp
                         Box(Modifier.fillMaxWidth()) {
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(end = displayControlsReserve)
                                     .horizontalScroll(rememberScrollState()),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(
@@ -1744,54 +1743,62 @@ fun NativeExoPlayer(
                                     )
                                 }
 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(0.dp)
-                                ) {
-                                    IconButton(
+                                Box {
+                                    TextButton(
                                         onClick = {
-                                            playbackSpeed = stepPlaybackSpeed(exoPlayer, -1)
-                                            onPlaybackPreferenceChanged(
-                                                playbackSpeed,
-                                                if (autoQuality) 0 else selectedHeight,
-                                                seekIntervalSeconds
-                                            )
+                                            showPlaybackSpeedMenu = true
                                             controlsVisible = true
                                         },
-                                        modifier = Modifier.size((30f * controllerScale).dp)
+                                        modifier = Modifier.height(controllerHeight),
+                                        contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                     ) {
+                                        Text(
+                                            playbackSpeedLabel(playbackSpeed),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = controllerFontSize
+                                        )
                                         Icon(
-                                            Icons.Default.KeyboardArrowLeft,
-                                            "Decrease playback speed",
+                                            if (showPlaybackSpeedMenu) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                            "Playback speed",
                                             tint = Color.White,
-                                            modifier = Modifier.size((18f * controllerScale).dp)
+                                            modifier = Modifier.size((17f * controllerScale).dp)
                                         )
                                     }
-                                    Text(
-                                        "${playbackSpeed}x",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = controllerFontSize,
-                                        modifier = Modifier.widthIn(min = (42f * controllerScale).dp)
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            playbackSpeed = stepPlaybackSpeed(exoPlayer, 1)
-                                            onPlaybackPreferenceChanged(
-                                                playbackSpeed,
-                                                if (autoQuality) 0 else selectedHeight,
-                                                seekIntervalSeconds
-                                            )
-                                            controlsVisible = true
-                                        },
-                                        modifier = Modifier.size((30f * controllerScale).dp)
+                                    DropdownMenu(
+                                        expanded = showPlaybackSpeedMenu,
+                                        onDismissRequest = { showPlaybackSpeedMenu = false }
                                     ) {
-                                        Icon(
-                                            Icons.Default.KeyboardArrowRight,
-                                            "Increase playback speed up to 5x",
-                                            tint = Color.White,
-                                            modifier = Modifier.size((18f * controllerScale).dp)
-                                        )
+                                        PLAYBACK_SPEED_OPTIONS.forEach { speed ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        if (kotlin.math.abs(playbackSpeed - speed) < 0.01f) {
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
+                                                            Spacer(Modifier.width(6.dp))
+                                                        }
+                                                        Text(
+                                                            if (kotlin.math.abs(speed - 1.0f) < 0.01f) {
+                                                                "1.0x · Normal"
+                                                            } else {
+                                                                playbackSpeedLabel(speed)
+                                                            }
+                                                        )
+                                                    }
+                                                },
+                                                onClick = {
+                                                    showPlaybackSpeedMenu = false
+                                                    playbackSpeed = speed
+                                                    exoPlayer.setPlaybackSpeed(speed)
+                                                    onPlaybackPreferenceChanged(
+                                                        speed,
+                                                        if (autoQuality) 0 else selectedHeight,
+                                                        seekIntervalSeconds
+                                                    )
+                                                    controlsVisible = true
+                                                }
+                                            )
+                                        }
                                     }
                                 }
 
@@ -1927,58 +1934,43 @@ fun NativeExoPlayer(
                                         modifier = Modifier.size((17f * controllerScale).dp)
                                     )
                                 }
-                            }
 
-                            Row(
-                                modifier = Modifier.align(Alignment.CenterEnd),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Surface(
-                                    color = Color.Black.copy(alpha = .36f),
-                                    shape = RoundedCornerShape(10.dp)
+                                TextButton(
+                                    onClick = {
+                                        resizeMode = nextResizeMode(resizeMode)
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.height(controllerHeight),
+                                    contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                 ) {
-                                    TextButton(
-                                        onClick = {
-                                            resizeMode = nextResizeMode(resizeMode)
-                                            controlsVisible = true
-                                        },
-                                        modifier = Modifier.height(controllerHeight),
-                                        contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.AspectRatio,
-                                            "Video size",
-                                            tint = Color.White,
-                                            modifier = Modifier.size((17f * controllerScale).dp)
-                                        )
-                                        Spacer(Modifier.width(controllerGap))
-                                        Text(
-                                            resizeModeLabel(resizeMode),
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = controllerFontSize
-                                        )
-                                    }
+                                    Icon(
+                                        Icons.Default.AspectRatio,
+                                        "Video size",
+                                        tint = Color.White,
+                                        modifier = Modifier.size((17f * controllerScale).dp)
+                                    )
+                                    Spacer(Modifier.width(controllerGap))
+                                    Text(
+                                        resizeModeLabel(resizeMode),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = controllerFontSize
+                                    )
                                 }
-                                Surface(
-                                    color = Color.Black.copy(alpha = .36f),
-                                    shape = RoundedCornerShape(10.dp)
+
+                                IconButton(
+                                    onClick = {
+                                        isFullscreen = !isFullscreen
+                                        controlsVisible = true
+                                    },
+                                    modifier = Modifier.size(controllerHeight)
                                 ) {
-                                    IconButton(
-                                        onClick = {
-                                            isFullscreen = !isFullscreen
-                                            controlsVisible = true
-                                        },
-                                        modifier = Modifier.size(controllerHeight)
-                                    ) {
-                                        Icon(
-                                            if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                            if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(controllerIconSize)
-                                        )
-                                    }
+                                    Icon(
+                                        if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                        if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
                                 }
                             }
                         }
@@ -4558,23 +4550,19 @@ private fun resizeModeLabel(mode: Int): String = when (mode) {
     else -> "Fit"
 }
 
-private fun stepPlaybackSpeed(player: ExoPlayer, direction: Int): Float {
-    val speeds = floatArrayOf(
-        .25f, .5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f,
-        2.5f, 3f, 3.5f, 4f, 4.5f, 5f
-    )
-    val current = player.playbackParameters.speed
-    val currentIndex = speeds.indices.minByOrNull { kotlin.math.abs(speeds[it] - current) } ?: 3
-    val delta = when {
-        direction < 0 -> -1
-        direction > 0 -> 1
-        else -> 0
+private val PLAYBACK_SPEED_OPTIONS = listOf(
+    1.0f,
+    0.25f, 0.5f, 0.75f,
+    1.25f, 1.5f, 1.75f, 2.0f,
+    2.5f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f
+)
+
+private fun playbackSpeedLabel(speed: Float): String =
+    if (kotlin.math.abs(speed - kotlin.math.round(speed)) < 0.01f) {
+        String.format(Locale.US, "%.1fx", speed)
+    } else {
+        String.format(Locale.US, "%.2fx", speed).trimEnd('0').replace(".x", "x")
     }
-    val nextIndex = (currentIndex + delta).coerceIn(0, speeds.lastIndex)
-    val next = speeds[nextIndex]
-    player.setPlaybackSpeed(next)
-    return next
-}
 
 private fun setFullscreen(activity: Activity, fullscreen: Boolean) {
     val window = activity.window

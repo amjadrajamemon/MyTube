@@ -2346,7 +2346,9 @@ private fun PlaybackEqualizerOverlay(
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -4567,8 +4569,12 @@ private fun stepPlaybackSpeed(player: ExoPlayer, direction: Int): Float {
     )
     val current = player.playbackParameters.speed
     val currentIndex = speeds.indices.minByOrNull { kotlin.math.abs(speeds[it] - current) } ?: 3
-    val nextIndex = (currentIndex + when { direction < 0 -> -1; direction > 0 -> 1; else -> 0 })
-        .coerceIn(0, speeds.lastIndex)
+    val delta = when {
+        direction < 0 -> -1
+        direction > 0 -> 1
+        else -> 0
+    }
+    val nextIndex = (currentIndex + delta).coerceIn(0, speeds.lastIndex)
     val next = speeds[nextIndex]
     player.setPlaybackSpeed(next)
     return next

@@ -1064,6 +1064,9 @@ class MainActivity : ComponentActivity() {
                     inPictureInPicture = isPipMode,
                                         autoLoadEpisodes = settings.autoLoadEpisodes,
                                         autoLoadUpNext = settings.autoLoadUpNext,
+                                        showRelevantShelf = settings.showRelevantShelf,
+                                        showEpisodesShelf = settings.showEpisodesShelf,
+                                        playerControllerScale = settings.playerControllerScale,
                                         playbackContinuationMode = settings.playbackContinuationMode,
                                         onPlaybackContinuationModeChanged = { mode ->
                                             repository.updateSettings(

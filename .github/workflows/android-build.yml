@@ -615,7 +615,7 @@ jobs:
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
             printf '%s\n' "$BADGING" | grep -Fq "versionCode='82'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.7.9'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.0'"
             if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
               echo "::error::$EDITION APK is unexpectedly debuggable."
               exit 1

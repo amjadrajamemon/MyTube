@@ -1479,6 +1479,35 @@ fun NativeExoPlayer(
                 )
             }
 
+            AnimatedVisibility(
+                visible = continuationModeHint != null && controlsVisible && !showPlaybackModeCards,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(
+                        start = 18.dp,
+                        bottom = if (compactPortrait) 116.dp else 110.dp
+                    )
+                    .zIndex(90f)
+            ) {
+                continuationModeHint?.let { hint ->
+                    Surface(
+                        color = Color.Black.copy(alpha = .82f),
+                        shape = RoundedCornerShape(10.dp),
+                        tonalElevation = 4.dp
+                    ) {
+                        Text(
+                            hint,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
             if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive) &&
                 resolveError == null && !inPictureInPicture) {
                 Surface(
@@ -2010,6 +2039,7 @@ fun NativeExoPlayer(
             if (showEqualizer && !inPictureInPicture) {
                 PlaybackEqualizerOverlay(
                     snapshot = equalizerSnapshot,
+                    textScale = equalizerTextScale,
                     onEnabled = { enabled ->
                         equalizerSnapshot = equalizerController.setEnabled(enabled)
                     },
@@ -2049,7 +2079,8 @@ fun NativeExoPlayer(
                     onMinimize = { showEqualizer = false },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(horizontal = 8.dp, vertical = 44.dp)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 8.dp, vertical = 32.dp)
                         .zIndex(70f)
                         .fillMaxWidth(if (compactPortrait) .95f else .50f)
                         .widthIn(max = 430.dp)
@@ -2248,6 +2279,7 @@ fun NativeExoPlayer(
 @Composable
 private fun PlaybackEqualizerOverlay(
     snapshot: PlaybackEqualizerController.Snapshot,
+    textScale: Float,
     onEnabled: (Boolean) -> Unit,
     onPreset: (String) -> Unit,
     onBandChanged: (Int, Float) -> Unit,
@@ -2264,6 +2296,10 @@ private fun PlaybackEqualizerOverlay(
     modifier: Modifier = Modifier
 ) {
     var userPresetName by rememberSaveable { mutableStateOf(snapshot.userPresetName) }
+    val safeTextScale = textScale.coerceIn(1.0f, 1.8f)
+    val eqTitleFontSize = (13f * safeTextScale).sp
+    val eqBodyFontSize = (9.5f * safeTextScale).sp
+    val eqSmallFontSize = (8f * safeTextScale).sp
 
     LaunchedEffect(snapshot.userPresetName) {
         if (userPresetName.isBlank() || userPresetName == "User") {
@@ -2280,7 +2316,7 @@ private fun PlaybackEqualizerOverlay(
     ) {
         Column(
             modifier = Modifier
-                .heightIn(max = 390.dp)
+                .heightIn(max = 430.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -2290,7 +2326,7 @@ private fun PlaybackEqualizerOverlay(
                     "Audio Equalizer",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = eqTitleFontSize,
                     modifier = Modifier.weight(1f)
                 )
                 Switch(
@@ -2314,27 +2350,27 @@ private fun PlaybackEqualizerOverlay(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("View", color = Color.White.copy(alpha = .66f), fontSize = 9.sp)
+                Text("View", color = Color.White.copy(alpha = .66f), fontSize = eqBodyFontSize)
                 FilterChip(
                     selected = snapshot.layoutId == "horizontal",
                     onClick = { onLayout("horizontal") },
-                    label = { Text("↔ H", fontSize = 9.sp) }
+                    label = { Text("↔ H", fontSize = eqBodyFontSize) }
                 )
                 FilterChip(
                     selected = snapshot.layoutId == "vertical",
                     onClick = { onLayout("vertical") },
-                    label = { Text("↕ V", fontSize = 9.sp) }
+                    label = { Text("↕ V", fontSize = eqBodyFontSize) }
                 )
                 Spacer(Modifier.width(4.dp))
                 FilterChip(
                     selected = snapshot.styleId == "classic",
                     onClick = { onStyle("classic") },
-                    label = { Text("Classic", fontSize = 9.sp) }
+                    label = { Text("Classic", fontSize = eqBodyFontSize) }
                 )
                 FilterChip(
                     selected = snapshot.styleId == "graphic",
                     onClick = { onStyle("graphic") },
-                    label = { Text("Graphic", fontSize = 9.sp) }
+                    label = { Text("Graphic", fontSize = eqBodyFontSize) }
                 )
             }
 
@@ -2342,7 +2378,7 @@ private fun PlaybackEqualizerOverlay(
                 Text(
                     "Equalizer will become available when the playback audio session is ready.",
                     color = Color.White.copy(alpha = .72f),
-                    fontSize = 10.sp
+                    fontSize = eqBodyFontSize
                 )
             } else {
                 val presets = listOf(
@@ -2360,21 +2396,21 @@ private fun PlaybackEqualizerOverlay(
                         FilterChip(
                             selected = snapshot.presetId == id,
                             onClick = { onPreset(id) },
-                            label = { Text(label, fontSize = 9.sp) }
+                            label = { Text(label, fontSize = eqBodyFontSize) }
                         )
                     }
                     if (snapshot.presetId == "custom") {
                         FilterChip(
                             selected = true,
                             onClick = {},
-                            label = { Text("Custom", fontSize = 9.sp) }
+                            label = { Text("Custom", fontSize = eqBodyFontSize) }
                         )
                     }
                     if (snapshot.hasUserPreset) {
                         FilterChip(
                             selected = snapshot.presetId == "user",
                             onClick = onRecallUser,
-                            label = { Text(snapshot.userPresetName, fontSize = 9.sp) }
+                            label = { Text(snapshot.userPresetName, fontSize = eqBodyFontSize) }
                         )
                     }
                 }
@@ -2388,10 +2424,10 @@ private fun PlaybackEqualizerOverlay(
                         value = userPresetName,
                         onValueChange = { userPresetName = it.take(24) },
                         singleLine = true,
-                        label = { Text("Custom / User preset", fontSize = 9.sp) },
-                        placeholder = { Text("e.g. My Speakers", fontSize = 9.sp) },
+                        label = { Text("Custom / User preset", fontSize = eqBodyFontSize) },
+                        placeholder = { Text("e.g. My Speakers", fontSize = eqBodyFontSize) },
                         modifier = Modifier.weight(1f),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 10.sp)
+                        textStyle = LocalTextStyle.current.copy(fontSize = eqBodyFontSize)
                     )
                     Button(
                         onClick = { onSaveUser(userPresetName) },
@@ -2399,7 +2435,7 @@ private fun PlaybackEqualizerOverlay(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier.height(42.dp)
                     ) {
-                        Text("Save User", fontSize = 9.sp)
+                        Text("Save User", fontSize = eqBodyFontSize)
                     }
                 }
 
@@ -2414,11 +2450,11 @@ private fun PlaybackEqualizerOverlay(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("Surround / Spatial", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 10.sp)
+                                Text("Surround / Spatial", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = eqBodyFontSize)
                                 Text(
                                     if (snapshot.surroundAvailable) "Session surround" else "Not supported on this audio route",
                                     color = Color.White.copy(alpha = .58f),
-                                    fontSize = 8.sp
+                                    fontSize = eqSmallFontSize
                                 )
                             }
                             Switch(
@@ -2430,7 +2466,7 @@ private fun PlaybackEqualizerOverlay(
                         }
                         if (snapshot.surroundAvailable && snapshot.surroundEnabled) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Depth", color = Color.White.copy(alpha = .72f), fontSize = 8.sp, modifier = Modifier.width(46.dp))
+                                Text("Depth", color = Color.White.copy(alpha = .72f), fontSize = eqSmallFontSize, modifier = Modifier.width(46.dp))
                                 Slider(
                                     value = snapshot.surroundStrength,
                                     onValueChange = onSurroundStrength,
@@ -2440,7 +2476,7 @@ private fun PlaybackEqualizerOverlay(
                                 Text(
                                     "${(snapshot.surroundStrength * 100).roundToInt()}%",
                                     color = Color.White.copy(alpha = .72f),
-                                    fontSize = 8.sp,
+                                    fontSize = eqSmallFontSize,
                                     modifier = Modifier.width(34.dp)
                                 )
                             }
@@ -2448,7 +2484,7 @@ private fun PlaybackEqualizerOverlay(
                         HorizontalDivider(color = Color.White.copy(alpha = .08f))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("DTS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 10.sp)
+                                Text("DTS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = eqBodyFontSize)
                                 Text(
                                     when {
                                         snapshot.dtsAvailable && !snapshot.dtsEffectName.isNullOrBlank() ->
@@ -2457,7 +2493,7 @@ private fun PlaybackEqualizerOverlay(
                                         else -> "No DTS effect exposed by this device"
                                     },
                                     color = if (snapshot.dtsAvailable) TubeDeckAccentMint else Color.White.copy(alpha = .52f),
-                                    fontSize = 8.sp,
+                                    fontSize = eqSmallFontSize,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -2496,14 +2532,14 @@ private fun PlaybackEqualizerOverlay(
                                 Text(
                                     equalizerBandName(band.centerFrequencyHz),
                                     color = TubeDeckAccentCyan,
-                                    fontSize = 8.sp,
+                                    fontSize = eqSmallFontSize,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     String.format(Locale.ROOT, "%+.1f dB", band.levelDb),
                                     color = Color.White.copy(alpha = .72f),
-                                    fontSize = 8.sp
+                                    fontSize = eqSmallFontSize
                                 )
                                 Box(
                                     modifier = Modifier.height(112.dp).width(50.dp),
@@ -2519,7 +2555,7 @@ private fun PlaybackEqualizerOverlay(
                                 Text(
                                     equalizerFrequencyLabel(band.centerFrequencyHz),
                                     color = Color.White.copy(alpha = .82f),
-                                    fontSize = 8.sp
+                                    fontSize = eqSmallFontSize
                                 )
                             }
                         }
@@ -2534,14 +2570,14 @@ private fun PlaybackEqualizerOverlay(
                                 Text(
                                     equalizerBandName(band.centerFrequencyHz),
                                     color = TubeDeckAccentCyan,
-                                    fontSize = 8.sp,
+                                    fontSize = eqSmallFontSize,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     equalizerFrequencyLabel(band.centerFrequencyHz),
                                     color = Color.White.copy(alpha = .82f),
-                                    fontSize = 8.sp
+                                    fontSize = eqSmallFontSize
                                 )
                             }
                             Slider(
@@ -2553,7 +2589,7 @@ private fun PlaybackEqualizerOverlay(
                             Text(
                                 String.format(Locale.ROOT, "%+.1f", band.levelDb),
                                 color = Color.White.copy(alpha = .78f),
-                                fontSize = 9.sp,
+                                fontSize = eqBodyFontSize,
                                 modifier = Modifier.width(42.dp)
                             )
                         }
@@ -4524,9 +4560,16 @@ private fun resizeModeLabel(mode: Int): String = when (mode) {
     else -> "Fit"
 }
 
-private fun cycleSpeed(player: ExoPlayer): Float {
-    val speeds = floatArrayOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-    val next = speeds.firstOrNull { it > player.playbackParameters.speed + 0.001f } ?: speeds.first()
+private fun stepPlaybackSpeed(player: ExoPlayer, direction: Int): Float {
+    val speeds = floatArrayOf(
+        .25f, .5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f,
+        2.5f, 3f, 3.5f, 4f, 4.5f, 5f
+    )
+    val current = player.playbackParameters.speed
+    val currentIndex = speeds.indices.minByOrNull { kotlin.math.abs(speeds[it] - current) } ?: 3
+    val nextIndex = (currentIndex + when { direction < 0 -> -1; direction > 0 -> 1; else -> 0 })
+        .coerceIn(0, speeds.lastIndex)
+    val next = speeds[nextIndex]
     player.setPlaybackSpeed(next)
     return next
 }

@@ -118,14 +118,16 @@ fun DriveDeckScreen(
                 }
             }
             if (!playlistMode) {
+            // The normal Home surface is intentionally limited to the three primary feeds.
+            // Live content appears only when the user explicitly performs a live search.
             item {
                 HomeShelf(
-                    "Live now · $countryCode",
-                    liveNowVideos,
+                    "Relevant",
+                    if (suggestionsEnabled) suggestedVideos else emptyList(),
                     onOpenVideo,
                     listView = listView,
-                    loading = liveNowStatus == "Loading",
-                    action = "Refresh",
+                    enabled = suggestionsEnabled,
+                    action = if (suggestionsEnabled) "Refresh" else null,
                     onAction = onRefreshFeed
                 )
             }
@@ -137,17 +139,6 @@ fun DriveDeckScreen(
                     listView = listView,
                     action = if (watchHistory.isNotEmpty()) "Clear" else null,
                     onAction = onClearHistory
-                )
-            }
-            item {
-                HomeShelf(
-                    "Suggested",
-                    if (suggestionsEnabled) suggestedVideos else emptyList(),
-                    onOpenVideo,
-                    listView = listView,
-                    enabled = suggestionsEnabled,
-                    action = if (suggestionsEnabled) "Refresh" else null,
-                    onAction = onRefreshFeed
                 )
             }
             item {

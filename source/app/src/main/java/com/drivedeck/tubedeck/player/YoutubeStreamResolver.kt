@@ -672,6 +672,45 @@ object YoutubeStreamResolver {
         }
     }
 
+    suspend fun preferredSubtitleTracks(
+        context: Context,
+        url: String,
+        languages: Set<String> = setOf("en", "ur")
+    ): List<Subtitle> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
+        val requested = languages
+            .map { it.substringBefore('-').lowercase(Locale.US) }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (requested.isEmpty()) return@withContext emptyList()
+
+        val app = context.applicationContext
+        YtDlpUpdateManager.ensureInitialized(app)
+        val canonicalUrl = YoutubeUrls.canonicalVideoUrl(url) ?: url
+        val request = YoutubeDLRequest(canonicalUrl)
+            .addOption("--dump-single-json")
+            .addOption("--skip-download")
+            .addOption("--no-playlist")
+            .addOption("--no-warnings")
+            .addOption("--write-subs")
+            .addOption("--write-auto-subs")
+            .addOption("--sub-langs", requested.joinToString(","))
+            .addOption("--sub-format", "vtt/ttml/srt/best")
+
+        val response = YoutubeDL.execute(request)
+        val output = response.out.trim()
+        if (output.isBlank()) return@withContext emptyList()
+
+        val root = JSONObject(output)
+        prioritizeSubtitlesForPlayer(
+            parseDownloadEngineSubtitles(root).filter { subtitle ->
+                subtitle.languageTag.substringBefore('-')
+                    .lowercase(Locale.US) in requested
+            },
+            preferredLanguage = requested.first()
+        )
+    }
+
     private suspend fun resolvePlaybackWithFallback(context: Context, url: String): ResolvedMedia {
         val canonicalUrl = YoutubeUrls.canonicalVideoUrl(url) ?: url
         val extractorAttempt = runCatching { resolveUncached(canonicalUrl) }

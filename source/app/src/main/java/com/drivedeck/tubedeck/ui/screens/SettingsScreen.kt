@@ -96,7 +96,7 @@ fun SettingsScreen(
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
-    var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)) }
+    var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
@@ -110,6 +110,9 @@ fun SettingsScreen(
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
     var playerControllerScale by remember {
         mutableFloatStateOf(currentSettings.playerControllerScale.coerceIn(0.85f, 1.50f))
+    }
+    var equalizerTextScale by remember {
+        mutableFloatStateOf(currentSettings.equalizerTextScale.coerceIn(1.0f, 1.8f))
     }
     var showRelevantShelf by remember { mutableStateOf(currentSettings.showRelevantShelf) }
     var showEpisodesShelf by remember { mutableStateOf(currentSettings.showEpisodesShelf) }
@@ -495,6 +498,24 @@ fun SettingsScreen(
                 }
                 HorizontalDivider()
 
+                Text(
+                    "Equalizer text size · ${(equalizerTextScale * 100).toInt()}%",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = equalizerTextScale,
+                    onValueChange = { equalizerTextScale = it.coerceIn(1.0f, 1.8f) },
+                    valueRange = 1.0f..1.8f,
+                    steps = 7
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Normal", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Large", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Extra large", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+                HorizontalDivider()
+
                 Text("Remembered quality", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -514,7 +535,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { speed ->
+                    listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f).forEach { speed ->
                         FilterChip(
                             selected = kotlin.math.abs(preferredPlaybackSpeed - speed) < 0.01f,
                             onClick = { preferredPlaybackSpeed = speed },
@@ -585,6 +606,7 @@ fun SettingsScreen(
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
                             playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
+                            equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
                             showRelevantShelf = showRelevantShelf,
                             showEpisodesShelf = showEpisodesShelf,
                             appearancePreset = appearancePreset,

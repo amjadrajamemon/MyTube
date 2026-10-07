@@ -114,7 +114,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
             putString("playerMode", next.playerMode.name)
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
-            putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 2.0f))
+            putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
             putBoolean("autoRotatePlayback", next.autoRotatePlayback)
             putString("playbackContinuationMode", next.playbackContinuationMode.name)
@@ -130,6 +130,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             putFloat("playerControllerScale", next.playerControllerScale.coerceIn(0.85f, 1.50f))
+            putFloat("equalizerTextScale", next.equalizerTextScale.coerceIn(1.0f, 1.8f))
             putBoolean("showRelevantShelf", next.showRelevantShelf)
             putBoolean("showEpisodesShelf", next.showEpisodesShelf)
             putString("appearancePreset", next.appearancePreset)
@@ -164,7 +165,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
-        preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 2.0f),
+        preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 5.0f),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
         autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
         playbackContinuationMode = enumValue(
@@ -186,6 +187,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
         playerControllerScale = prefs.getFloat("playerControllerScale", 1.20f).coerceIn(0.85f, 1.50f),
+        equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
         showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),
         showEpisodesShelf = prefs.getBoolean("showEpisodesShelf", true),
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",

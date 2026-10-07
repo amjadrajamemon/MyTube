@@ -114,6 +114,7 @@ data class TubeDeckSettings(
 
     // Native-player controller and upward-swipe continuation shelf.
     val playerControllerScale: Float = 1.20f,
+    val equalizerTextScale: Float = 1.25f,
     val showRelevantShelf: Boolean = true,
     val showEpisodesShelf: Boolean = true,
 

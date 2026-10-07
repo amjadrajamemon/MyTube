@@ -473,13 +473,16 @@ fun NativeExoPlayer(
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
-    var captionsEnabled by remember { mutableStateOf(true) }
+    // Standard player behavior: captions start off and are enabled explicitly from CC.
+    // This also prevents every side-loaded subtitle source from becoming active at first frame.
+    var captionsEnabled by remember { mutableStateOf(false) }
     var captionLanguageTag by rememberSaveable(media.id) { mutableStateOf("auto") }
     var qualityLabel by remember { mutableStateOf("Auto") }
     var hasCaptions by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showCaptionMenu by remember { mutableStateOf(false) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
@@ -681,9 +684,24 @@ fun NativeExoPlayer(
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         isPreparing = true
         firstFrameRendered = false
-        exoPlayer.setMediaSource(buildResolvedSource(dataSourceFactory, sourceMedia, option.height), position)
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
+        val preparedSource = runCatching {
+            buildResolvedSource(dataSourceFactory, sourceMedia, option.height)
+        }.getOrElse { sourceError ->
+            isPreparing = false
+            isBuffering = false
+            resolveError = "Could not prepare video source: ${sourceError.message ?: sourceError.javaClass.simpleName}"
+            return
+        }
+        runCatching {
+            exoPlayer.setMediaSource(preparedSource, position)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        }.onFailure { sourceError ->
+            isPreparing = false
+            isBuffering = false
+            resolveError = "Could not start video playback: ${sourceError.message ?: sourceError.javaClass.simpleName}"
+            return
+        }
         selectedHeight = option.height
         autoQuality = autoSelected
         qualityLabel = if (autoSelected) "Auto" else "${option.height}p"
@@ -925,8 +943,10 @@ fun NativeExoPlayer(
                     exoPlayer.prepare()
                     exoPlayer.playWhenReady = true
                 } else {
+                    // Keep the Activity/player visible on a terminal Media3 error. Automatically
+                    // replacing the native player with WebView looked like a sudden player/app exit
+                    // and could trigger extra lifecycle transitions on OEM Android builds.
                     resolveError = "Media3 playback error: ${error.errorCodeName}"
-                    if (youtubeVideo) onWebFallback()
                 }
             }
         }
@@ -997,8 +1017,9 @@ fun NativeExoPlayer(
             } catch (t: Exception) {
                 isPreparing = false
                 isBuffering = false
+                // Do not switch hosts automatically. Keep the error card in the current player
+                // and let the user choose "Open web player" explicitly.
                 resolveError = "Could not resolve video stream: ${t.message ?: t.javaClass.simpleName}"
-                onWebFallback()
             }
         } else {
             if (media.mediaUri.isBlank()) {
@@ -1828,24 +1849,88 @@ fun NativeExoPlayer(
                                     }
                                 }
 
-                                IconButton(
-                                    onClick = {
-                                        captionsEnabled = !captionsEnabled
-                                        controlsVisible = true
-                                    },
-                                    enabled = hasCaptions,
-                                    modifier = Modifier.size(controllerHeight)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ClosedCaption,
-                                        if (hasCaptions) "Captions" else "Captions unavailable",
-                                        tint = when {
-                                            !hasCaptions -> Color.White.copy(alpha = .28f)
-                                            captionsEnabled -> TubeDeckAccentCyan
-                                            else -> Color.White
+                                Box {
+                                    IconButton(
+                                        onClick = {
+                                            showCaptionMenu = true
+                                            controlsVisible = true
                                         },
-                                        modifier = Modifier.size(controllerIconSize)
-                                    )
+                                        enabled = hasCaptions,
+                                        modifier = Modifier.size(controllerHeight)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.ClosedCaption,
+                                            if (hasCaptions) "Caption language" else "Captions unavailable",
+                                            tint = when {
+                                                !hasCaptions -> Color.White.copy(alpha = .28f)
+                                                captionsEnabled -> TubeDeckAccentCyan
+                                                else -> Color.White
+                                            },
+                                            modifier = Modifier.size(controllerIconSize)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showCaptionMenu,
+                                        onDismissRequest = { showCaptionMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (!captionsEnabled) {
+                                                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    Text("Off")
+                                                }
+                                            },
+                                            onClick = {
+                                                showCaptionMenu = false
+                                                captionsEnabled = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (captionsEnabled && captionLanguageTag == "auto") {
+                                                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    Text("Auto")
+                                                }
+                                            },
+                                            onClick = {
+                                                showCaptionMenu = false
+                                                captionLanguageTag = "auto"
+                                                captionsEnabled = true
+                                            }
+                                        )
+                                        resolved?.subtitles.orEmpty()
+                                            .distinctBy { it.languageTag.lowercase(Locale.US) }
+                                            .forEach { subtitle ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            if (
+                                                                captionsEnabled &&
+                                                                captionLanguageTag.equals(subtitle.languageTag, ignoreCase = true)
+                                                            ) {
+                                                                Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                                Spacer(Modifier.width(6.dp))
+                                                            }
+                                                            Text(
+                                                                subtitle.displayName +
+                                                                    if (subtitle.autoGenerated) " • Auto-generated" else ""
+                                                            )
+                                                        }
+                                                    },
+                                                    onClick = {
+                                                        showCaptionMenu = false
+                                                        captionLanguageTag = subtitle.languageTag
+                                                        captionsEnabled = true
+                                                    }
+                                                )
+                                            }
+                                    }
                                 }
                                 TextButton(
                                     onClick = {

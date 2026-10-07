@@ -35,6 +35,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 /**
  * Resolves a YouTube webpage URL into real media stream URLs for Media3.
@@ -48,6 +50,22 @@ object YoutubeStreamResolver {
     private val resolutionLock = Any()
     private val resolutionCache = LinkedHashMap<String, CachedResolution>(16, 0.75f, true)
     private val resolutionInFlight = mutableMapOf<String, Deferred<ResolvedMedia>>()
+
+    private val commentsLock = Any()
+    private val commentsCache = LinkedHashMap<String, CachedComments>(8, 0.75f, true)
+
+    private data class CachedComments(
+        val batch: CommentsBatch,
+        val requestedLimit: Int,
+        val cachedAtMs: Long
+    )
+
+    private const val COMMENTS_PAGE_SIZE = 20
+    private const val COMMENTS_MAX_ITEMS = 80
+    private const val COMMENTS_CACHE_TTL_MS = 10 * 60 * 1000L
+    private const val COMMENTS_PRIMARY_TIMEOUT_MS = 8_000L
+    private const val COMMENTS_FALLBACK_TIMEOUT_MS = 10_000L
+    private const val MAX_COMMENTS_CACHE_ENTRIES = 8
 
     private data class CachedResolution(
         val media: ResolvedMedia,
@@ -208,6 +226,12 @@ object YoutubeStreamResolver {
         val replyCount: Int,
         val pinned: Boolean,
         val channelOwner: Boolean
+    )
+
+    data class CommentsBatch(
+        val items: List<NativeComment>,
+        val commentsDisabled: Boolean = false,
+        val hasMore: Boolean = false
     )
 
     data class ResolvedMedia(
@@ -748,84 +772,185 @@ object YoutubeStreamResolver {
         }
 
     suspend fun comments(context: Context, url: String): List<NativeComment> =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            ensureInitialized()
-            require(YoutubeUrls.videoId(url) != null) { "Enter a valid YouTube video URL" }
+        commentsBatch(context = context, url = url).items
 
-            val collected = mutableListOf<NativeComment>()
-            var extractorFailure: Throwable? = null
-            var commentsDisabledByVideo = false
+    suspend fun commentsBatch(
+        context: Context,
+        url: String,
+        limit: Int = COMMENTS_PAGE_SIZE,
+        forceRefresh: Boolean = false
+    ): CommentsBatch = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        ensureInitialized()
+        val videoId = requireNotNull(YoutubeUrls.videoId(url)) { "Enter a valid YouTube video URL" }
+        val safeLimit = limit.coerceIn(COMMENTS_PAGE_SIZE, COMMENTS_MAX_ITEMS)
+        val now = android.os.SystemClock.elapsedRealtime()
 
-            runCatching {
-                val info = CommentsInfo.getInfo(url)
-                if (info != null && info.isCommentsDisabled) {
-                    commentsDisabledByVideo = true
-                }
-                if (info != null && !info.isCommentsDisabled) {
-                    fun append(items: List<org.schabi.newpipe.extractor.comments.CommentsInfoItem>) {
-                        items.forEach { item ->
-                            val text = item.commentText?.content.orEmpty().trim()
-                            if (text.isBlank()) return@forEach
-                            collected += NativeComment(
-                                id = item.commentId.orEmpty()
-                                    .ifBlank { item.url.orEmpty() + ":" + item.uploaderName.orEmpty() + ":" + collected.size },
-                                author = item.uploaderName.orEmpty().ifBlank { "YouTube user" },
-                                text = text,
-                                publishedText = item.textualUploadDate.orEmpty(),
-                                likeText = item.textualLikeCount.orEmpty(),
-                                replyCount = item.replyCount.coerceAtLeast(0),
-                                pinned = item.isPinned,
-                                channelOwner = item.isChannelOwner
-                            )
-                        }
+        if (forceRefresh) {
+            synchronized(commentsLock) { commentsCache.remove(videoId) }
+        } else {
+            synchronized(commentsLock) {
+                val cached = commentsCache[videoId]
+                if (cached != null && now - cached.cachedAtMs <= COMMENTS_CACHE_TTL_MS) {
+                    if (cached.requestedLimit >= safeLimit || !cached.batch.hasMore) {
+                        val visible = cached.batch.items.take(safeLimit)
+                        return@withContext cached.batch.copy(
+                            items = visible,
+                            hasMore = cached.batch.hasMore || cached.batch.items.size > safeLimit
+                        )
                     }
-
-                    append(info.relatedItems)
-                    var next = info.nextPage
-                    var pages = 0
-                    while (collected.size < 60 && next != null && pages < 4) {
-                        currentCoroutineContext().ensureActive()
-                        val page = CommentsInfo.getMoreItems(info, next)
-                        append(page.items)
-                        next = page.nextPage
-                        pages += 1
-                    }
+                } else if (cached != null) {
+                    commentsCache.remove(videoId)
                 }
-            }.onFailure { extractorFailure = it }
-
-            if (collected.isNotEmpty()) {
-                return@withContext collected.distinctBy { it.id }.take(60)
             }
-            if (commentsDisabledByVideo) return@withContext emptyList()
-
-            val fallback = runCatching { ytDlpComments(context.applicationContext, url) }
-                .getOrElse { ytError ->
-                    val cause = extractorFailure?.message?.takeIf { it.isNotBlank() }
-                    val fallbackCause = ytError.message?.takeIf { it.isNotBlank() }
-                    throw IOException(
-                        listOfNotNull(
-                            "Could not load YouTube comments",
-                            cause?.let { "Extractor: " + it },
-                            fallbackCause?.let { "Download Engine: " + it }
-                        ).joinToString(" • "),
-                        ytError
-                    )
-                }
-
-            fallback.distinctBy { it.id }.take(60)
         }
 
-    private suspend fun ytDlpComments(context: Context, url: String): List<NativeComment> {
+        var extractorFailure: Throwable? = null
+        val nativeDeferred = resolutionScope.async {
+            loadNewPipeComments(url = url, limit = safeLimit)
+        }
+        val nativeBatch = try {
+            withTimeout(COMMENTS_PRIMARY_TIMEOUT_MS) { nativeDeferred.await() }
+        } catch (timeout: TimeoutCancellationException) {
+            nativeDeferred.cancel()
+            extractorFailure = IOException("Native comments request timed out", timeout)
+            null
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            nativeDeferred.cancel()
+            throw cancel
+        } catch (t: Throwable) {
+            extractorFailure = t
+            null
+        }
+
+        if (nativeBatch != null && (nativeBatch.items.isNotEmpty() || nativeBatch.commentsDisabled)) {
+            cacheComments(videoId, safeLimit, nativeBatch)
+            return@withContext nativeBatch
+        }
+
+        val fallbackDeferred = resolutionScope.async {
+            ytDlpComments(context.applicationContext, url, safeLimit)
+        }
+        val fallbackItems = try {
+            withTimeout(COMMENTS_FALLBACK_TIMEOUT_MS) { fallbackDeferred.await() }
+        } catch (timeout: TimeoutCancellationException) {
+            fallbackDeferred.cancel()
+            throw IOException(
+                "Comments did not respond in time. Tap Retry.",
+                timeout
+            )
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            fallbackDeferred.cancel()
+            throw cancel
+        } catch (ytError: Throwable) {
+            val cause = extractorFailure?.message?.takeIf { it.isNotBlank() }
+            val fallbackCause = ytError.message?.takeIf { it.isNotBlank() }
+            throw IOException(
+                listOfNotNull(
+                    "Could not load YouTube comments",
+                    cause?.let { "Extractor: " + it },
+                    fallbackCause?.let { "Download Engine: " + it }
+                ).joinToString(" • "),
+                ytError
+            )
+        }
+
+        val fallbackBatch = CommentsBatch(
+            items = fallbackItems.distinctBy { it.id }.take(safeLimit),
+            commentsDisabled = false,
+            hasMore = fallbackItems.size >= safeLimit
+        )
+        cacheComments(videoId, safeLimit, fallbackBatch)
+        fallbackBatch
+    }
+
+    private suspend fun loadNewPipeComments(url: String, limit: Int): CommentsBatch {
+        val info = CommentsInfo.getInfo(url)
+            ?: return CommentsBatch(items = emptyList(), commentsDisabled = false, hasMore = false)
+
+        if (info.isCommentsDisabled) {
+            return CommentsBatch(items = emptyList(), commentsDisabled = true, hasMore = false)
+        }
+
+        val collected = mutableListOf<NativeComment>()
+
+        fun append(items: List<org.schabi.newpipe.extractor.comments.CommentsInfoItem>) {
+            items.forEach { item ->
+                val text = item.commentText?.content.orEmpty().trim()
+                if (text.isBlank()) return@forEach
+                collected += NativeComment(
+                    id = item.commentId.orEmpty()
+                        .ifBlank { item.url.orEmpty() + ":" + item.uploaderName.orEmpty() + ":" + collected.size },
+                    author = item.uploaderName.orEmpty().ifBlank { "YouTube user" },
+                    text = text,
+                    publishedText = item.textualUploadDate.orEmpty(),
+                    likeText = item.textualLikeCount.orEmpty(),
+                    replyCount = item.replyCount.coerceAtLeast(0),
+                    pinned = item.isPinned,
+                    channelOwner = item.isChannelOwner
+                )
+            }
+        }
+
+        append(info.relatedItems)
+        var next = info.nextPage
+        var pages = 0
+
+        // Initial opening normally returns from the first extractor page. Extra pages are fetched
+        // only when the UI explicitly asks for more comments.
+        while (collected.distinctBy { it.id }.size < limit && next != null && pages < 3) {
+            currentCoroutineContext().ensureActive()
+            val page = CommentsInfo.getMoreItems(info, next)
+            append(page.items)
+            next = page.nextPage
+            pages += 1
+        }
+
+        val unique = collected.distinctBy { it.id }
+        return CommentsBatch(
+            items = unique.take(limit),
+            commentsDisabled = false,
+            hasMore = next != null || unique.size > limit
+        )
+    }
+
+    private fun cacheComments(videoId: String, requestedLimit: Int, batch: CommentsBatch) {
+        synchronized(commentsLock) {
+            commentsCache[videoId] = CachedComments(
+                batch = batch,
+                requestedLimit = requestedLimit,
+                cachedAtMs = android.os.SystemClock.elapsedRealtime()
+            )
+            while (commentsCache.size > MAX_COMMENTS_CACHE_ENTRIES) {
+                val eldest = commentsCache.entries.iterator()
+                if (eldest.hasNext()) {
+                    eldest.next()
+                    eldest.remove()
+                }
+            }
+        }
+    }
+
+    private suspend fun ytDlpComments(
+        context: Context,
+        url: String,
+        limit: Int
+    ): List<NativeComment> {
         YtDlpUpdateManager.ensureInitialized(context)
+        val safeLimit = limit.coerceIn(COMMENTS_PAGE_SIZE, COMMENTS_MAX_ITEMS)
         val request = YoutubeDLRequest(url)
             .addOption("--skip-download")
             .addOption("--write-comments")
+            .addOption(
+                "--extractor-args",
+                "youtube:max_comments=$safeLimit,$safeLimit,0,0;comment_sort=top"
+            )
             .addOption("--dump-single-json")
             .addOption("--no-warnings")
 
         val response = YoutubeDL.execute(request)
         val root = JSONObject(response.out)
-        val comments = root.optJSONArray("comments") ?: throw IOException("Download Engine returned no comments data")
+        val comments = root.optJSONArray("comments")
+            ?: throw IOException("Download Engine returned no comments data")
         val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
             .withZone(ZoneId.systemDefault())
 
@@ -855,7 +980,7 @@ object YoutubeStreamResolver {
                         channelOwner = item.optBoolean("author_is_uploader", false)
                     )
                 )
-                if (size >= 60) break
+                if (size >= safeLimit) break
             }
         }
     }

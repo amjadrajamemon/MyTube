@@ -10,6 +10,12 @@ enum class PlayerMode(val label: String) {
     NATIVE("Native ExoPlayer")
 }
 
+enum class PlaybackContinuationMode(val label: String) {
+    LOOP_CURRENT("Loop"),
+    AUTO_NEXT("Auto next"),
+    EPISODES("Episodes")
+}
+
 enum class TaskStatus {
     QUEUED,
     DOWNLOADING,
@@ -84,6 +90,7 @@ data class TubeDeckSettings(
     val preferredPlaybackSpeed: Float = 1.0f,
     val seekIntervalSeconds: Int = 10,
     val autoRotatePlayback: Boolean = true,
+    val playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     val homeSuggestionsEnabled: Boolean = true,
     val homeTrendingEnabled: Boolean = true,
     

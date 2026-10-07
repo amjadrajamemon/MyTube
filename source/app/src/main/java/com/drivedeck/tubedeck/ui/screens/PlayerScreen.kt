@@ -36,6 +36,8 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -110,6 +112,7 @@ import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
 import com.drivedeck.tubedeck.data.model.PlayerMode
+import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
 import com.drivedeck.tubedeck.data.model.PlaylistItem
 import com.drivedeck.tubedeck.data.model.SponsorSegment
 import com.drivedeck.tubedeck.player.LiveDubEngine
@@ -145,6 +148,8 @@ fun PlayerScreen(
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
+    onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit = {},
     preferredPlaybackQualityHeight: Int = 0,
     preferredPlaybackSpeed: Float = 1.0f,
     seekIntervalSeconds: Int = 10,
@@ -231,6 +236,8 @@ fun PlayerScreen(
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            playbackContinuationMode = playbackContinuationMode,
+            onPlaybackContinuationModeChanged = onPlaybackContinuationModeChanged,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
             preferredPlaybackSpeed = preferredPlaybackSpeed,
             seekIntervalSeconds = seekIntervalSeconds,
@@ -372,8 +379,8 @@ fun WebPlayer(
 
             AnimatedVisibility(
                 visible = downloadActionsVisible && (onDownloadVideo != null || onDownloadPlaylist != null),
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 68.dp, end = 12.dp)
             ) {
                 DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
@@ -391,6 +398,8 @@ fun NativeExoPlayer(
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    playbackContinuationMode: PlaybackContinuationMode,
+    onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit,
     preferredPlaybackQualityHeight: Int,
     preferredPlaybackSpeed: Float,
     seekIntervalSeconds: Int,
@@ -452,6 +461,10 @@ fun NativeExoPlayer(
     var showSettings by remember { mutableStateOf(false) }
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
+    var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
+    var continuationEpisodesLoaded by remember(media.id) { mutableStateOf(false) }
     var scrubFraction by remember(media.id) { mutableStateOf<Float?>(null) }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
@@ -527,6 +540,55 @@ fun NativeExoPlayer(
     LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
         playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 2.0f)
         exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
+    LaunchedEffect(exoPlayer, playbackContinuationMode) {
+        exoPlayer.repeatMode = if (playbackContinuationMode == PlaybackContinuationMode.LOOP_CURRENT) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+    }
+
+    LaunchedEffect(showPlaybackModeCards) {
+        if (showPlaybackModeCards) {
+            delay(6_000L)
+            showPlaybackModeCards = false
+        }
+    }
+
+    LaunchedEffect(
+        showPlaybackModeCards,
+        playbackContinuationMode,
+        firstFrameRendered,
+        media.mediaUri,
+        resolved?.title
+    ) {
+        if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
+        if (!showPlaybackModeCards && playbackContinuationMode != PlaybackContinuationMode.EPISODES) {
+            return@LaunchedEffect
+        }
+        if (continuationEpisodesLoaded || continuationEpisodesLoading) return@LaunchedEffect
+
+        val titleHint = resolved?.title?.takeIf { it.isNotBlank() }
+            ?: media.title.takeIf { it.isNotBlank() }
+            ?: return@LaunchedEffect
+        if (titleHint.equals("Now Playing", ignoreCase = true)) return@LaunchedEffect
+
+        continuationEpisodesLoading = true
+        try {
+            continuationEpisodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(
+                url = media.mediaUri,
+                titleHint = titleHint
+            )
+            continuationEpisodesLoaded = true
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Throwable) {
+            continuationEpisodeShelf = null
+        } finally {
+            continuationEpisodesLoading = false
+        }
     }
 
     LaunchedEffect(pauseGeneration) {
@@ -622,6 +684,15 @@ fun NativeExoPlayer(
         controlsVisible = true
     }
 
+    val latestContinuationMode by rememberUpdatedState(playbackContinuationMode)
+    val latestResolvedMedia by rememberUpdatedState(resolved)
+    val latestContinuationEpisodeShelf by rememberUpdatedState(continuationEpisodeShelf)
+    val latestOnNextItem by rememberUpdatedState(onNextItem)
+    val latestOnPlayRelated by rememberUpdatedState(onPlayRelated)
+    val latestOnPlayPlaylistItem by rememberUpdatedState(onPlayPlaylistItem)
+    val latestPlaylistItems by rememberUpdatedState(playlistItems)
+    val latestPlaylistIndex by rememberUpdatedState(playlistIndex)
+
     DisposableEffect(exoPlayer, mediaSession) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -642,7 +713,73 @@ fun NativeExoPlayer(
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
                         endActionDispatched = true
-                        latestOnPlaybackEnded?.invoke()
+                        when (latestContinuationMode) {
+                            PlaybackContinuationMode.LOOP_CURRENT -> {
+                                exoPlayer.seekTo(0L)
+                                exoPlayer.playWhenReady = true
+                                exoPlayer.play()
+                                endActionDispatched = false
+                            }
+
+                            PlaybackContinuationMode.EPISODES -> {
+                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                                val episodes = latestContinuationEpisodeShelf?.episodes.orEmpty()
+                                    .distinctBy { it.videoId }
+                                val currentEpisodeIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+                                val nextEpisode = if (
+                                    currentEpisodeIndex >= 0 &&
+                                    currentEpisodeIndex < episodes.lastIndex
+                                ) {
+                                    episodes[currentEpisodeIndex + 1]
+                                } else {
+                                    null
+                                }
+
+                                when {
+                                    nextEpisode != null && latestOnPlayRelated != null -> {
+                                        latestOnPlayRelated?.invoke(
+                                            OfflineMedia(
+                                                id = "episode-${nextEpisode.videoId}-${System.nanoTime()}",
+                                                title = nextEpisode.title,
+                                                videoId = nextEpisode.videoId,
+                                                thumbnailUrl = nextEpisode.thumbnailUrl,
+                                                mediaUri = "https://www.youtube.com/watch?v=${nextEpisode.videoId}"
+                                            )
+                                        )
+                                    }
+
+                                    latestPlaylistIndex >= 0 &&
+                                        latestPlaylistIndex < latestPlaylistItems.lastIndex &&
+                                        latestOnPlayPlaylistItem != null -> {
+                                        latestOnPlayPlaylistItem?.invoke(latestPlaylistIndex + 1)
+                                    }
+
+                                    else -> latestOnPlaybackEnded?.invoke()
+                                }
+                            }
+
+                            PlaybackContinuationMode.AUTO_NEXT -> {
+                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                                val suggested = latestResolvedMedia?.relatedVideos
+                                    ?.firstOrNull { it.videoId.isNotBlank() && it.videoId != currentVideoId }
+
+                                when {
+                                    latestOnPlaybackEnded != null -> latestOnPlaybackEnded?.invoke()
+                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
+                                    suggested != null && latestOnPlayRelated != null -> {
+                                        latestOnPlayRelated?.invoke(
+                                            OfflineMedia(
+                                                id = "auto-next-${suggested.videoId}-${System.nanoTime()}",
+                                                title = suggested.title,
+                                                videoId = suggested.videoId,
+                                                thumbnailUrl = suggested.thumbnailUrl,
+                                                mediaUri = suggested.url
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1151,6 +1288,9 @@ fun NativeExoPlayer(
                                 var pinchDistance = 0f
                                 val rightSide = down.position.x > size.width / 2f
                                 val centerZone = down.position.x in (size.width * .30f)..(size.width * .70f)
+                                val playbackCardsSwipeZone =
+                                    down.position.y >= size.height * .68f &&
+                                    down.position.x in (size.width * .12f)..(size.width * .88f)
                                 val startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                                 val startBrightness = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: .5f
@@ -1191,7 +1331,11 @@ fun NativeExoPlayer(
                                     if (dragging) {
                                         change.consume()
                                         val fraction = (-totalDy / size.height.toFloat()).coerceIn(-1f, 1f)
-                                        if (centerZone) {
+                                        if (playbackCardsSwipeZone && totalDy < -12f) {
+                                            showPlaybackModeCards = true
+                                            gestureOverlayVisible = false
+                                            controlsVisible = true
+                                        } else if (centerZone) {
                                             val action = PlaybackSurfaceGesturePolicy.verticalRelease(
                                                 down.position.x, size.width.toFloat(), totalDy,
                                                 size.height.toFloat(), isFullscreen, pipEnabled
@@ -1218,7 +1362,11 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                if (centerZone && dragging) {
+                                if (playbackCardsSwipeZone && dragging) {
+                                    showPlaybackModeCards = totalDy < -(size.height * .08f)
+                                    controlsVisible = true
+                                    gestureOverlayVisible = false
+                                } else if (centerZone && dragging) {
                                     when (PlaybackSurfaceGesturePolicy.verticalRelease(
                                         down.position.x, size.width.toFloat(), totalDy,
                                         size.height.toFloat(), isFullscreen, pipEnabled
@@ -1250,6 +1398,46 @@ fun NativeExoPlayer(
                                 }
                             }
                         }
+                )
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showPlaybackModeCards && !inPictureInPicture,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        start = 10.dp,
+                        end = 10.dp,
+                        bottom = if (compactPortrait) 70.dp else 78.dp
+                    )
+                    .zIndex(80f)
+            ) {
+                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+                val episodes = continuationEpisodeShelf?.episodes.orEmpty()
+                val episodeIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+                val nextEpisodeTitle = if (episodeIndex >= 0 && episodeIndex < episodes.lastIndex) {
+                    episodes[episodeIndex + 1].title
+                } else {
+                    null
+                }
+
+                PlaybackContinuationCards(
+                    selectedMode = playbackContinuationMode,
+                    episodesLoading = continuationEpisodesLoading,
+                    nextEpisodeTitle = nextEpisodeTitle,
+                    currentVideoId = currentVideoId,
+                    relatedVideos = resolved?.relatedVideos.orEmpty(),
+                    episodeShelf = continuationEpisodeShelf,
+                    onSelect = { mode ->
+                        onPlaybackContinuationModeChanged(mode)
+                        controlsVisible = true
+                    },
+                    onPlayMedia = { selected ->
+                        showPlaybackModeCards = false
+                        onPlayRelated?.invoke(selected)
+                    }
                 )
             }
 
@@ -1456,6 +1644,24 @@ fun NativeExoPlayer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
+                            IconButton(
+                                onClick = {
+                                    showPlaybackModeCards = !showPlaybackModeCards
+                                    controlsVisible = true
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = when (playbackContinuationMode) {
+                                        PlaybackContinuationMode.LOOP_CURRENT -> Icons.Default.Repeat
+                                        PlaybackContinuationMode.AUTO_NEXT -> Icons.Default.SkipNext
+                                        PlaybackContinuationMode.EPISODES -> Icons.Default.PlaylistPlay
+                                    },
+                                    contentDescription = "Playback mode: ${playbackContinuationMode.label}",
+                                    tint = TubeDeckAccentCyan,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                             TextButton(
                                 onClick = {
                                     playbackSpeed = cycleSpeed(exoPlayer)
@@ -2540,6 +2746,207 @@ private fun equalizerFrequencyLabel(hz: Int): String {
 }
 
 @Composable
+private fun PlaybackContinuationCards(
+    selectedMode: PlaybackContinuationMode,
+    episodesLoading: Boolean,
+    nextEpisodeTitle: String?,
+    currentVideoId: String,
+    relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
+    onSelect: (PlaybackContinuationMode) -> Unit,
+    onPlayMedia: (OfflineMedia) -> Unit
+) {
+    val episodeCards = remember(episodeShelf, currentVideoId) {
+        val episodes = episodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
+        val currentIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
+        if (currentIndex >= 0) {
+            episodes.drop(currentIndex + 1).take(8)
+        } else {
+            episodes.filterNot { it.videoId == currentVideoId }.take(8)
+        }
+    }
+    val relatedCards = remember(relatedVideos, currentVideoId) {
+        relatedVideos
+            .filterNot { it.videoId == currentVideoId }
+            .distinctBy { it.videoId }
+            .take(8)
+    }
+
+    Surface(
+        color = Color.Black.copy(alpha = .92f),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 6.dp,
+        shadowElevation = 10.dp
+    ) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp)
+            ) {
+                item(key = "loop-current") {
+                    PlaybackContinuationCard(
+                        title = "Loop",
+                        subtitle = "Keep this video",
+                        icon = Icons.Default.Repeat,
+                        selected = selectedMode == PlaybackContinuationMode.LOOP_CURRENT,
+                        onClick = { onSelect(PlaybackContinuationMode.LOOP_CURRENT) }
+                    )
+                }
+                item(key = "auto-next") {
+                    PlaybackContinuationCard(
+                        title = "Auto next",
+                        subtitle = "Play next video",
+                        icon = Icons.Default.SkipNext,
+                        selected = selectedMode == PlaybackContinuationMode.AUTO_NEXT,
+                        onClick = { onSelect(PlaybackContinuationMode.AUTO_NEXT) }
+                    )
+                }
+                item(key = "episodes") {
+                    PlaybackContinuationCard(
+                        title = "Episodes",
+                        subtitle = when {
+                            episodesLoading -> "Finding episodes…"
+                            !nextEpisodeTitle.isNullOrBlank() -> nextEpisodeTitle
+                            else -> "Continue the series"
+                        },
+                        icon = Icons.Default.PlaylistPlay,
+                        selected = selectedMode == PlaybackContinuationMode.EPISODES,
+                        onClick = { onSelect(PlaybackContinuationMode.EPISODES) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
+            Spacer(Modifier.height(8.dp))
+
+            when {
+                selectedMode == PlaybackContinuationMode.EPISODES && episodesLoading -> {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    }
+                }
+
+                selectedMode == PlaybackContinuationMode.EPISODES && episodeCards.isNotEmpty() -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        items(
+                            items = episodeCards,
+                            key = { "gesture-episode-${it.videoId}" }
+                        ) { episode ->
+                            EpisodeVideoCard(episode) {
+                                onPlayMedia(
+                                    OfflineMedia(
+                                        id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
+                                        title = episode.title,
+                                        videoId = episode.videoId,
+                                        thumbnailUrl = episode.thumbnailUrl,
+                                        mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                selectedMode != PlaybackContinuationMode.EPISODES && relatedCards.isNotEmpty() -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        items(
+                            items = relatedCards,
+                            key = { "gesture-related-${it.videoId}" }
+                        ) { related ->
+                            RelatedVideoCard(related) {
+                                onPlayMedia(
+                                    OfflineMedia(
+                                        id = "gesture-related-${related.videoId}-${System.nanoTime()}",
+                                        title = related.title,
+                                        videoId = related.videoId,
+                                        thumbnailUrl = related.thumbnailUrl,
+                                        mediaUri = related.url
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    Text(
+                        if (selectedMode == PlaybackContinuationMode.EPISODES) {
+                            "No additional episode cards found"
+                        } else {
+                            "No up-next cards available yet"
+                        },
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackContinuationCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) TubeDeckAccentCyan.copy(alpha = .22f) else TubeDeckSurfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = if (selected) 5.dp else 1.dp,
+        modifier = Modifier.width(142.dp).heightIn(min = 70.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) TubeDeckAccentCyan else Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(
+                    subtitle,
+                    color = TubeDeckTextSecondary,
+                    fontSize = 9.5.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DownloadActionStrip(
     onDownloadVideo: (() -> Unit)?,
     onDownloadPlaylist: (() -> Unit)?
@@ -2599,25 +3006,56 @@ private fun PortraitCompanionPanel(
     var commentsLoading by remember(media.id) { mutableStateOf(false) }
     var commentsLoaded by remember(media.id) { mutableStateOf(false) }
     var commentsError by remember(media.id) { mutableStateOf<String?>(null) }
+    var commentsDisabled by remember(media.id) { mutableStateOf(false) }
+    var commentsHasMore by remember(media.id) { mutableStateOf(true) }
+    var commentsLimit by remember(media.id) { mutableIntStateOf(20) }
+    var commentsForceRefresh by remember(media.id) { mutableStateOf(false) }
     var showDescription by rememberSaveable(media.id) { mutableStateOf(false) }
     var episodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var episodesLoading by remember(media.id) { mutableStateOf(false) }
 
     fun refreshComments() {
+        if (commentsLoading) return
+        comments = emptyList()
         commentsLoaded = false
         commentsError = null
+        commentsDisabled = false
+        commentsHasMore = true
+        commentsLimit = 20
+        commentsForceRefresh = true
+    }
+
+    fun loadMoreComments() {
+        if (commentsLoading || !commentsHasMore || commentsLimit >= 80) return
+        commentsLimit = (commentsLimit + 20).coerceAtMost(80)
+        commentsLoaded = false
+        commentsError = null
+        commentsForceRefresh = false
     }
 
     BackHandler(enabled = showDescription) {
         showDescription = false
     }
 
-    LaunchedEffect(showComments, media.mediaUri, commentsLoaded) {
+    LaunchedEffect(showComments, media.mediaUri, commentsLoaded, commentsLimit) {
         if (!showComments || !commentsAvailable || commentsLoaded || commentsLoading) return@LaunchedEffect
         commentsLoading = true
         commentsError = null
+        val previousCount = comments.size
         try {
-            comments = YoutubeStreamResolver.comments(context, media.mediaUri)
+            val batch = YoutubeStreamResolver.commentsBatch(
+                context = context,
+                url = media.mediaUri,
+                limit = commentsLimit,
+                forceRefresh = commentsForceRefresh
+            )
+            commentsForceRefresh = false
+            comments = batch.items
+            commentsDisabled = batch.commentsDisabled
+            commentsHasMore =
+                batch.hasMore &&
+                batch.items.size < 80 &&
+                (previousCount == 0 || batch.items.size > previousCount)
             commentsLoaded = true
         } catch (cancel: CancellationException) {
             throw cancel
@@ -2742,7 +3180,7 @@ private fun PortraitCompanionPanel(
                 }
 
                 if (showComments) {
-                    IconButton(onClick = ::refreshComments, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = ::refreshComments, enabled = !commentsLoading, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Icons.Default.Refresh,
                             "Refresh comments",
@@ -2807,7 +3245,7 @@ private fun PortraitCompanionPanel(
                     }
                 }
 
-                showComments && commentsLoading -> {
+                showComments && commentsLoading && comments.isEmpty() -> {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2816,6 +3254,18 @@ private fun PortraitCompanionPanel(
                         CircularProgressIndicator(modifier = Modifier.size(32.dp))
                         Spacer(Modifier.height(12.dp))
                         Text("Loading comments…", color = TubeDeckTextSecondary, fontSize = 12.sp)
+                    }
+                }
+
+                showComments && commentsDisabled -> {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Comment, null, tint = TubeDeckTextSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Comments are disabled for this video", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -2831,7 +3281,7 @@ private fun PortraitCompanionPanel(
                         Spacer(Modifier.height(5.dp))
                         Text(commentsError.orEmpty(), color = TubeDeckTextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(10.dp))
-                        OutlinedButton(onClick = ::refreshComments) { Text("Retry") }
+                        OutlinedButton(onClick = ::refreshComments, enabled = !commentsLoading) { Text("Retry") }
                     }
                 }
 
@@ -2848,6 +3298,28 @@ private fun PortraitCompanionPanel(
                         ) {
                             items(comments, key = { it.id }) { comment ->
                                 NativeCommentRow(comment)
+                            }
+
+                            if (commentsLoading) {
+                                item(key = "comments-loading-more") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Loading more comments…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                                    }
+                                }
+                            } else if (commentsHasMore && comments.size < 80) {
+                                item(key = "comments-load-more") {
+                                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        OutlinedButton(onClick = ::loadMoreComments) {
+                                            Text("Load more")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -3229,6 +3701,58 @@ private fun EpisodeVideoCard(
         )
         Text(
             episode.uploader,
+            color = TubeDeckTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun RelatedVideoCard(
+    video: YoutubeStreamResolver.RelatedVideo,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(148.dp)
+            .clickable(enabled = true, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+            )
+            if (video.durationSeconds > 0L) {
+                Surface(
+                    color = Color.Black.copy(alpha = .82f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                ) {
+                    Text(
+                        formatDuration(video.durationSeconds * 1000L),
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            video.title,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 10.5.sp,
+            lineHeight = 13.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            video.channelTitle,
             color = TubeDeckTextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

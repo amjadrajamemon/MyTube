@@ -181,7 +181,7 @@ jobs:
           grep -Fq 'slideInVertically(initialOffsetY = { it })' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'if (showRelevantShelf)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'if (showEpisodesShelf)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
-          grep -Fq 'Arrangement.CenterHorizontally' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'Alignment.CenterHorizontally' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'playerControllerScale' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$MAIN"
           grep -Fq 'playbackContinuationMode = settings.playbackContinuationMode' "$NATIVE"

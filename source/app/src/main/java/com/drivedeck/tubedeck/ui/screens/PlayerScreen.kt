@@ -1479,7 +1479,7 @@ fun NativeExoPlayer(
                 )
             }
 
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = continuationModeHint != null && controlsVisible && !showPlaybackModeCards,
                 enter = fadeIn(),
                 exit = fadeOut(),

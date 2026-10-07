@@ -2,7 +2,7 @@ name: Build MyTube Android APKs
 
 on:
   push:
-    branches: [ main, stabilization-v1.7.0, stabilization-v1.7.1, stabilization-v1.7.3, fix/v1.7.4-comments-fast-load ]
+    branches: [ main, stabilization-v1.7.0, stabilization-v1.7.1, stabilization-v1.7.3, fix/v1.7.4-comments-fast-load, refine/v1.7.5-home-controls-shelves ]
     paths:
       - 'source/**'
       - '.github/workflows/android-build.yml'
@@ -25,18 +25,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify v1.7.4 dual-APK source
+      - name: Verify v1.7.5 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.7.4"' source/app/build.gradle.kts
-          grep -q 'versionCode = 76' source/app/build.gradle.kts
+          grep -q 'versionName = "1.7.5"' source/app/build.gradle.kts
+          grep -q 'versionCode = 77' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
-          echo "Building MyTube v1.7.4 ARM64 + Universal source tree."
+          echo "Building MyTube v1.7.5 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -461,7 +461,9 @@ jobs:
             grep -Fq 'Retry limit reached' "$DEX_STRINGS"
             grep -Fq 'Return to video' "$DEX_STRINGS"
             grep -Fq 'LIVE' "$DEX_STRINGS"
-            grep -Fq 'Live now' "$DEX_STRINGS"
+            grep -Fq 'Relevant' "$DEX_STRINGS"
+            grep -Fq 'Controller size' "$DEX_STRINGS"
+            grep -Fq 'Swipe shelf' "$DEX_STRINGS"
             grep -Fq 'No active live streams' "$DEX_STRINGS"
             grep -Fq 'eventType=live' "$DEX_STRINGS"
             grep -Fq 'Text size' "$DEX_STRINGS"
@@ -475,7 +477,7 @@ jobs:
             grep -Fq 'Activity/History' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.7.4 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.7.5 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -536,8 +538,8 @@ jobs:
             "$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionCode='76'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.7.4'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionCode='77'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.7.5'"
             if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
               echo "::error::$EDITION APK is unexpectedly debuggable."
               exit 1
@@ -572,10 +574,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
           {
             echo "Previous v1.6.7 signing certificate: $PREVIOUS_SHA1"
-            echo "Saved stable signing certificate used by v1.7.4: $ACTUAL_SHA1"
+            echo "Saved stable signing certificate used by v1.7.5: $ACTUAL_SHA1"
             test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
             echo "The APK is compatible with an update over v1.6.7."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-Install-Compatibility.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-Install-Compatibility.txt"
 
       - name: Report OAuth registration identity
         shell: bash
@@ -592,7 +594,7 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
           echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
@@ -605,15 +607,15 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-Universal-Older-Rooted-debug.apk"
 
           if [ -s "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk" ]; then
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-ARM64-production.apk"
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.4-Universal-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-ARM64-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.7.5-Universal-production.apk"
           fi
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.7.4-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.7.5-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -623,27 +625,27 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.7.4-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.7.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.7.4-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.7.4-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.7.4-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.7.4-Complete-AndroidStudio-Source.zip.sha256
-          if [ -s dist/MyTube-v1.7.4-ARM64-production.apk ]; then
-            sha256sum dist/MyTube-v1.7.4-ARM64-production.apk > dist/MyTube-v1.7.4-ARM64-production.apk.sha256
-            sha256sum dist/MyTube-v1.7.4-Universal-production.apk > dist/MyTube-v1.7.4-Universal-production.apk.sha256
+          sha256sum dist/MyTube-v1.7.5-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.7.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.7.5-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.7.5-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.7.5-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.7.5-Complete-AndroidStudio-Source.zip.sha256
+          if [ -s dist/MyTube-v1.7.5-ARM64-production.apk ]; then
+            sha256sum dist/MyTube-v1.7.5-ARM64-production.apk > dist/MyTube-v1.7.5-ARM64-production.apk.sha256
+            sha256sum dist/MyTube-v1.7.5-Universal-production.apk > dist/MyTube-v1.7.5-Universal-production.apk.sha256
           fi
-          test -s dist/MyTube-v1.7.4-OAuth-Registration.txt
+          test -s dist/MyTube-v1.7.5-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Upload verified v1.7.4 build artifact
+      - name: Upload verified v1.7.5 build artifact
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MyTube-v1.7.4-verified-build
+          name: MyTube-v1.7.5-verified-build
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish v1.7.4 dual APK release
+      - name: Publish v1.7.5 dual APK release
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
@@ -655,34 +657,31 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.7.4-dual-arm64-universal-debug"
-          NOTES="MyTube v1.7.4: full stabilization release across playback, playlists, downloads, Live Dub, OAuth and browser recovery.
-          - Dynamic YouTube Mix queues prefer Watch Next playlist context instead of being forced through an ordinary playlist page.
-          - Static playlists retain NewPipe pagination, with Download Engine flat-playlist metadata as an independent final fallback.
-          - Playlist-only search results open directly into the native playlist flow instead of bouncing through repeated YouTube WebView redirects.
-          - Playlist downloader discovery and loading are separated so selecting a collection no longer restarts its own loading effect.
-          - Playlist download failures are surfaced to the user; successful queueing reports the actual number of items queued.
-          - Native playlist playback keeps list=/Mix context, Previous/Next collection order, next-item prefetch and automatic advance.
-          - Full titles, view counts, List/Card controls, global text size, live discovery, PiP/audio-only, OAuth and download management remain included.
+          TAG="v1.7.5-dual-arm64-universal-debug"
+          NOTES="MyTube v1.7.5: Home and native-player presentation refinement.
+          - Home defaults to Relevant, History and Trending instead of preloading a generic Live Now shelf.
+          - Native auxiliary controls are centered, larger by default and adjustable from Settings with a persistent size slider.
+          - The upward-swipe continuation shelf can show Relevant and Episodes simultaneously as separate rows.
+          - Relevant and Episodes rows can each be enabled or disabled independently from Settings.
           - Debug APKs retain the established update-compatible signing certificate."
 
 
           ASSETS=(
-            dist/MyTube-v1.7.4-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.7.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.7.4-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.7.4-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.7.4-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.7.4-Complete-AndroidStudio-Source.zip.sha256
-            dist/MyTube-v1.7.4-OAuth-Registration.txt
-            dist/MyTube-v1.7.4-Install-Compatibility.txt
+            dist/MyTube-v1.7.5-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.7.5-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.7.5-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.7.5-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.7.5-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.7.5-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.7.5-OAuth-Registration.txt
+            dist/MyTube-v1.7.5-Install-Compatibility.txt
           )
-          if [ -s dist/MyTube-v1.7.4-ARM64-production.apk ]; then
+          if [ -s dist/MyTube-v1.7.5-ARM64-production.apk ]; then
             ASSETS+=(
-              dist/MyTube-v1.7.4-ARM64-production.apk
-              dist/MyTube-v1.7.4-ARM64-production.apk.sha256
-              dist/MyTube-v1.7.4-Universal-production.apk
-              dist/MyTube-v1.7.4-Universal-production.apk.sha256
+              dist/MyTube-v1.7.5-ARM64-production.apk
+              dist/MyTube-v1.7.5-ARM64-production.apk.sha256
+              dist/MyTube-v1.7.5-Universal-production.apk
+              dist/MyTube-v1.7.5-Universal-production.apk.sha256
             )
           fi
 
@@ -691,7 +690,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.7.4 ARM64 + Universal" \
+              --title "MyTube v1.7.5 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

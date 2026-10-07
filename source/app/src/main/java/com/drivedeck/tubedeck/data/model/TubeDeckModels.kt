@@ -12,7 +12,7 @@ enum class PlayerMode(val label: String) {
 
 enum class PlaybackContinuationMode(val label: String) {
     LOOP_CURRENT("Loop"),
-    AUTO_NEXT("Auto next"),
+    AUTO_NEXT("Relevant next"),
     EPISODES("Episodes")
 }
 

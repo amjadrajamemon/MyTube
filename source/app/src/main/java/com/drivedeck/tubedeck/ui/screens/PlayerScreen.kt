@@ -77,6 +77,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -564,9 +565,9 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(showPlaybackModeCards) {
-        if (showPlaybackModeCards) {
-            delay(6_000L)
+    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading) {
+        if (showPlaybackModeCards && !continuationEpisodesLoading) {
+            delay(10_000L)
             showPlaybackModeCards = false
         }
     }
@@ -1432,27 +1433,13 @@ fun NativeExoPlayer(
                     .zIndex(80f)
             ) {
                 val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
-                val episodes = continuationEpisodeShelf?.episodes.orEmpty()
-                val episodeIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
-                val nextEpisodeTitle = if (episodeIndex >= 0 && episodeIndex < episodes.lastIndex) {
-                    episodes[episodeIndex + 1].title
-                } else {
-                    null
-                }
-
                 PlaybackContinuationCards(
-                    selectedMode = playbackContinuationMode,
                     episodesLoading = continuationEpisodesLoading,
-                    nextEpisodeTitle = nextEpisodeTitle,
                     currentVideoId = currentVideoId,
                     relatedVideos = resolved?.relatedVideos.orEmpty(),
                     episodeShelf = continuationEpisodeShelf,
                     showRelevantShelf = showRelevantShelf,
                     showEpisodesShelf = showEpisodesShelf,
-                    onSelect = { mode ->
-                        onPlaybackContinuationModeChanged(mode)
-                        controlsVisible = true
-                    },
                     onPlayMedia = { selected ->
                         showPlaybackModeCards = false
                         onPlayRelated?.invoke(selected)
@@ -1668,7 +1655,12 @@ fun NativeExoPlayer(
                         ) {
                             IconButton(
                                 onClick = {
-                                    showPlaybackModeCards = !showPlaybackModeCards
+                                    val nextMode = when (playbackContinuationMode) {
+                                        PlaybackContinuationMode.LOOP_CURRENT -> PlaybackContinuationMode.AUTO_NEXT
+                                        PlaybackContinuationMode.AUTO_NEXT -> PlaybackContinuationMode.EPISODES
+                                        PlaybackContinuationMode.EPISODES -> PlaybackContinuationMode.LOOP_CURRENT
+                                    }
+                                    onPlaybackContinuationModeChanged(nextMode)
                                     controlsVisible = true
                                 },
                                 modifier = Modifier.size(controllerHeight)
@@ -1679,7 +1671,7 @@ fun NativeExoPlayer(
                                         PlaybackContinuationMode.AUTO_NEXT -> Icons.Default.SkipNext
                                         PlaybackContinuationMode.EPISODES -> Icons.Default.PlaylistPlay
                                     },
-                                    contentDescription = "Playback mode: ${playbackContinuationMode.label}",
+                                    contentDescription = "Playback continuation: ${playbackContinuationMode.label}. Tap to change mode.",
                                     tint = TubeDeckAccentCyan,
                                     modifier = Modifier.size(controllerIconSize)
                                 )
@@ -2769,88 +2761,45 @@ private fun equalizerFrequencyLabel(hz: Int): String {
 
 @Composable
 private fun PlaybackContinuationCards(
-    selectedMode: PlaybackContinuationMode,
     episodesLoading: Boolean,
-    nextEpisodeTitle: String?,
     currentVideoId: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
-    onSelect: (PlaybackContinuationMode) -> Unit,
     onPlayMedia: (OfflineMedia) -> Unit
 ) {
     val episodeCards = remember(episodeShelf, currentVideoId) {
         val episodes = episodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
         val currentIndex = episodes.indexOfFirst { it.videoId == currentVideoId }
         if (currentIndex >= 0) {
-            episodes.drop(currentIndex + 1).take(8)
+            episodes.drop(currentIndex + 1).take(12)
         } else {
-            episodes.filterNot { it.videoId == currentVideoId }.take(8)
+            episodes.filterNot { it.videoId == currentVideoId }.take(12)
         }
     }
     val relatedCards = remember(relatedVideos, currentVideoId) {
         relatedVideos
             .filterNot { it.videoId == currentVideoId }
             .distinctBy { it.videoId }
-            .take(8)
+            .take(12)
     }
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
+    val compactCardWidth = ((screenWidthDp - 50f) / 6f).coerceIn(88f, 132f).dp
 
     Surface(
         color = Color.Black.copy(alpha = .92f),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         tonalElevation = 6.dp,
         shadowElevation = 10.dp
     ) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp)
-            ) {
-                item(key = "loop-current") {
-                    PlaybackContinuationCard(
-                        title = "Loop",
-                        subtitle = "Keep this video",
-                        icon = Icons.Default.Repeat,
-                        selected = selectedMode == PlaybackContinuationMode.LOOP_CURRENT,
-                        onClick = { onSelect(PlaybackContinuationMode.LOOP_CURRENT) }
-                    )
-                }
-                item(key = "auto-next") {
-                    PlaybackContinuationCard(
-                        title = "Auto next",
-                        subtitle = "Play next video",
-                        icon = Icons.Default.SkipNext,
-                        selected = selectedMode == PlaybackContinuationMode.AUTO_NEXT,
-                        onClick = { onSelect(PlaybackContinuationMode.AUTO_NEXT) }
-                    )
-                }
-                item(key = "episodes") {
-                    PlaybackContinuationCard(
-                        title = "Episodes",
-                        subtitle = when {
-                            episodesLoading -> "Finding episodes…"
-                            !nextEpisodeTitle.isNullOrBlank() -> nextEpisodeTitle
-                            else -> "Continue the series"
-                        },
-                        icon = Icons.Default.PlaylistPlay,
-                        selected = selectedMode == PlaybackContinuationMode.EPISODES,
-                        onClick = { onSelect(PlaybackContinuationMode.EPISODES) }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f))
-            Spacer(Modifier.height(8.dp))
-
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
             if (!showRelevantShelf && !showEpisodesShelf) {
                 Text(
                     "Relevant and Episodes rows are disabled in Settings",
                     color = TubeDeckTextSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
 
@@ -2859,20 +2808,23 @@ private fun PlaybackContinuationCards(
                     "Relevant",
                     color = TubeDeckTextPrimary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                 )
                 if (relatedCards.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp)
                     ) {
                         items(
                             items = relatedCards,
                             key = { "gesture-related-${it.videoId}" }
                         ) { related ->
-                            RelatedVideoCard(related) {
+                            RelatedVideoCard(
+                                video = related,
+                                cardWidth = compactCardWidth
+                            ) {
                                 onPlayMedia(
                                     OfflineMedia(
                                         id = "gesture-related-${related.videoId}-${System.nanoTime()}",
@@ -2889,16 +2841,16 @@ private fun PlaybackContinuationCards(
                     Text(
                         "No relevant cards available yet",
                         color = TubeDeckTextSecondary,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
             }
 
             if (showRelevantShelf && showEpisodesShelf) {
-                Spacer(Modifier.height(6.dp))
-                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .52f))
                 Spacer(Modifier.height(4.dp))
+                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .48f))
+                Spacer(Modifier.height(2.dp))
             }
 
             if (showEpisodesShelf) {
@@ -2906,32 +2858,35 @@ private fun PlaybackContinuationCards(
                     "Episodes",
                     color = TubeDeckTextPrimary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                 )
                 when {
                     episodesLoading -> {
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(7.dp))
+                            Text("Finding episode cards…", color = TubeDeckTextSecondary, fontSize = 10.sp)
                         }
                     }
 
                     episodeCards.isNotEmpty() -> {
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp)
                         ) {
                             items(
                                 items = episodeCards,
                                 key = { "gesture-episode-${it.videoId}" }
                             ) { episode ->
-                                EpisodeVideoCard(episode) {
+                                EpisodeVideoCard(
+                                    episode = episode,
+                                    cardWidth = compactCardWidth
+                                ) {
                                     onPlayMedia(
                                         OfflineMedia(
                                             id = "gesture-episode-${episode.videoId}-${System.nanoTime()}",
@@ -2950,57 +2905,11 @@ private fun PlaybackContinuationCards(
                         Text(
                             "No additional episode cards found",
                             color = TubeDeckTextSecondary,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlaybackContinuationCard(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        color = if (selected) TubeDeckAccentCyan.copy(alpha = .22f) else TubeDeckSurfaceVariant,
-        shape = RoundedCornerShape(14.dp),
-        tonalElevation = if (selected) 5.dp else 1.dp,
-        modifier = Modifier.width(142.dp).heightIn(min = 70.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (selected) TubeDeckAccentCyan else Color.White,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(9.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-                Text(
-                    subtitle,
-                    color = TubeDeckTextSecondary,
-                    fontSize = 9.5.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }
@@ -3213,7 +3122,7 @@ private fun PortraitCompanionPanel(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(if (showComments) "Hide comments" else "Comments", fontSize = 10.5.sp)
+                        Text(if (showComments) "Hide comments" else "Comments", fontSize = 9.5.sp)
                     }
 
                     FilledTonalButton(
@@ -3231,7 +3140,7 @@ private fun PortraitCompanionPanel(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(if (showDescription) "Hide description" else "Description", fontSize = 10.5.sp)
+                        Text(if (showDescription) "Hide description" else "Description", fontSize = 9.5.sp)
                     }
                 }
 
@@ -3291,7 +3200,7 @@ private fun PortraitCompanionPanel(
                                 }
                             }
                             if (metadata.isNotBlank()) {
-                                Text(metadata, color = TubeDeckTextSecondary, fontSize = 10.5.sp)
+                                Text(metadata, color = TubeDeckTextSecondary, fontSize = 9.5.sp)
                             }
                         }
                         item { HorizontalDivider(color = TubeDeckBorder.copy(alpha = .72f)) }
@@ -3707,11 +3616,12 @@ private fun RichYoutubeDescription(
 @Composable
 private fun EpisodeVideoCard(
     episode: YoutubeStreamResolver.DiscoveredEpisode,
+    cardWidth: Dp = 132.dp,
     onClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .width(132.dp)
+            .width(cardWidth)
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -3756,8 +3666,10 @@ private fun EpisodeVideoCard(
             episode.title,
             color = Color.White,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 10.5.sp,
-            lineHeight = 13.sp
+            fontSize = 9.5.sp,
+            lineHeight = 11.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             episode.uploader,
@@ -3772,11 +3684,12 @@ private fun EpisodeVideoCard(
 @Composable
 private fun RelatedVideoCard(
     video: YoutubeStreamResolver.RelatedVideo,
+    cardWidth: Dp,
     onClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .width(148.dp)
+            .width(cardWidth)
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -3806,8 +3719,8 @@ private fun RelatedVideoCard(
             video.title,
             color = Color.White,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 10.5.sp,
-            lineHeight = 13.sp,
+            fontSize = 9.5.sp,
+            lineHeight = 11.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )

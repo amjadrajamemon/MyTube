@@ -101,6 +101,8 @@ class YoutubeStreamResolverSubtitleTest {
         assertTrue(prioritized.size <= 16)
         assertTrue(prioritized.any { it.languageTag == "en" })
         assertTrue(prioritized.any { it.languageTag == "ur" })
+        assertTrue(prioritized.take(3).any { it.languageTag == "en" })
+        assertTrue(prioritized.take(3).any { it.languageTag == "ur" })
     }
 
 }

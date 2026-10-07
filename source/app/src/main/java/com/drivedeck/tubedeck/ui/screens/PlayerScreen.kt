@@ -1661,14 +1661,17 @@ fun NativeExoPlayer(
                         Row(
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(
+                                controllerGap,
+                                Alignment.CenterHorizontally
+                            )
                         ) {
                             IconButton(
                                 onClick = {
                                     showPlaybackModeCards = !showPlaybackModeCards
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(controllerHeight)
                             ) {
                                 Icon(
                                     imageVector = when (playbackContinuationMode) {
@@ -1678,7 +1681,7 @@ fun NativeExoPlayer(
                                     },
                                     contentDescription = "Playback mode: ${playbackContinuationMode.label}",
                                     tint = TubeDeckAccentCyan,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
                             }
                             TextButton(
@@ -1691,10 +1694,10 @@ fun NativeExoPlayer(
                                     )
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                             ) {
-                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                Text("${playbackSpeed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
                             }
                             Box {
                                 TextButton(
@@ -1702,20 +1705,20 @@ fun NativeExoPlayer(
                                         showQualityMenu = true
                                         controlsVisible = true
                                     },
-                                    modifier = Modifier.height(30.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                    modifier = Modifier.height(controllerHeight),
+                                    contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                                 ) {
                                     Text(
                                         if (autoQuality) "Auto" else qualityLabel,
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 10.sp
+                                        fontSize = controllerFontSize
                                     )
                                     Icon(
                                         Icons.Default.ArrowDropDown,
                                         "Video quality",
                                         tint = Color.White,
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size((17f * controllerScale).dp)
                                     )
                                 }
                                 DropdownMenu(
@@ -1726,7 +1729,7 @@ fun NativeExoPlayer(
                                         text = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 if (autoQuality) {
-                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
                                                     Spacer(Modifier.width(6.dp))
                                                 }
                                                 Text("Auto")
@@ -1747,7 +1750,7 @@ fun NativeExoPlayer(
                                                 text = {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         if (!autoQuality && selectedHeight == height) {
-                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(17.dp))
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(controllerIconSize))
                                                             Spacer(Modifier.width(6.dp))
                                                         }
                                                         Text(height.toString() + "p")
@@ -1771,25 +1774,25 @@ fun NativeExoPlayer(
                                             resizeMode = nextResizeMode(resizeMode)
                                             controlsVisible = true
                                         },
-                                        modifier = Modifier.height(30.dp),
-                                        contentPadding = PaddingValues(start = 7.dp, end = 3.dp, top = 0.dp, bottom = 0.dp)
+                                        modifier = Modifier.height(controllerHeight),
+                                        contentPadding = PaddingValues(start = (8f * controllerScale).dp, end = (4f * controllerScale).dp, top = 0.dp, bottom = 0.dp)
                                     ) {
-                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size(15.dp))
-                                        Spacer(Modifier.width(3.dp))
-                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        Icon(Icons.Default.AspectRatio, "Video size", tint = Color.White, modifier = Modifier.size((17f * controllerScale).dp))
+                                        Spacer(Modifier.width(controllerGap))
+                                        Text(resizeModeLabel(resizeMode), color = Color.White, fontWeight = FontWeight.Bold, fontSize = controllerFontSize)
                                     }
                                     IconButton(
                                         onClick = {
                                             isFullscreen = !isFullscreen
                                             controlsVisible = true
                                         },
-                                        modifier = Modifier.size(30.dp)
+                                        modifier = Modifier.size(controllerHeight)
                                     ) {
                                         Icon(
                                             if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                                             if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
                                             tint = Color.White,
-                                            modifier = Modifier.size(17.dp)
+                                            modifier = Modifier.size(controllerIconSize)
                                         )
                                     }
                                 }
@@ -1802,13 +1805,13 @@ fun NativeExoPlayer(
                                         .build()
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(controllerHeight)
                             ) {
                                 Icon(
                                     Icons.Default.ClosedCaption,
                                     "Captions",
                                     tint = if (captionsEnabled && hasCaptions) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(17.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
                             }
                             TextButton(
@@ -1816,21 +1819,21 @@ fun NativeExoPlayer(
                                     liveDubEnabled = !liveDubEnabled
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (7f * controllerScale).dp, vertical = 0.dp)
                             ) {
                                 Icon(
                                     Icons.Default.RecordVoiceOver,
                                     "Live Dub",
                                     tint = if (liveDubEnabled) TubeDeckAccentMint else Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(controllerIconSize)
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(controllerGap))
                                 Text(
                                     if (liveDubEnabled) "Dub ${LiveDubLanguages.byCode(dubTargetCode)?.code?.uppercase(Locale.ROOT) ?: dubTargetCode.uppercase(Locale.ROOT)}" else "Dub",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
+                                    fontSize = controllerFontSize
                                 )
                             }
                             TextButton(
@@ -1844,20 +1847,20 @@ fun NativeExoPlayer(
                                     }
                                     controlsVisible = true
                                 },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                                modifier = Modifier.height(controllerHeight),
+                                contentPadding = PaddingValues(horizontal = (8f * controllerScale).dp, vertical = 0.dp)
                             ) {
                                 Text(
                                     "EQ",
                                     color = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 10.sp
+                                    fontSize = controllerFontSize
                                 )
                                 Icon(
                                     if (showEqualizer) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                                     if (showEqualizer) "Minimize equalizer" else "Open equalizer",
                                     tint = if (equalizerSnapshot.enabled) TubeDeckAccentCyan else Color.White,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size((17f * controllerScale).dp)
                                 )
                             }
                         }

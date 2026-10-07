@@ -1479,23 +1479,19 @@ fun NativeExoPlayer(
                 )
             }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = continuationModeHint != null && controlsVisible && !showPlaybackModeCards,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(
-                        start = 18.dp,
-                        bottom = if (compactPortrait) 116.dp else 110.dp
-                    )
-                    .zIndex(90f)
-            ) {
+            if (continuationModeHint != null && controlsVisible && !showPlaybackModeCards) {
                 continuationModeHint?.let { hint ->
                     Surface(
                         color = Color.Black.copy(alpha = .82f),
                         shape = RoundedCornerShape(10.dp),
-                        tonalElevation = 4.dp
+                        tonalElevation = 4.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(
+                                start = 18.dp,
+                                bottom = if (compactPortrait) 116.dp else 110.dp
+                            )
+                            .zIndex(90f)
                     ) {
                         Text(
                             hint,

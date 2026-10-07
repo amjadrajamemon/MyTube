@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
     private var lastNativeLaunchAt = 0L
     private var playbackBackDecisionJob: Job? = null
     private var nativePipBackExitJob: Job? = null
+    private var webPipExitResolutionJob: Job? = null
     private var showPlaybackExitChoices by mutableStateOf(false)
     private var pipChoicePending = false
     private var pendingChooserAfterPipExit = false
@@ -1335,7 +1336,10 @@ class MainActivity : ComponentActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         if (pipExitPendingStop && playerActive) {
-            // Reaching RESUMED means PiP was expanded rather than dismissed.
+            // Reaching RESUMED means PiP was expanded rather than dismissed. Cancel the delayed
+            // dismissal check so a transient OEM stop cannot remove the whole MyTube task.
+            webPipExitResolutionJob?.cancel()
+            webPipExitResolutionJob = null
             pipExitPendingStop = false
         }
         if (pendingChooserAfterPipExit) {
@@ -1350,14 +1354,9 @@ class MainActivity : ComponentActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         if (pipExitPendingStop && playerActive) {
-            // Some OEM PiP close buttons never dispatch our custom close RemoteAction.
-            // A PiP exit followed by STOP (without RESUME) is a dismissal, so hard-stop both
-            // the visible player and any pending/active audio-only service.
-            pipExitPendingStop = false
+            // Some OEMs transiently STOP the parent while expanding/restoring PiP. Do not remove
+            // the task here; the delayed PiP-exit resolver confirms that no RESUME followed.
             pendingChooserAfterPipExit = false
-            closeActivePlaybackCompletely()
-            super.onStop()
-            return
         }
         if (!isPipMode && !enteringPip && playerActive) {
             // Web playback must not silently survive task/background transitions. Only explicit
@@ -1644,17 +1643,28 @@ class MainActivity : ComponentActivity() {
         }
 
         if (wasInPip && !isInPictureInPictureMode && playerActive) {
-            // PiP exit alone is not a request to show the 3-option chooser. onResume means a
-            // normal expansion; onStop means the PiP window was dismissed and must hard-stop.
+            // PiP exit alone is not a request to show the 3-option chooser. Wait briefly for
+            // onResume before deciding that the system PiP X was used; OEMs can emit STOP during
+            // a normal expansion transition.
             pipChoicePending = false
             pendingChooserAfterPipExit = false
             pipExitPendingStop = true
+            webPipExitResolutionJob?.cancel()
+            webPipExitResolutionJob = lifecycleScope.launch {
+                delay(1_800L)
+                if (pipExitPendingStop && !isPipMode && playerActive) {
+                    pipExitPendingStop = false
+                    closeActivePlaybackCompletely()
+                }
+            }
         }
     }
 
     override fun onDestroy() {
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
+        webPipExitResolutionJob?.cancel()
+        webPipExitResolutionJob = null
         playbackBackCoordinator.reset()
         closeActivePlaybackUi = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

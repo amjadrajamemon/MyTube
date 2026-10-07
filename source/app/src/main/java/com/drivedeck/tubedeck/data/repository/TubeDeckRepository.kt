@@ -128,6 +128,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
+            putFloat("playerControllerScale", next.playerControllerScale.coerceIn(0.85f, 1.50f))
+            putBoolean("showRelevantShelf", next.showRelevantShelf)
+            putBoolean("showEpisodesShelf", next.showEpisodesShelf)
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
@@ -180,6 +183,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         pipEnabled = prefs.getBoolean("pipEnabled", true),
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
+        playerControllerScale = prefs.getFloat("playerControllerScale", 1.20f).coerceIn(0.85f, 1.50f),
+        showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),
+        showEpisodesShelf = prefs.getBoolean("showEpisodesShelf", true),
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
@@ -518,39 +524,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
             }
         }
 
-        val liveCacheKey = "home_live_$region"
-        if (_homeLive.value.isEmpty() || region != prefs.getString("home_live_region", null)) {
-            _homeLive.value = loadHomeVideos(liveCacheKey)
-        }
-        if (
-            homeLiveJob?.isActive != true &&
-            HomeFeedPolicy.shouldRefresh(
-                true, now, prefs.getLong("${liveCacheKey}_updated", 0L), force
-            )
-        ) {
-            homeLiveJob = scope.launch {
-                _homeLiveStatus.value = "Loading"
-                try {
-                    val items = publicLive(region, accessToken)
-                    ensureActive()
-                    _homeLive.value = items.take(12)
-                    if (items.isNotEmpty()) {
-                        saveHomeVideos(liveCacheKey, _homeLive.value)
-                        prefs.edit()
-                            .putLong("${liveCacheKey}_updated", now)
-                            .putString("home_live_region", region)
-                            .apply()
-                        _homeLiveStatus.value = ""
-                    } else {
-                        _homeLiveStatus.value = "Retry"
-                    }
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (_: Exception) {
-                    _homeLiveStatus.value = "Retry"
-                }
-            }
-        }
+        // Home now focuses on Relevant, History and Trending. Do not spend resources
+        // preloading a generic Live Now shelf; live content is fetched only for an explicit
+        // live-search intent through searchLive().
+        homeLiveJob?.cancel()
+        _homeLiveStatus.value = ""
 
         if (!current.homeTrendingEnabled) return
         val cacheKey = "home_trending_$region"

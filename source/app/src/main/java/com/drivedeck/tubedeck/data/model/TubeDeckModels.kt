@@ -92,6 +92,7 @@ data class TubeDeckSettings(
     val autoRotatePlayback: Boolean = true,
     val playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     val homeSuggestionsEnabled: Boolean = true,
+    val homeHistoryEnabled: Boolean = true,
     val homeTrendingEnabled: Boolean = true,
     
     // Movable browser buttons, stored in screen pixels.

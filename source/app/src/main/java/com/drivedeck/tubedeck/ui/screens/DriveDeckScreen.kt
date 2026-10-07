@@ -53,6 +53,7 @@ fun DriveDeckScreen(
     playlistSearchStatus: String = "",
     onOpenPlaylist: (PlaylistCandidate) -> Unit = {},
     suggestionsEnabled: Boolean = true,
+    historyEnabled: Boolean = true,
     trendingEnabled: Boolean = true,
     countryCode: String = "US",
     trendingStatus: String = "",
@@ -120,38 +121,42 @@ fun DriveDeckScreen(
             if (!playlistMode) {
             // The normal Home surface is intentionally limited to the three primary feeds.
             // Live content appears only when the user explicitly performs a live search.
-            item {
-                HomeShelf(
-                    "Relevant",
-                    if (suggestionsEnabled) suggestedVideos else emptyList(),
-                    onOpenVideo,
-                    listView = listView,
-                    enabled = suggestionsEnabled,
-                    action = if (suggestionsEnabled) "Refresh" else null,
-                    onAction = onRefreshFeed
-                )
+            if (suggestionsEnabled) {
+                item {
+                    HomeShelf(
+                        "Relevant",
+                        suggestedVideos,
+                        onOpenVideo,
+                        listView = listView,
+                        action = "Refresh",
+                        onAction = onRefreshFeed
+                    )
+                }
             }
-            item {
-                HomeShelf(
-                    "History",
-                    watchHistory.take(12),
-                    onOpenVideo,
-                    listView = listView,
-                    action = if (watchHistory.isNotEmpty()) "Clear" else null,
-                    onAction = onClearHistory
-                )
+            if (historyEnabled) {
+                item {
+                    HomeShelf(
+                        "History",
+                        watchHistory.take(12),
+                        onOpenVideo,
+                        listView = listView,
+                        action = if (watchHistory.isNotEmpty()) "Clear" else null,
+                        onAction = onClearHistory
+                    )
+                }
             }
-            item {
-                HomeShelf(
-                    "Trending · $countryCode",
-                    if (trendingEnabled) trendingVideos else emptyList(),
-                    onOpenVideo,
-                    listView = listView,
-                    enabled = trendingEnabled,
-                    loading = trendingStatus == "Loading",
-                    action = if (!trendingEnabled) null else "Refresh",
-                    onAction = onRefreshFeed
-                )
+            if (trendingEnabled) {
+                item {
+                    HomeShelf(
+                        "Trending · $countryCode",
+                        trendingVideos,
+                        onOpenVideo,
+                        listView = listView,
+                        loading = trendingStatus == "Loading",
+                        action = "Refresh",
+                        onAction = onRefreshFeed
+                    )
+                }
             }
             }
         }

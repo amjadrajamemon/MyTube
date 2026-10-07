@@ -91,6 +91,7 @@ fun SettingsScreen(
     var playlistQuality by remember { mutableStateOf(currentSettings.playlistQuality) }
     
     var homeSuggestionsEnabled by remember { mutableStateOf(currentSettings.homeSuggestionsEnabled) }
+    var homeHistoryEnabled by remember { mutableStateOf(currentSettings.homeHistoryEnabled) }
     var homeTrendingEnabled by remember { mutableStateOf(currentSettings.homeTrendingEnabled) }
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
@@ -537,9 +538,10 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "Home") {
-                ToggleRow("Relevant videos", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
-                ToggleRow("Local trending", homeTrendingEnabled) { homeTrendingEnabled = it }
+            SettingsCard(title = "Home layout") {
+                ToggleRow("Relevant", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
+                ToggleRow("History", homeHistoryEnabled) { homeHistoryEnabled = it }
+                ToggleRow("Trending", homeTrendingEnabled) { homeTrendingEnabled = it }
             }
 
             // Blocking Toggle
@@ -571,6 +573,7 @@ fun SettingsScreen(
                             seekIntervalSeconds = seekIntervalSeconds,
                             autoRotatePlayback = autoRotatePlayback,
                             homeSuggestionsEnabled = homeSuggestionsEnabled,
+                            homeHistoryEnabled = homeHistoryEnabled,
                             homeTrendingEnabled = homeTrendingEnabled,
                             adBlockEnabled = adBlockEnabled,
                             blockVideoAds = blockVideoAds,

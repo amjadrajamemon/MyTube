@@ -150,7 +150,7 @@ jobs:
           grep -Fq '.setActions(listOf(keepAction, audioAction))' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackPipActions.kt
           ! grep -Fq '.setActions(listOf(keepAction, audioAction, closeAction))' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackPipActions.kt
           grep -Fq 'pipExitResolutionJob' "$NATIVE"
-          grep -Fq 'delay(850L)' "$NATIVE"
+          grep -Fq 'delay(1_800L)' "$NATIVE"
           grep -Fq 'foregroundPlaybackAllowed = false' "$NATIVE"
           grep -Fq 'pauseGeneration += 1' "$NATIVE"
           grep -Fq 'ACTION_KEEP_PIP' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackPipActions.kt

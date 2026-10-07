@@ -635,6 +635,7 @@ jobs:
           cat dist/*.sha256
 
       - name: Upload verified v1.7.4 build artifact
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: MyTube-v1.7.4-verified-build

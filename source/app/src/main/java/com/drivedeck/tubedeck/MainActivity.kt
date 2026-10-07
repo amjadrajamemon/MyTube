@@ -1068,6 +1068,7 @@ class MainActivity : ComponentActivity() {
                                         showRelevantShelf = settings.showRelevantShelf,
                                         showEpisodesShelf = settings.showEpisodesShelf,
                                         playerControllerScale = settings.playerControllerScale,
+                                        equalizerTextScale = settings.equalizerTextScale,
                                         playbackContinuationMode = settings.playbackContinuationMode,
                                         onPlaybackContinuationModeChanged = { mode ->
                                             repository.updateSettings(

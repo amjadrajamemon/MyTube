@@ -86,7 +86,9 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
     private val queueLock = Any()
     private val cueQueue = ArrayDeque<CuePacket>()
 
-    private var tts: TextToSpeech? = TextToSpeech(appContext, this)
+    // Keep playback startup light: TTS/ML Kit/Whisper are not created merely because a video
+    // player is visible. They are initialized only when Live Dub is explicitly enabled.
+    private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var voiceReady = false
     private var translator: Translator? = null
@@ -103,12 +105,25 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
     private var lastPresentationTimeUs = Long.MIN_VALUE
     private var statusListener: (String) -> Unit = {}
     private var closed = false
-    private val audioAsr = WhisperAudioAsr(appContext,
-        onText = { text, detectedLanguage ->
-            mainHandler.post { acceptAsrSentence(text, detectedLanguage) }
-        },
-        onStatus = { message -> postStatus(message) }
-    )
+    private var audioAsr: WhisperAudioAsr? = null
+
+    private fun ensureTts() {
+        if (closed || tts != null) return
+        ttsReady = false
+        voiceReady = false
+        tts = TextToSpeech(appContext, this)
+    }
+
+    private fun ensureAudioAsr() {
+        if (closed || audioAsr != null) return
+        audioAsr = WhisperAudioAsr(
+            appContext,
+            onText = { text, detectedLanguage ->
+                mainHandler.post { acceptAsrSentence(text, detectedLanguage) }
+            },
+            onStatus = { message -> postStatus(message) }
+        )
+    }
 
     override fun onInit(status: Int) {
         if (closed) return
@@ -154,6 +169,8 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
         onStatus: (String) -> Unit
     ) {
         if (closed) return
+        ensureTts()
+        if (inputMode == LiveDubInputMode.AUDIO) ensureAudioAsr()
         statusListener = onStatus
         voiceProfileId = voiceProfile
         this.inputMode = inputMode
@@ -167,7 +184,7 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
         val target = TranslateLanguage.fromLanguageTag(targetLanguageCode)
             ?: TranslateLanguage.fromLanguageTag(targetLanguageCode.substringBefore('-'))
 
-        audioAsr.setEnabled(inputMode == LiveDubInputMode.AUDIO, sourceLanguageTag)
+        audioAsr?.setEnabled(inputMode == LiveDubInputMode.AUDIO, sourceLanguageTag)
         if (source == null && sourceLanguageTag != "auto") {
             modelReady = false
             postStatus("Source language is not supported for offline translation")
@@ -228,11 +245,13 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
 
     /** PCM mirror from ExoPlayer. ASR work is asynchronous and never blocks playback. */
     fun onPlaybackPcm(bytes: ByteArray, sampleRate: Int, channels: Int) {
-        if (enabled && !closed && inputMode == LiveDubInputMode.AUDIO) audioAsr.accept(bytes, sampleRate, channels)
+        if (enabled && !closed && inputMode == LiveDubInputMode.AUDIO) {
+            audioAsr?.accept(bytes, sampleRate, channels)
+        }
     }
 
     fun isAudioCaptureEnabled(): Boolean =
-        enabled && !closed && inputMode == LiveDubInputMode.AUDIO && audioAsr.isCapturing()
+        enabled && !closed && inputMode == LiveDubInputMode.AUDIO && audioAsr?.isCapturing() == true
 
     private fun acceptAsrSentence(text: String, detectedLanguage: String?) {
         if (!enabled || closed || inputMode != LiveDubInputMode.AUDIO || text.isBlank()) return
@@ -310,7 +329,7 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
 
     fun stop() {
         enabled = false
-        audioAsr.setEnabled(false, null)
+        audioAsr?.setEnabled(false, null)
         generation++
         modelReady = false
         synchronized(queueLock) {
@@ -325,7 +344,8 @@ class LiveDubEngine(context: Context) : TextToSpeech.OnInitListener {
         if (closed) return
         stop()
         closed = true
-        audioAsr.close()
+        audioAsr?.close()
+        audioAsr = null
         mainHandler.post {
             tts?.shutdown()
             tts = null

@@ -954,6 +954,7 @@ class MainActivity : ComponentActivity() {
                                     playlistSearchStatus = playlistSearchStatus,
                                     onOpenPlaylist = { playlist -> openNativePlaylist(playlist.url) },
                                     suggestionsEnabled = settings.homeSuggestionsEnabled,
+                                    historyEnabled = settings.homeHistoryEnabled,
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,

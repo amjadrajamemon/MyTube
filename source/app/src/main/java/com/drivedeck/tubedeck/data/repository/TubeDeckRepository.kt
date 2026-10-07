@@ -119,6 +119,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("autoRotatePlayback", next.autoRotatePlayback)
             putString("playbackContinuationMode", next.playbackContinuationMode.name)
             putBoolean("homeSuggestionsEnabled", next.homeSuggestionsEnabled)
+            putBoolean("homeHistoryEnabled", next.homeHistoryEnabled)
             putBoolean("homeTrendingEnabled", next.homeTrendingEnabled)
             putFloat("fabInstantX", next.fabInstantX); putFloat("fabInstantY", next.fabInstantY)
             putFloat("fabCustomX", next.fabCustomX); putFloat("fabCustomY", next.fabCustomY)
@@ -171,6 +172,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             PlaybackContinuationMode.AUTO_NEXT
         ),
         homeSuggestionsEnabled = prefs.getBoolean("homeSuggestionsEnabled", true),
+        homeHistoryEnabled = prefs.getBoolean("homeHistoryEnabled", true),
         homeTrendingEnabled = prefs.getBoolean("homeTrendingEnabled", true),
         fabInstantX = prefs.getFloat("fabInstantX", 40f), fabInstantY = prefs.getFloat("fabInstantY", 120f),
         fabCustomX = prefs.getFloat("fabCustomX", 40f), fabCustomY = prefs.getFloat("fabCustomY", 190f),

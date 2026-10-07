@@ -165,7 +165,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
-        preferredPlaybackSpeed = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 5.0f),
+        preferredPlaybackSpeed = loadPreferredPlaybackSpeed(),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
         autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
         playbackContinuationMode = enumValue(
@@ -196,6 +196,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
         themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),
         themeTextArgb = prefs.getLong("themeTextArgb", 0xFFFFFFFFL)
     )
+
+    private fun loadPreferredPlaybackSpeed(): Float {
+        val saved = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 5.0f)
+        val migrationKey = "playback_speed_default_1_v179"
+        if (!prefs.getBoolean(migrationKey, false)) {
+            prefs.edit().putBoolean(migrationKey, true).apply()
+            if (kotlin.math.abs(saved - 0.25f) < 0.01f) {
+                prefs.edit().putFloat("preferredPlaybackSpeed", 1.0f).apply()
+                return 1.0f
+            }
+        }
+        return saved
+    }
 
     private inline fun <reified T : Enum<T>> enumValue(value: String?, fallback: T): T =
         runCatching { enumValueOf<T>(value ?: fallback.name) }.getOrDefault(fallback)

@@ -30,7 +30,13 @@ internal object DownloadQueueNotifier {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         createChannel(manager)
 
-        if (tasks.isEmpty()) {
+        val hasQueueWork = tasks.any {
+            it.status == TaskStatus.DOWNLOADING ||
+                it.status == TaskStatus.QUEUED ||
+                it.status == TaskStatus.PAUSED
+        }
+        if (!hasQueueWork) {
+            lastUpdateAt = 0L
             manager.cancel(NOTIFICATION_ID)
             return
         }
@@ -87,9 +93,6 @@ internal object DownloadQueueNotifier {
             0
         }
 
-        val elapsedStart = sessionTasks.minOfOrNull { it.createdAt } ?: now
-        val elapsed = (now - elapsedStart).coerceAtLeast(0L)
-
         val bytesPerSecond = sessionTasks
             .filter { it.status == TaskStatus.DOWNLOADING }
             .sumOf { parseBytesPerSecond(it.speed) }
@@ -111,8 +114,7 @@ internal object DownloadQueueNotifier {
             append("  ✓").append(finished)
             append("  F").append(failed)
             append("  R").append(retriedTasks)
-            append("  ⏱").append(formatDurationShort(elapsed))
-            append("  ⏳").append(etaMillis?.let(::formatDurationShort) ?: "—")
+            append("  ETA ").append(etaMillis?.let(::formatDurationShort) ?: "—")
         }
         val expanded = compact
 

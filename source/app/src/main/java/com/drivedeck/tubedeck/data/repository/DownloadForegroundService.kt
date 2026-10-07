@@ -61,7 +61,9 @@ class DownloadForegroundService : Service() {
                 if (hasWork) {
                     startAsForeground(tasks)
                 } else {
-                    stopForeground(STOP_FOREGROUND_DETACH)
+                    // Finished/empty queues must not leave a stale download notification behind.
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    DownloadQueueNotifier.update(applicationContext, tasks, force = true)
                     stopSelf()
                 }
             }

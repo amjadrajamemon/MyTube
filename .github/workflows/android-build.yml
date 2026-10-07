@@ -37,6 +37,7 @@ jobs:
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
           grep -q 'nativeWhisperSupported' source/app/src/main/java/com/drivedeck/tubedeck/player/WhisperAudioAsr.kt
           PLAYER=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          RESOLVER=source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           MODEL=source/app/src/main/java/com/drivedeck/tubedeck/data/model/TubeDeckModels.kt
           grep -Fq 'PlaybackContinuationMode.LOOP_CURRENT -> PlaybackContinuationMode.AUTO_NEXT' "$PLAYER"
           grep -Fq 'PlaybackContinuationMode.AUTO_NEXT -> PlaybackContinuationMode.EPISODES' "$PLAYER"

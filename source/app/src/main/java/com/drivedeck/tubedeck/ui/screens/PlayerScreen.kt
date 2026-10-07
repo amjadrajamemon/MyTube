@@ -587,6 +587,7 @@ fun NativeExoPlayer(
     LaunchedEffect(
         showPlaybackModeCards,
         showEpisodesShelf,
+        autoLoadEpisodes,
         playbackContinuationMode,
         firstFrameRendered,
         media.mediaUri,
@@ -2018,6 +2019,8 @@ fun NativeExoPlayer(
                 onPlayPlaylistItem = onPlayPlaylistItem,
                 autoLoadEpisodes = autoLoadEpisodes,
                 autoLoadUpNext = autoLoadUpNext,
+                sharedEpisodeShelf = continuationEpisodeShelf,
+                sharedEpisodesLoading = continuationEpisodesLoading,
                 playbackReadyForCompanionLoads = firstFrameRendered,
                 onPlayRelated = onPlayRelated,
                 modifier = Modifier.fillMaxWidth().weight(1f)
@@ -2979,6 +2982,8 @@ private fun PortraitCompanionPanel(
     onPlayPlaylistItem: ((Int) -> Unit)?,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    sharedEpisodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
+    sharedEpisodesLoading: Boolean,
     playbackReadyForCompanionLoads: Boolean,
     onPlayRelated: ((OfflineMedia) -> Unit)?,
     modifier: Modifier = Modifier
@@ -2993,8 +2998,6 @@ private fun PortraitCompanionPanel(
     var commentsLimit by remember(media.id) { mutableIntStateOf(20) }
     var commentsForceRefresh by remember(media.id) { mutableStateOf(false) }
     var showDescription by rememberSaveable(media.id) { mutableStateOf(false) }
-    var episodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
-    var episodesLoading by remember(media.id) { mutableStateOf(false) }
 
     fun refreshComments() {
         if (commentsLoading) return
@@ -3049,42 +3052,8 @@ private fun PortraitCompanionPanel(
         }
     }
 
-    LaunchedEffect(
-        media.id,
-        media.mediaUri,
-        commentsAvailable,
-        displayTitle,
-        autoLoadEpisodes,
-        playbackReadyForCompanionLoads
-    ) {
-        episodeShelf = null
-        episodesLoading = false
-        if (!autoLoadEpisodes || !playbackReadyForCompanionLoads) return@LaunchedEffect
-        if (!commentsAvailable || YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
-        // Browser-intercepted native playback initially arrives as "Now Playing"; wait for the
-        // resolver's real YouTube title so episode matching does not search for that placeholder.
-        if (displayTitle.isBlank() || displayTitle.equals("Now Playing", ignoreCase = true)) {
-            episodesLoading = false
-            return@LaunchedEffect
-        }
-        episodesLoading = true
-        try {
-            episodeShelf = YoutubeStreamResolver.discoverEpisodeShelf(
-                url = media.mediaUri,
-                titleHint = displayTitle
-            )
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (_: Throwable) {
-            // Keep the ordinary Up next feed available when episode discovery is unavailable.
-            episodeShelf = null
-        } finally {
-            episodesLoading = false
-        }
-    }
-
     val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
-    val episodeItems = episodeShelf?.episodes.orEmpty()
+    val episodeItems = sharedEpisodeShelf?.episodes.orEmpty()
         .filterNot { it.videoId == currentVideoId }
         .distinctBy { it.videoId }
 
@@ -3406,7 +3375,7 @@ private fun PortraitCompanionPanel(
                         }
                     } else if (!autoLoadEpisodes && !autoLoadUpNext) {
                         Box(Modifier.fillMaxSize())
-                    } else if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !episodesLoading) {
+                    } else if (relatedVideos.isEmpty() && episodeItems.isEmpty() && !sharedEpisodesLoading) {
                         Box(
                             Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
                             contentAlignment = Alignment.TopStart
@@ -3424,7 +3393,7 @@ private fun PortraitCompanionPanel(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (autoLoadEpisodes && episodesLoading) {
+                            if (autoLoadEpisodes && sharedEpisodesLoading) {
                                 item(key = "episodes-loading") {
                                     Row(
                                         Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 5.dp),

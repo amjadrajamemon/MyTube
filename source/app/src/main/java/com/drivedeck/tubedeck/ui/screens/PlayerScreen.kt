@@ -148,6 +148,9 @@ fun PlayerScreen(
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    showRelevantShelf: Boolean = true,
+    showEpisodesShelf: Boolean = true,
+    playerControllerScale: Float = 1.20f,
     playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit = {},
     preferredPlaybackQualityHeight: Int = 0,
@@ -236,6 +239,9 @@ fun PlayerScreen(
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            showRelevantShelf = showRelevantShelf,
+            showEpisodesShelf = showEpisodesShelf,
+            playerControllerScale = playerControllerScale,
             playbackContinuationMode = playbackContinuationMode,
             onPlaybackContinuationModeChanged = onPlaybackContinuationModeChanged,
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
@@ -398,6 +404,9 @@ fun NativeExoPlayer(
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    showRelevantShelf: Boolean,
+    showEpisodesShelf: Boolean,
+    playerControllerScale: Float,
     playbackContinuationMode: PlaybackContinuationMode,
     onPlaybackContinuationModeChanged: (PlaybackContinuationMode) -> Unit,
     preferredPlaybackQualityHeight: Int,
@@ -431,6 +440,11 @@ fun NativeExoPlayer(
     val activity = context as? Activity
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
+    val controllerHeight = (34f * controllerScale).dp
+    val controllerIconSize = (19f * controllerScale).dp
+    val controllerFontSize = (11f * controllerScale).sp
+    val controllerGap = (4f * controllerScale).dp
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val trackSelector = remember(media.id) { DefaultTrackSelector(context) }
     val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
@@ -559,13 +573,16 @@ fun NativeExoPlayer(
 
     LaunchedEffect(
         showPlaybackModeCards,
+        showEpisodesShelf,
         playbackContinuationMode,
         firstFrameRendered,
         media.mediaUri,
         resolved?.title
     ) {
         if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
-        if (!showPlaybackModeCards && playbackContinuationMode != PlaybackContinuationMode.EPISODES) {
+        if ((!showPlaybackModeCards || !showEpisodesShelf) &&
+            playbackContinuationMode != PlaybackContinuationMode.EPISODES
+        ) {
             return@LaunchedEffect
         }
         if (continuationEpisodesLoaded || continuationEpisodesLoading) return@LaunchedEffect
@@ -1430,6 +1447,8 @@ fun NativeExoPlayer(
                     currentVideoId = currentVideoId,
                     relatedVideos = resolved?.relatedVideos.orEmpty(),
                     episodeShelf = continuationEpisodeShelf,
+                    showRelevantShelf = showRelevantShelf,
+                    showEpisodesShelf = showEpisodesShelf,
                     onSelect = { mode ->
                         onPlaybackContinuationModeChanged(mode)
                         controlsVisible = true

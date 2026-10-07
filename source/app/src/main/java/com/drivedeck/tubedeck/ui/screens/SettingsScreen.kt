@@ -107,6 +107,11 @@ fun SettingsScreen(
     var pipEnabled by remember { mutableStateOf(currentSettings.pipEnabled) }
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
+    var playerControllerScale by remember {
+        mutableFloatStateOf(currentSettings.playerControllerScale.coerceIn(0.85f, 1.50f))
+    }
+    var showRelevantShelf by remember { mutableStateOf(currentSettings.showRelevantShelf) }
+    var showEpisodesShelf by remember { mutableStateOf(currentSettings.showEpisodesShelf) }
 
     var appearancePreset by remember { mutableStateOf(currentSettings.appearancePreset) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
@@ -467,6 +472,28 @@ fun SettingsScreen(
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
                 HorizontalDivider()
 
+                ToggleRow("Swipe shelf · Relevant row", showRelevantShelf) { showRelevantShelf = it }
+                ToggleRow("Swipe shelf · Episodes row", showEpisodesShelf) { showEpisodesShelf = it }
+                HorizontalDivider()
+
+                Text(
+                    "Controller size · ${(playerControllerScale * 100).toInt()}%",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = playerControllerScale,
+                    onValueChange = { playerControllerScale = it.coerceIn(0.85f, 1.50f) },
+                    valueRange = 0.85f..1.50f,
+                    steps = 12
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Compact", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Default", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                    Text("Large", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+                HorizontalDivider()
+
                 Text("Remembered quality", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -511,7 +538,7 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Home") {
-                ToggleRow("Suggested videos", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
+                ToggleRow("Relevant videos", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
                 ToggleRow("Local trending", homeTrendingEnabled) { homeTrendingEnabled = it }
             }
 
@@ -554,6 +581,9 @@ fun SettingsScreen(
                             pipEnabled = pipEnabled,
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
+                            playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
+                            showRelevantShelf = showRelevantShelf,
+                            showEpisodesShelf = showEpisodesShelf,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
                             themeAccentArgb = themeAccentArgb,

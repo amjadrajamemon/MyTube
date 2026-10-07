@@ -1045,6 +1045,19 @@ class MainActivity : ComponentActivity() {
                                         previewAppearance = null
                                     },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
+                                    onClearWatchHistory = {
+                                        repository.clearWatchHistory()
+                                        repository.refreshHomeFeed(
+                                            googleSession.currentYoutubeAccessToken(),
+                                            force = true
+                                        )
+                                        homeRefreshRequest += 1
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Watch history cleared · Relevant feed refreshed",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
                                     onClose = {
                                         previewAppearance = null
                                         if (!navigateBack()) {

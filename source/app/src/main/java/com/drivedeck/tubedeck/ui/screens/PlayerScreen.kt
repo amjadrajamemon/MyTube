@@ -2146,7 +2146,7 @@ fun NativeExoPlayer(
             onDubMethod = { dubMethod = it },
             onCaptionLanguage = { tag ->
                 captionLanguageTag = tag
-                if (tag != "auto") captionsEnabled = true
+                captionsEnabled = true
             },
             onDubSource = { dubSourceCode = it },
             onDubTarget = { dubTargetCode = it },
@@ -2170,9 +2170,6 @@ fun NativeExoPlayer(
             },
             onCaptions = { enabled ->
                 captionsEnabled = enabled
-                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled && !captionDubbingActive)
-                    .build()
             },
             onGestures = { gestureEnabled = it },
             onAutoHide = { autoHideControls = it },

@@ -130,6 +130,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             putBoolean("sideBySideEpisodeFeeds", next.sideBySideEpisodeFeeds)
+            putBoolean("desktopYoutubeUiEnabled", next.desktopYoutubeUiEnabled)
             putFloat("playerControllerScale", next.playerControllerScale.coerceIn(0.85f, 1.50f))
             putFloat("equalizerTextScale", next.equalizerTextScale.coerceIn(1.0f, 1.8f))
             putBoolean("showRelevantShelf", next.showRelevantShelf)
@@ -188,6 +189,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
         sideBySideEpisodeFeeds = prefs.getBoolean("sideBySideEpisodeFeeds", true),
+        desktopYoutubeUiEnabled = prefs.getBoolean("desktopYoutubeUiEnabled", false),
         playerControllerScale = prefs.getFloat("playerControllerScale", 1.20f).coerceIn(0.85f, 1.50f),
         equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
         showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),

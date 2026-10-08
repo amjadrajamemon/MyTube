@@ -110,6 +110,7 @@ fun SettingsScreen(
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
     var sideBySideEpisodeFeeds by remember { mutableStateOf(currentSettings.sideBySideEpisodeFeeds) }
+    var desktopYoutubeUiEnabled by remember { mutableStateOf(currentSettings.desktopYoutubeUiEnabled) }
     var playerControllerScale by remember {
         mutableFloatStateOf(currentSettings.playerControllerScale.coerceIn(0.85f, 1.50f))
     }
@@ -338,6 +339,15 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+
+            SettingsCard(title = "App interface") {
+                ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
+                Text(
+                    "Use YouTube's desktop Home, search and watch pages with Standard and Theater views. Downloads and MyTube settings remain accessible. YouTube may restrict Google sign-in inside WebView.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
             }
 
             // Player Mode
@@ -664,6 +674,7 @@ fun SettingsScreen(
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
                             sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
+                            desktopYoutubeUiEnabled = desktopYoutubeUiEnabled,
                             playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
                             equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
                             showRelevantShelf = showRelevantShelf,

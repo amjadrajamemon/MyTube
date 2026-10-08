@@ -12,7 +12,7 @@ enum class PlayerMode(val label: String) {
 
 enum class PlaybackContinuationMode(val label: String) {
     LOOP_CURRENT("Loop"),
-    AUTO_NEXT("Relevant next"),
+    AUTO_NEXT("Auto play"),
     EPISODES("Episodes")
 }
 
@@ -112,6 +112,7 @@ data class TubeDeckSettings(
     val autoLoadEpisodes: Boolean = false,
     val autoLoadUpNext: Boolean = false,
     val sideBySideEpisodeFeeds: Boolean = true,
+    val desktopYoutubeUiEnabled: Boolean = false,
 
     // Native-player controller and upward-swipe continuation shelf.
     val playerControllerScale: Float = 1.20f,

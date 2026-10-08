@@ -20,8 +20,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -362,6 +364,7 @@ class MainActivity : ComponentActivity() {
                 }
                 var browserNavigationGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var browserHistoryResetGeneration by rememberSaveable { mutableIntStateOf(0) }
+                var desktopTheaterEnabled by rememberSaveable { mutableStateOf(false) }
                 val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
                     NavigationCoordinator(
@@ -451,7 +454,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    val playbackHost = PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
+                    val playbackHost = if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
+                        else PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
                     // Preserve the complete watch URL, including list=/mix context. The resolver
                     // canonicalizes internally for stream extraction; the player needs the original
                     // playlist context for queue loading, Previous/Next and continuous playback.
@@ -504,6 +508,17 @@ class MainActivity : ComponentActivity() {
                                 mediaUri = watchUrl
                             )
                         )
+                    }
+                }
+
+                LaunchedEffect(settings.desktopYoutubeUiEnabled, currentScreen) {
+                    if (settings.desktopYoutubeUiEnabled &&
+                        (currentScreen == ActiveScreen.HOME || currentScreen == ActiveScreen.MIXES)
+                    ) {
+                        val home = "https://www.youtube.com/"
+                        navigation.reset(NavigationEntry(ActiveScreen.BROWSER, home))
+                        browserNavigationGeneration += 1
+                        applyNavigationEntry(navigation.current)
                     }
                 }
 
@@ -618,7 +633,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(inboundUrl, settings.playerMode) {
+                LaunchedEffect(inboundUrl, settings.playerMode, settings.desktopYoutubeUiEnabled) {
                     inboundUrl?.let {
                         val videoId = repository.extractVideoId(it)
                         if (videoId != null) {
@@ -633,7 +648,7 @@ class MainActivity : ComponentActivity() {
                             )
                         } else if (
                             YoutubeUrls.playlistId(it) != null &&
-                            settings.playerMode == PlayerMode.NATIVE
+                            settings.playerMode == PlayerMode.NATIVE && !settings.desktopYoutubeUiEnabled
                         ) {
                             openNativePlaylist(it)
                         } else {
@@ -751,7 +766,46 @@ class MainActivity : ComponentActivity() {
                     containerColor = TubeDeckBackground,
                     contentWindowInsets = WindowInsets.safeDrawing,
                     topBar = {
-                        if (!isPipMode && currentScreen == ActiveScreen.BROWSER && !isBrowserFullscreen) {
+                        if (!isPipMode && currentScreen == ActiveScreen.BROWSER &&
+                            settings.desktopYoutubeUiEnabled && !isBrowserFullscreen
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(onClick = {
+                                    navigateTo(ActiveScreen.BROWSER, "https://www.youtube.com/")
+                                }) { Text("YouTube") }
+                                OutlinedButton(
+                                    onClick = { desktopTheaterEnabled = false },
+                                    enabled = desktopTheaterEnabled
+                                ) { Text("Standard") }
+                                OutlinedButton(
+                                    onClick = { desktopTheaterEnabled = true },
+                                    enabled = !desktopTheaterEnabled
+                                ) { Text("Theater") }
+                                OutlinedButton(onClick = {
+                                    webViewInstance?.evaluateJavascript(
+                                        "(function(){var b=document.querySelector('.ytp-fullscreen-button');if(b){b.click();return true;}return false;})()", null
+                                    )
+                                }) { Text("Fullscreen") }
+                                TextButton(onClick = {
+                                    downloadsInitialTab = 1
+                                    navigateTo(ActiveScreen.DOWNLOADS)
+                                }) { Text("Downloads") }
+                                TextButton(onClick = { navigateTo(ActiveScreen.SETTINGS) }) {
+                                    Text("Settings")
+                                }
+                                TextButton(onClick = {
+                                    repository.updateSettings(settings.copy(desktopYoutubeUiEnabled = false))
+                                    navigation.reset(NavigationEntry(ActiveScreen.HOME))
+                                    applyNavigationEntry(navigation.current)
+                                }) { Text("MyTube UI") }
+                            }
+                        } else if (!isPipMode && currentScreen == ActiveScreen.BROWSER && !isBrowserFullscreen) {
                             Column {
                                 TopNavBar(
                                     currentUrl = currentUrl,
@@ -800,7 +854,8 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     bottomBar = {
-                        if (!isPipMode && currentScreen != ActiveScreen.PLAYER && !isBrowserFullscreen) {
+                        if (!isPipMode && currentScreen != ActiveScreen.PLAYER && !isBrowserFullscreen &&
+                            !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)) {
                             TubeDeckBottomBar(
                                 currentScreen = currentScreen,
                                 activeDownloadCount = activeDownloads.size,
@@ -863,7 +918,10 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onCanGoBackChanged = { webCanGoBack = it },
                                     onCanGoForwardChanged = { webCanGoForward = it },
-                                    settings = settings,
+                                    settings = if (settings.desktopYoutubeUiEnabled) {
+                                        settings.copy(playerMode = PlayerMode.WEB)
+                                    } else settings,
+                                    desktopTheaterEnabled = desktopTheaterEnabled,
                                     onAdBlocked = { repository.incrementBlockedAds(it) },
                                     webViewRef = {
                                         webViewInstance = it
@@ -1060,7 +1118,11 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onClose = {
                                         previewAppearance = null
-                                        if (!navigateBack()) {
+                                        if (settings.desktopYoutubeUiEnabled) {
+                                            navigation.reset(NavigationEntry(ActiveScreen.BROWSER, "https://www.youtube.com/"))
+                                            browserNavigationGeneration += 1
+                                            applyNavigationEntry(navigation.current)
+                                        } else if (!navigateBack()) {
                                             navigation.reset(NavigationEntry(ActiveScreen.HOME))
                                             applyNavigationEntry(navigation.current)
                                         }

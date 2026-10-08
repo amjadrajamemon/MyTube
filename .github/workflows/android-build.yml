@@ -1,6 +1,6 @@
 name: Build MyTube Android APKs
 
-# 2026-10-08: Rebuild v1.8.3 ARM64 and Universal APKs with complete verification.
+# 2026-10-08: Rebuild v1.8.4 ARM64 and Universal APKs with complete verification.
 
 on:
   push:
@@ -27,13 +27,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify v1.8.3 dual-APK source
+      - name: Verify v1.8.4 dual-APK source
         shell: bash
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.8.3"' source/app/build.gradle.kts
-          grep -q 'versionCode = 85' source/app/build.gradle.kts
+          grep -q 'versionName = "1.8.4"' source/app/build.gradle.kts
+          grep -q 'versionCode = 86' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
@@ -63,11 +63,17 @@ jobs:
           grep -Fq 'key = { "dual-episode-${it.videoId}" }' "$PLAYER"
           grep -Fq 'key = { "dual-related-${it.videoId}" }' "$PLAYER"
           grep -Fq 'Portrait feeds · Side by side' "$SETTINGS"
+          grep -Fq 'YouTube desktop interface' "$SETTINGS"
+          grep -Fq 'desktopYoutubeUiEnabled = desktopYoutubeUiEnabled' "$SETTINGS"
+          grep -Fq 'putBoolean("desktopYoutubeUiEnabled"' "$REPO"
+          grep -Fq 'AUTO_NEXT("Auto play")' "$MODEL"
+          grep -Fq 'desktopTheaterEnabled = desktopTheaterEnabled' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
+          grep -Fq 'watch.hasAttribute(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/BrowserScreen.kt
           grep -Fq 'putBoolean("sideBySideEpisodeFeeds"' "$REPO"
           grep -Fq 'detectVerticalDragGestures' "$PLAYER"
           grep -Fq 'downwardDrag > 72f' "$PLAYER"
           grep -Fq 'Loop · repeat the current video' "$PLAYER"
-          grep -Fq 'Relevant next · play the next relevant video' "$PLAYER"
+          grep -Fq 'Auto play · play the next relevant video' "$PLAYER"
           grep -Fq 'Episode next · continue with the next detected episode' "$PLAYER"
           grep -Fq 'var playbackSpeedMenuExpanded by remember { mutableStateOf(false) }' "$PLAYER"
           grep -Fq 'private val PLAYBACK_SPEED_OPTIONS = listOf(' "$PLAYER"
@@ -92,7 +98,7 @@ jobs:
           grep -Fq 'equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f)' "$SETTINGS"
           grep -Fq 'putFloat("equalizerTextScale"' "$REPO"
           grep -Fq 'preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)' "$REPO"
-          echo "Building MyTube v1.8.3 ARM64 + Universal source tree."
+          echo "Building MyTube v1.8.4 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -583,7 +589,7 @@ jobs:
             grep -Fq 'Activity/History' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.8.3 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.8.4 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -645,7 +651,7 @@ jobs:
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
             printf '%s\n' "$BADGING" | grep -Fq "versionCode='84'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.3'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.4'"
             if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
               echo "::error::$EDITION APK is unexpectedly debuggable."
               exit 1
@@ -680,10 +686,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
           {
             echo "Previous v1.6.7 signing certificate: $PREVIOUS_SHA1"
-            echo "Saved stable signing certificate used by v1.8.3: $ACTUAL_SHA1"
+            echo "Saved stable signing certificate used by v1.8.4: $ACTUAL_SHA1"
             test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
             echo "The APK is compatible with an update over v1.6.7."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-Install-Compatibility.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-Install-Compatibility.txt"
 
       - name: Report OAuth registration identity
         shell: bash
@@ -700,7 +706,7 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
           echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
@@ -713,15 +719,15 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-ARM64-Whisper-DownloadEngine-debug.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-Universal-Older-Rooted-debug.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-ARM64-Whisper-DownloadEngine-debug.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-Universal-Older-Rooted-debug.apk"
 
           if [ -s "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk" ]; then
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-ARM64-production.apk"
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.3-Universal-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-ARM64-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.4-Universal-production.apk"
           fi
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.8.3-Complete-AndroidStudio-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-r6.5-LiveDub-v1.8.4-Complete-AndroidStudio-Source.zip"
           (
             cd "$GITHUB_WORKSPACE/source"
             zip -qr "$SOURCE_ZIP" . \
@@ -731,27 +737,27 @@ jobs:
           )
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.8.3-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.8.3-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-          sha256sum dist/MyTube-v1.8.3-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.8.3-Universal-Older-Rooted-debug.apk.sha256
-          sha256sum dist/MyTube-r6.5-LiveDub-v1.8.3-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.8.3-Complete-AndroidStudio-Source.zip.sha256
-          if [ -s dist/MyTube-v1.8.3-ARM64-production.apk ]; then
-            sha256sum dist/MyTube-v1.8.3-ARM64-production.apk > dist/MyTube-v1.8.3-ARM64-production.apk.sha256
-            sha256sum dist/MyTube-v1.8.3-Universal-production.apk > dist/MyTube-v1.8.3-Universal-production.apk.sha256
+          sha256sum dist/MyTube-v1.8.4-ARM64-Whisper-DownloadEngine-debug.apk > dist/MyTube-v1.8.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+          sha256sum dist/MyTube-v1.8.4-Universal-Older-Rooted-debug.apk > dist/MyTube-v1.8.4-Universal-Older-Rooted-debug.apk.sha256
+          sha256sum dist/MyTube-r6.5-LiveDub-v1.8.4-Complete-AndroidStudio-Source.zip > dist/MyTube-r6.5-LiveDub-v1.8.4-Complete-AndroidStudio-Source.zip.sha256
+          if [ -s dist/MyTube-v1.8.4-ARM64-production.apk ]; then
+            sha256sum dist/MyTube-v1.8.4-ARM64-production.apk > dist/MyTube-v1.8.4-ARM64-production.apk.sha256
+            sha256sum dist/MyTube-v1.8.4-Universal-production.apk > dist/MyTube-v1.8.4-Universal-production.apk.sha256
           fi
-          test -s dist/MyTube-v1.8.3-OAuth-Registration.txt
+          test -s dist/MyTube-v1.8.4-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
-      - name: Upload verified v1.8.3 build artifact
+      - name: Upload verified v1.8.4 build artifact
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MyTube-v1.8.3-verified-build
+          name: MyTube-v1.8.4-verified-build
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish v1.8.3 dual APK release
+      - name: Publish v1.8.4 dual APK release
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
@@ -763,8 +769,8 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.8.3-dual-arm64-universal-debug"
-          NOTES="MyTube v1.8.3: portrait side-by-side vertical Episodes and Up next feeds (optional in Main Settings); restored Episodes shelf, English/Urdu captions, and feed reset.\n          - Landscape swipe-up Episodes now wraps around the discovered episode list instead of going empty when the current item is near the end.\n          - The portrait More episodes and landscape Episodes surfaces now retain the same discovered episode set.\n          - CC always offers English and Urdu; missing preferred tracks are fetched on demand through the Download Engine without making Hindi the requested default.\n          - Main Settings adds Clear watch history & reset Relevant with confirmation and immediate feed refresh.\n          - Prevents silent native-to-WebView switching on stream/decoder failures.\n          - Guards Media3 source creation/startup so a bad extracted source remains an in-player error.\n          - Bounds side-loaded caption tracks to 16 to avoid huge yt-dlp translation sets destabilizing startup.\n          - English, Urdu and the device language are prioritized when YouTube exposes them.\n          - Tapping CC opens Off / Auto / individual language choices.\n          - PiP/task lifecycle no longer hard-finishes playback on transient stops.
+          TAG="v1.8.4-dual-arm64-universal-debug"
+          NOTES="MyTube v1.8.4: YouTube desktop interface mode, Standard/Theater/Fullscreen watch views, Auto play label, and portrait dual vertical feeds; restored Episodes shelf, English/Urdu captions, and feed reset.\n          - Landscape swipe-up Episodes now wraps around the discovered episode list instead of going empty when the current item is near the end.\n          - The portrait More episodes and landscape Episodes surfaces now retain the same discovered episode set.\n          - CC always offers English and Urdu; missing preferred tracks are fetched on demand through the Download Engine without making Hindi the requested default.\n          - Main Settings adds Clear watch history & reset Relevant with confirmation and immediate feed refresh.\n          - Prevents silent native-to-WebView switching on stream/decoder failures.\n          - Guards Media3 source creation/startup so a bad extracted source remains an in-player error.\n          - Bounds side-loaded caption tracks to 16 to avoid huge yt-dlp translation sets destabilizing startup.\n          - English, Urdu and the device language are prioritized when YouTube exposes them.\n          - Tapping CC opens Off / Auto / individual language choices.\n          - PiP/task lifecycle no longer hard-finishes playback on transient stops.
           - Playback Speed, Live Dub and Equalizer access are consolidated under the existing top-right Player settings gear instead of duplicating them on the bottom control strip.
           - Playback Speed remains a compact selector with 1.0x Normal first and choices through 5x.
           - Equalizer is opened from Player settings while retaining the full existing graphic/preset/surround/DTS controls.
@@ -776,21 +782,21 @@ jobs:
 
 
           ASSETS=(
-            dist/MyTube-v1.8.3-ARM64-Whisper-DownloadEngine-debug.apk
-            dist/MyTube-v1.8.3-ARM64-Whisper-DownloadEngine-debug.apk.sha256
-            dist/MyTube-v1.8.3-Universal-Older-Rooted-debug.apk
-            dist/MyTube-v1.8.3-Universal-Older-Rooted-debug.apk.sha256
-            dist/MyTube-r6.5-LiveDub-v1.8.3-Complete-AndroidStudio-Source.zip
-            dist/MyTube-r6.5-LiveDub-v1.8.3-Complete-AndroidStudio-Source.zip.sha256
-            dist/MyTube-v1.8.3-OAuth-Registration.txt
-            dist/MyTube-v1.8.3-Install-Compatibility.txt
+            dist/MyTube-v1.8.4-ARM64-Whisper-DownloadEngine-debug.apk
+            dist/MyTube-v1.8.4-ARM64-Whisper-DownloadEngine-debug.apk.sha256
+            dist/MyTube-v1.8.4-Universal-Older-Rooted-debug.apk
+            dist/MyTube-v1.8.4-Universal-Older-Rooted-debug.apk.sha256
+            dist/MyTube-r6.5-LiveDub-v1.8.4-Complete-AndroidStudio-Source.zip
+            dist/MyTube-r6.5-LiveDub-v1.8.4-Complete-AndroidStudio-Source.zip.sha256
+            dist/MyTube-v1.8.4-OAuth-Registration.txt
+            dist/MyTube-v1.8.4-Install-Compatibility.txt
           )
-          if [ -s dist/MyTube-v1.8.3-ARM64-production.apk ]; then
+          if [ -s dist/MyTube-v1.8.4-ARM64-production.apk ]; then
             ASSETS+=(
-              dist/MyTube-v1.8.3-ARM64-production.apk
-              dist/MyTube-v1.8.3-ARM64-production.apk.sha256
-              dist/MyTube-v1.8.3-Universal-production.apk
-              dist/MyTube-v1.8.3-Universal-production.apk.sha256
+              dist/MyTube-v1.8.4-ARM64-production.apk
+              dist/MyTube-v1.8.4-ARM64-production.apk.sha256
+              dist/MyTube-v1.8.4-Universal-production.apk
+              dist/MyTube-v1.8.4-Universal-production.apk.sha256
             )
           fi
 
@@ -799,7 +805,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.8.3 ARM64 + Universal" \
+              --title "MyTube v1.8.4 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

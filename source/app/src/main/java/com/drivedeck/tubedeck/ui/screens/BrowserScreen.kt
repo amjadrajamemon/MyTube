@@ -47,6 +47,7 @@ fun BrowserScreen(
     isActive: Boolean = true,
     navigationGeneration: Int = 0,
     historyResetGeneration: Int = 0,
+    desktopTheaterEnabled: Boolean = false,
     onFullscreenChanged: (Boolean) -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -189,10 +190,28 @@ fun BrowserScreen(
         """.trimIndent()
     }
     val currentScript by rememberUpdatedState(tubeDeckInjectedScript)
+    // Prefer YouTube's own player-size control to preserve SPA layout state.
+    val desktopViewScript = remember(settings.desktopYoutubeUiEnabled, desktopTheaterEnabled) {
+        if (!settings.desktopYoutubeUiEnabled) "" else """
+            (function(){
+                var watch = document.querySelector('ytd-watch-flexy');
+                if (!watch) return 'not-watch';
+                var theater = ${desktopTheaterEnabled};
+                if (watch.hasAttribute('theater') !== theater) {
+                    var toggle = document.querySelector('button.ytp-size-button');
+                    if (toggle) toggle.click();
+                    else if (theater) watch.setAttribute('theater', '');
+                    else watch.removeAttribute('theater');
+                }
+                return theater ? 'theater' : 'standard';
+            })();
+        """.trimIndent()
+    }
+    val currentDesktopViewScript by rememberUpdatedState(desktopViewScript)
 
     // Persistent WebView instance. A Chromium renderer crash makes its WebView permanently
     // unusable; rendererGeneration creates a fresh instance while retaining MyTube's logical URL.
-    val persistentWebView = remember(rendererGeneration) {
+    val persistentWebView = remember(rendererGeneration, settings.desktopYoutubeUiEnabled) {
         val generationAtCreation = rendererGeneration
         WebView(context).apply {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -207,6 +226,13 @@ fun BrowserScreen(
             this.settings.databaseEnabled = true
             this.settings.useWideViewPort = true
             this.settings.loadWithOverviewMode = true
+            if (settings.desktopYoutubeUiEnabled) {
+                this.settings.userAgentString =
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                this.settings.setSupportZoom(true)
+                this.settings.builtInZoomControls = true
+                this.settings.displayZoomControls = false
+            }
             this.settings.javaScriptCanOpenWindowsAutomatically = false
             this.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -283,7 +309,10 @@ fun BrowserScreen(
                         appliedHistoryReset.intValue = pendingHistoryReset.intValue
                         pendingHistoryReset.intValue = 0
                     }
-                    if (url != null && YoutubeUrls.isYoutubePage(url)) view?.evaluateJavascript(currentScript, null)
+                    if (url != null && YoutubeUrls.isYoutubePage(url)) {
+                        view?.evaluateJavascript(currentScript, null)
+                        if (currentDesktopViewScript.isNotEmpty()) view?.evaluateJavascript(currentDesktopViewScript, null)
+                    }
                     onCanGoBackChanged(view?.canGoBack() == true)
                     onCanGoForwardChanged(view?.canGoForward() == true)
                 }
@@ -352,6 +381,13 @@ fun BrowserScreen(
             persistentWebView.evaluateJavascript(tubeDeckInjectedScript, null)
         }
     }
+    LaunchedEffect(persistentWebView, desktopViewScript) {
+        if (desktopViewScript.isNotEmpty() &&
+            persistentWebView.url?.let { YoutubeUrls.isYoutubePage(it) } == true
+        ) {
+            persistentWebView.evaluateJavascript(desktopViewScript, null)
+        }
+    }
 
     LaunchedEffect(persistentWebView, lifecycleOwner) {
         while (true) {
@@ -367,6 +403,7 @@ fun BrowserScreen(
                 if (url?.startsWith("https://") == true && url != latestUrl) observeUrl(persistentWebView, url)
             }
             if (YoutubeUrls.videoId(persistentWebView.url.orEmpty()) != null) {
+                if (currentDesktopViewScript.isNotEmpty()) persistentWebView.evaluateJavascript(currentDesktopViewScript, null)
                 persistentWebView.evaluateJavascript(
                     """(function(){
                         var v=document.querySelector('video');

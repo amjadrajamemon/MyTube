@@ -1910,7 +1910,7 @@ fun NativeExoPlayer(
                                         onPlaybackContinuationModeChanged(nextMode)
                                         continuationModeHint = when (nextMode) {
                                             PlaybackContinuationMode.LOOP_CURRENT -> "Loop · repeat the current video"
-                                            PlaybackContinuationMode.AUTO_NEXT -> "Relevant next · play the next relevant video"
+                                            PlaybackContinuationMode.AUTO_NEXT -> "Auto play · play the next relevant video"
                                             PlaybackContinuationMode.EPISODES -> "Episode next · continue with the next detected episode"
                                         }
                                         controlsVisible = true

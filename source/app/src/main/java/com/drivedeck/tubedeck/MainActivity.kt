@@ -365,7 +365,7 @@ class MainActivity : ComponentActivity() {
                 var browserNavigationGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var browserHistoryResetGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var desktopTheaterEnabled by rememberSaveable { mutableStateOf(false) }
-                var interfaceModeChangedInSettings by remember { mutableStateOf(false) }
+                var requestedDesktopModeAfterSave by remember { mutableStateOf<Boolean?>(null) }
                 val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
                     NavigationCoordinator(
@@ -1100,8 +1100,8 @@ class MainActivity : ComponentActivity() {
                                     onGoogleAccountClick = onGoogleAccountClick,
                                     onPreviewSettings = { previewAppearance = it },
                                     onSaveSettings = {
-                                        interfaceModeChangedInSettings =
-                                            settings.desktopYoutubeUiEnabled != it.desktopYoutubeUiEnabled
+                                        requestedDesktopModeAfterSave = it.desktopYoutubeUiEnabled
+                                            .takeIf { selected -> selected != settings.desktopYoutubeUiEnabled }
                                         repository.updateSettings(it)
                                         previewAppearance = null
                                     },
@@ -1121,8 +1121,9 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onClose = {
                                         previewAppearance = null
-                                        if (interfaceModeChangedInSettings || settings.desktopYoutubeUiEnabled) {
-                                            val homeScreen = if (settings.desktopYoutubeUiEnabled) ActiveScreen.BROWSER else ActiveScreen.HOME
+                                        val useDesktop = requestedDesktopModeAfterSave ?: settings.desktopYoutubeUiEnabled
+                                        if (requestedDesktopModeAfterSave != null || useDesktop) {
+                                            val homeScreen = if (useDesktop) ActiveScreen.BROWSER else ActiveScreen.HOME
                                             navigation.reset(
                                                 NavigationEntry(
                                                     homeScreen,
@@ -1130,7 +1131,7 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             )
                                             if (homeScreen == ActiveScreen.BROWSER) browserNavigationGeneration += 1
-                                            interfaceModeChangedInSettings = false
+                                            requestedDesktopModeAfterSave = null
                                             applyNavigationEntry(navigation.current)
                                         } else if (!navigateBack()) {
                                             navigation.reset(NavigationEntry(ActiveScreen.HOME))

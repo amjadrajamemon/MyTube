@@ -365,6 +365,7 @@ class MainActivity : ComponentActivity() {
                 var browserNavigationGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var browserHistoryResetGeneration by rememberSaveable { mutableIntStateOf(0) }
                 var desktopTheaterEnabled by rememberSaveable { mutableStateOf(false) }
+                var interfaceModeChangedInSettings by remember { mutableStateOf(false) }
                 val screenStateHolder = rememberSaveableStateHolder()
                 val navigation = remember {
                     NavigationCoordinator(
@@ -1099,6 +1100,8 @@ class MainActivity : ComponentActivity() {
                                     onGoogleAccountClick = onGoogleAccountClick,
                                     onPreviewSettings = { previewAppearance = it },
                                     onSaveSettings = {
+                                        interfaceModeChangedInSettings =
+                                            settings.desktopYoutubeUiEnabled != it.desktopYoutubeUiEnabled
                                         repository.updateSettings(it)
                                         previewAppearance = null
                                     },
@@ -1118,9 +1121,16 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onClose = {
                                         previewAppearance = null
-                                        if (settings.desktopYoutubeUiEnabled) {
-                                            navigation.reset(NavigationEntry(ActiveScreen.BROWSER, "https://www.youtube.com/"))
-                                            browserNavigationGeneration += 1
+                                        if (interfaceModeChangedInSettings || settings.desktopYoutubeUiEnabled) {
+                                            val homeScreen = if (settings.desktopYoutubeUiEnabled) ActiveScreen.BROWSER else ActiveScreen.HOME
+                                            navigation.reset(
+                                                NavigationEntry(
+                                                    homeScreen,
+                                                    if (homeScreen == ActiveScreen.BROWSER) "https://www.youtube.com/" else null
+                                                )
+                                            )
+                                            if (homeScreen == ActiveScreen.BROWSER) browserNavigationGeneration += 1
+                                            interfaceModeChangedInSettings = false
                                             applyNavigationEntry(navigation.current)
                                         } else if (!navigateBack()) {
                                             navigation.reset(NavigationEntry(ActiveScreen.HOME))

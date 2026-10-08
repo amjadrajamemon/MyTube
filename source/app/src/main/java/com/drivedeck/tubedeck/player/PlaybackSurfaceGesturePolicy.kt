@@ -28,10 +28,10 @@ internal object PlaybackSurfaceGesturePolicy {
         }
     }
 
-    /** Only a right-side hold engages temporary accelerated playback. */
+    /** Only a right-half hold engages temporary accelerated playback. */
     fun longPress(x: Float, width: Float): PlaybackSurfaceGesture {
         if (width <= 0f) return PlaybackSurfaceGesture.NONE
-        return if (x / width > CENTER_END) PlaybackSurfaceGesture.HOLD_FAST_FORWARD
+        return if (x / width > 0.5f) PlaybackSurfaceGesture.HOLD_FAST_FORWARD
         else PlaybackSurfaceGesture.NONE
     }
 

@@ -13,6 +13,7 @@ class PlaybackSurfaceGesturePolicyTest {
     @Test fun onlyRightSideLongPressFastForwards() {
         assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(100f, 1000f))
         assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(500f, 1000f))
+        assertEquals(PlaybackSurfaceGesture.HOLD_FAST_FORWARD, PlaybackSurfaceGesturePolicy.longPress(600f, 1000f))
         assertEquals(PlaybackSurfaceGesture.HOLD_FAST_FORWARD, PlaybackSurfaceGesturePolicy.longPress(900f, 1000f))
         assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(900f, 0f))
     }

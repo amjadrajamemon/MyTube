@@ -119,45 +119,48 @@ fun DriveDeckScreen(
                 }
             }
             if (!playlistMode) {
-            // The normal Home surface is intentionally limited to the three primary feeds.
-            // Live content appears only when the user explicitly performs a live search.
-            if (suggestionsEnabled) {
-                item {
-                    HomeShelf(
-                        "Relevant",
-                        suggestedVideos,
-                        onOpenVideo,
-                        listView = listView,
-                        action = "Refresh",
-                        onAction = onRefreshFeed
-                    )
+                // Keep all three Home categories visible in one row, even when a feed is disabled.
+                // Individual Settings toggles still control whether each column loads video cards.
+                item(key = "home-three-feeds") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        HomeFeedColumn(
+                            title = "History",
+                            videos = if (historyEnabled) watchHistory.take(12) else emptyList(),
+                            onOpenVideo = onOpenVideo,
+                            listView = listView,
+                            enabled = historyEnabled,
+                            action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
+                            onAction = onClearHistory,
+                            modifier = Modifier.weight(1f)
+                        )
+                        HomeFeedColumn(
+                            title = "Relevant",
+                            videos = if (suggestionsEnabled) suggestedVideos.take(12) else emptyList(),
+                            onOpenVideo = onOpenVideo,
+                            listView = listView,
+                            enabled = suggestionsEnabled,
+                            action = if (suggestionsEnabled) "Refresh" else null,
+                            onAction = onRefreshFeed,
+                            modifier = Modifier.weight(1f)
+                        )
+                        HomeFeedColumn(
+                            title = "Trending",
+                            subtitle = countryCode,
+                            videos = if (trendingEnabled) trendingVideos.take(12) else emptyList(),
+                            onOpenVideo = onOpenVideo,
+                            listView = listView,
+                            enabled = trendingEnabled,
+                            loading = trendingStatus == "Loading",
+                            action = if (trendingEnabled) "Refresh" else null,
+                            onAction = onRefreshFeed,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
-            }
-            if (historyEnabled) {
-                item {
-                    HomeShelf(
-                        "History",
-                        watchHistory.take(12),
-                        onOpenVideo,
-                        listView = listView,
-                        action = if (watchHistory.isNotEmpty()) "Clear" else null,
-                        onAction = onClearHistory
-                    )
-                }
-            }
-            if (trendingEnabled) {
-                item {
-                    HomeShelf(
-                        "Trending · $countryCode",
-                        trendingVideos,
-                        onOpenVideo,
-                        listView = listView,
-                        loading = trendingStatus == "Loading",
-                        action = "Refresh",
-                        onAction = onRefreshFeed
-                    )
-                }
-            }
             }
         }
     }
@@ -360,6 +363,112 @@ private fun PlaylistThumbnail(playlist: PlaylistCandidate, modifier: Modifier) {
                 Icon(Icons.Default.PlaylistPlay, null, tint = Color.White, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.width(3.dp))
                 Text(playlist.kind.ifBlank { "Playlist" }, color = Color.White, fontSize = 9.5.sp)
+            }
+        }
+    }
+}
+
+/**
+ * Home has three equally sized columns on all supported screen widths.
+ * Cards stack vertically within a column rather than creating three separate full-width shelves.
+ */
+@Composable
+private fun HomeFeedColumn(
+    title: String,
+    videos: List<HomeVideo>,
+    onOpenVideo: (HomeVideo) -> Unit,
+    listView: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    loading: Boolean = false,
+    action: String? = null,
+    onAction: () -> Unit = {}
+) {
+    Surface(
+        color = TubeDeckSurface,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (listView) 8.dp else 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 34.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        color = TubeDeckTextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = subtitle,
+                            color = TubeDeckTextSecondary,
+                            fontSize = 10.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+                if (action != null) {
+                    IconButton(
+                        onClick = onAction,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
+                            contentDescription = "$action $title",
+                            tint = TubeDeckAccentCyan,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
+            }
+            if (!enabled) {
+                Text("Off in Settings", color = TubeDeckTextSecondary, fontSize = 10.sp)
+            } else if (videos.isEmpty()) {
+                if (loading) {
+                    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    Text("No videos yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+            } else {
+                videos.forEach { video ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(9.dp))
+                            .clickable { onOpenVideo(video) }
+                    ) {
+                        VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            video.title,
+                            color = TubeDeckTextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = if (listView) 10.5.sp else 11.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!listView) {
+                            Text(
+                                video.channelTitle,
+                                color = TubeDeckTextSecondary,
+                                fontSize = 9.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         }
     }

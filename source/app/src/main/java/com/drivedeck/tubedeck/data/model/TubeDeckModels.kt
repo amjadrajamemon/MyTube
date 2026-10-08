@@ -108,8 +108,9 @@ data class TubeDeckSettings(
     val sponsorBlockEnabled: Boolean = true,
     val blockShortsEnabled: Boolean = true,
     val pipEnabled: Boolean = true,
-    // Performance-first: expensive companion shelves are opt-in by default.
-    val autoLoadEpisodes: Boolean = false,
+    // Episodes now preload by default so the Episodes shelf is ready alongside Relevant/Next.
+    // Users can still disable this in Settings to save network/CPU work.
+    val autoLoadEpisodes: Boolean = true,
     val autoLoadUpNext: Boolean = false,
 
     // Native-player controller and upward-swipe continuation shelf.

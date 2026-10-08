@@ -184,7 +184,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         sponsorBlockEnabled = prefs.getBoolean("sponsorBlockEnabled", true),
         blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
         pipEnabled = prefs.getBoolean("pipEnabled", true),
-        autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
+        autoLoadEpisodes = loadAutoLoadEpisodes(),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
         playerControllerScale = prefs.getFloat("playerControllerScale", 1.20f).coerceIn(0.85f, 1.50f),
         equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
@@ -196,6 +196,18 @@ class TubeDeckRepository private constructor(private val context: Context) {
         themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),
         themeTextArgb = prefs.getLong("themeTextArgb", 0xFFFFFFFFL)
     )
+
+    private fun loadAutoLoadEpisodes(): Boolean {
+        val migrationKey = "episodes_auto_load_default_on_v183"
+        if (!prefs.getBoolean(migrationKey, false)) {
+            prefs.edit()
+                .putBoolean(migrationKey, true)
+                .putBoolean("autoLoadEpisodes", true)
+                .apply()
+            return true
+        }
+        return prefs.getBoolean("autoLoadEpisodes", true)
+    }
 
     private fun loadPreferredPlaybackSpeed(): Float {
         val saved = prefs.getFloat("preferredPlaybackSpeed", 1.0f).coerceIn(0.25f, 5.0f)

@@ -148,7 +148,7 @@ fun PlayerScreen(
     pipEnabled: Boolean = true,
     autoRotatePlayback: Boolean = true,
     inPictureInPicture: Boolean = false,
-    autoLoadEpisodes: Boolean = false,
+    autoLoadEpisodes: Boolean = true,
     autoLoadUpNext: Boolean = false,
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
@@ -637,17 +637,19 @@ fun NativeExoPlayer(
         showEpisodesShelf,
         autoLoadEpisodes,
         playbackContinuationMode,
-        firstFrameRendered,
         media.mediaUri,
         resolved?.title
     ) {
-        if (YoutubeUrls.videoId(media.mediaUri) == null || !firstFrameRendered) return@LaunchedEffect
-        if ((!showPlaybackModeCards || !showEpisodesShelf) &&
-            playbackContinuationMode != PlaybackContinuationMode.EPISODES &&
-            !autoLoadEpisodes
-        ) {
-            return@LaunchedEffect
-        }
+        if (YoutubeUrls.videoId(media.mediaUri) == null) return@LaunchedEffect
+
+        // Preload Episodes from the same metadata-ready lifecycle as Relevant/Next.
+        // Do not wait for first-frame rendering: on slow devices/networks that made Episodes
+        // appear to require the swipe/manual trigger even when Auto-load Episodes was enabled.
+        val shouldDiscoverEpisodes =
+            (autoLoadEpisodes && showEpisodesShelf) ||
+                (showPlaybackModeCards && showEpisodesShelf) ||
+                playbackContinuationMode == PlaybackContinuationMode.EPISODES
+        if (!shouldDiscoverEpisodes) return@LaunchedEffect
         if (continuationEpisodesLoaded || continuationEpisodesLoading) return@LaunchedEffect
 
         val titleHint = resolved?.title?.takeIf { it.isNotBlank() }

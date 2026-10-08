@@ -519,6 +519,10 @@ fun NativeExoPlayer(
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
+    // Right-side long press is transient and must not modify the saved playback-speed setting.
+    var holdFastForwardActive by remember(media.id) { mutableStateOf(false) }
+    var holdFastForwardOriginalSpeed by remember(media.id) { mutableFloatStateOf(1f) }
+    var holdFastForwardSpeed by remember(media.id) { mutableFloatStateOf(2f) }
     // Standard player behavior: captions start off and are enabled explicitly from CC.
     // This also prevents every side-loaded subtitle source from becoming active at first frame.
     var captionsEnabled by remember { mutableStateOf(false) }
@@ -610,7 +614,7 @@ fun NativeExoPlayer(
     }
     LaunchedEffect(exoPlayer, preferredPlaybackSpeed) {
         playbackSpeed = preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)
-        exoPlayer.setPlaybackSpeed(playbackSpeed)
+        if (!holdFastForwardActive) exoPlayer.setPlaybackSpeed(playbackSpeed)
     }
 
     LaunchedEffect(exoPlayer, playbackContinuationMode) {
@@ -1424,6 +1428,10 @@ fun NativeExoPlayer(
 
     LaunchedEffect(inPictureInPicture) {
         if (inPictureInPicture) {
+            if (holdFastForwardActive) {
+                exoPlayer.setPlaybackSpeed(holdFastForwardOriginalSpeed)
+                holdFastForwardActive = false
+            }
             isFullscreen = false
             controlsVisible = false
             showSettings = false
@@ -1467,12 +1475,35 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .pointerInput(gestureEnabled, duration) {
+                        .pointerInput(gestureEnabled, duration, inPictureInPicture) {
                             detectTapGestures(
                                 onTap = { controlsVisible = !controlsVisible },
-                                onLongPress = {
-                                    showQuickActions = true
-                                    controlsVisible = true
+                                onPress = {
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        // Cancellation, release or PiP transition restores the prior speed.
+                                        if (holdFastForwardActive) {
+                                            exoPlayer.setPlaybackSpeed(holdFastForwardOriginalSpeed)
+                                            holdFastForwardActive = false
+                                        }
+                                    }
+                                },
+                                onLongPress = { position ->
+                                    if (PlaybackSurfaceGesturePolicy.longPress(position.x, size.width.toFloat()) ==
+                                        PlaybackSurfaceGesture.HOLD_FAST_FORWARD
+                                    ) {
+                                        if (exoPlayer.isPlaying && !inPictureInPicture) {
+                                            holdFastForwardOriginalSpeed = exoPlayer.playbackParameters.speed
+                                            holdFastForwardSpeed = (holdFastForwardOriginalSpeed * 2f).coerceIn(2f, 5f)
+                                            exoPlayer.setPlaybackSpeed(holdFastForwardSpeed)
+                                            holdFastForwardActive = true
+                                            gestureOverlayVisible = false
+                                        }
+                                    } else {
+                                        showQuickActions = true
+                                        controlsVisible = true
+                                    }
                                 },
                                 onDoubleTap = { position ->
                                     val action = PlaybackSurfaceGesturePolicy.doubleTap(position.x, size.width.toFloat())
@@ -1487,9 +1518,9 @@ fun NativeExoPlayer(
                                             gestureValue = (exoPlayer.currentPosition.toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)
                                             gestureOverlayVisible = true
                                         }
-                                        PlaybackSurfaceGesture.TOGGLE_FULLSCREEN -> {
-                                            isFullscreen = !isFullscreen
-                                            gestureIcon = if (isFullscreen) Icons.Default.Fullscreen else Icons.Default.FullscreenExit
+                                        PlaybackSurfaceGesture.TOGGLE_PLAY_PAUSE -> {
+                                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                                            gestureIcon = if (exoPlayer.isPlaying) Icons.Default.PlayArrow else Icons.Default.Pause
                                             gestureValue = 1f
                                             gestureOverlayVisible = true
                                         }
@@ -1621,6 +1652,30 @@ fun NativeExoPlayer(
                 )
             }
 
+            if (holdFastForwardActive && !inPictureInPicture) {
+                Surface(
+                    color = Color.Black.copy(alpha = .78f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                        .padding(end = 18.dp)
+                        .zIndex(60f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.FastForward, null, tint = TubeDeckAccentCyan)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Fast forward ${playbackSpeedLabel(holdFastForwardSpeed)}",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
             androidx.compose.animation.AnimatedVisibility(
                 visible = showPlaybackModeCards && !inPictureInPicture,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -1730,6 +1785,8 @@ fun NativeExoPlayer(
                                 Icons.Default.Brightness6 -> "Brightness"
                                 Icons.Default.FastForward -> "Forward"
                                 Icons.Default.FastRewind -> "Rewind"
+                                Icons.Default.PlayArrow -> "Playing"
+                                Icons.Default.Pause -> "Paused"
                                 Icons.Default.Fullscreen -> "Fullscreen"
                                 Icons.Default.FullscreenExit -> "Mini player"
                                 Icons.Default.PictureInPictureAlt -> "Picture in Picture"

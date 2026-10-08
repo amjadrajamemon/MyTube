@@ -4,10 +4,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackSurfaceGesturePolicyTest {
-    @Test fun doubleTapEdgesSeekAndCenterTogglesFullscreen() {
+    @Test fun doubleTapEdgesSeekAndCenterTogglesPlayPause() {
         assertEquals(PlaybackSurfaceGesture.SEEK_BACK, PlaybackSurfaceGesturePolicy.doubleTap(100f, 1000f))
-        assertEquals(PlaybackSurfaceGesture.TOGGLE_FULLSCREEN, PlaybackSurfaceGesturePolicy.doubleTap(500f, 1000f))
+        assertEquals(PlaybackSurfaceGesture.TOGGLE_PLAY_PAUSE, PlaybackSurfaceGesturePolicy.doubleTap(500f, 1000f))
         assertEquals(PlaybackSurfaceGesture.SEEK_FORWARD, PlaybackSurfaceGesturePolicy.doubleTap(900f, 1000f))
+    }
+
+    @Test fun onlyRightSideLongPressFastForwards() {
+        assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(100f, 1000f))
+        assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(500f, 1000f))
+        assertEquals(PlaybackSurfaceGesture.HOLD_FAST_FORWARD, PlaybackSurfaceGesturePolicy.longPress(900f, 1000f))
+        assertEquals(PlaybackSurfaceGesture.NONE, PlaybackSurfaceGesturePolicy.longPress(900f, 0f))
     }
 
     @Test fun centerVerticalGesturesMoveBetweenFullscreenMiniAndPip() {

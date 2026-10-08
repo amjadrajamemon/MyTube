@@ -6,7 +6,8 @@ internal enum class PlaybackSurfaceGesture {
     NONE,
     SEEK_BACK,
     SEEK_FORWARD,
-    TOGGLE_FULLSCREEN,
+    TOGGLE_PLAY_PAUSE,
+    HOLD_FAST_FORWARD,
     ENTER_FULLSCREEN,
     EXIT_FULLSCREEN,
     ENTER_PIP
@@ -23,8 +24,15 @@ internal object PlaybackSurfaceGesturePolicy {
         return when {
             fraction < CENTER_START -> PlaybackSurfaceGesture.SEEK_BACK
             fraction > CENTER_END -> PlaybackSurfaceGesture.SEEK_FORWARD
-            else -> PlaybackSurfaceGesture.TOGGLE_FULLSCREEN
+            else -> PlaybackSurfaceGesture.TOGGLE_PLAY_PAUSE
         }
+    }
+
+    /** Only a right-side hold engages temporary accelerated playback. */
+    fun longPress(x: Float, width: Float): PlaybackSurfaceGesture {
+        if (width <= 0f) return PlaybackSurfaceGesture.NONE
+        return if (x / width > CENTER_END) PlaybackSurfaceGesture.HOLD_FAST_FORWARD
+        else PlaybackSurfaceGesture.NONE
     }
 
     fun verticalRelease(

@@ -150,6 +150,7 @@ fun PlayerScreen(
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
     autoLoadUpNext: Boolean = false,
+    sideBySideEpisodeFeeds: Boolean = true,
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
     playerControllerScale: Float = 1.20f,
@@ -242,6 +243,7 @@ fun PlayerScreen(
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
+            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
             showRelevantShelf = showRelevantShelf,
             showEpisodesShelf = showEpisodesShelf,
             playerControllerScale = playerControllerScale,
@@ -451,6 +453,7 @@ fun NativeExoPlayer(
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    sideBySideEpisodeFeeds: Boolean,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
     playerControllerScale: Float,
@@ -2272,6 +2275,7 @@ fun NativeExoPlayer(
                 onPlayPlaylistItem = onPlayPlaylistItem,
                 autoLoadEpisodes = autoLoadEpisodes,
                 autoLoadUpNext = autoLoadUpNext,
+                sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
                 sharedEpisodeShelf = continuationEpisodeShelf,
                 sharedEpisodesLoading = continuationEpisodesLoading,
                 playbackReadyForCompanionLoads = firstFrameRendered,
@@ -3256,6 +3260,7 @@ private fun PortraitCompanionPanel(
     onPlayPlaylistItem: ((Int) -> Unit)?,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
+    sideBySideEpisodeFeeds: Boolean,
     sharedEpisodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
     sharedEpisodesLoading: Boolean,
     playbackReadyForCompanionLoads: Boolean,
@@ -3660,6 +3665,111 @@ private fun PortraitCompanionPanel(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
                             )
+                        }
+                    } else if (sideBySideEpisodeFeeds && autoLoadEpisodes && autoLoadUpNext) {
+                        // Two independent, vertically scrollable portrait feeds with equal card widths.
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                                val feedCardWidth = maxWidth
+                                Column(Modifier.fillMaxSize()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "More episodes",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Icon(
+                                            Icons.Default.PlaylistPlay,
+                                            contentDescription = null,
+                                            tint = TubeDeckAccentMint,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(bottom = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        if (sharedEpisodesLoading) {
+                                            item(key = "dual-episodes-loading") {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Text("Finding episodes…", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                                                }
+                                            }
+                                        }
+                                        items(episodeItems, key = { "dual-episode-${it.videoId}" }) { episode ->
+                                            EpisodeVideoCard(episode = episode, cardWidth = feedCardWidth) {
+                                                onPlayRelated?.invoke(
+                                                    OfflineMedia(
+                                                        id = "episode-${episode.videoId}-${System.nanoTime()}",
+                                                        title = episode.title,
+                                                        videoId = episode.videoId,
+                                                        thumbnailUrl = episode.thumbnailUrl,
+                                                        mediaUri = "https://www.youtube.com/watch?v=${episode.videoId}"
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        if (episodeItems.isEmpty() && !sharedEpisodesLoading) {
+                                            item(key = "dual-episodes-empty") {
+                                                Text("No additional episodes found", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalDivider(
+                                modifier = Modifier.fillMaxHeight(),
+                                color = TubeDeckBorder.copy(alpha = .72f)
+                            )
+                            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                                val feedCardWidth = maxWidth
+                                Column(Modifier.fillMaxSize()) {
+                                    Text(
+                                        "Up next",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                                    )
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(bottom = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        items(relatedVideos, key = { "dual-related-${it.videoId}" }) { related ->
+                                            RelatedVideoCard(video = related, cardWidth = feedCardWidth) {
+                                                onPlayRelated?.invoke(
+                                                    OfflineMedia(
+                                                        id = "related-${related.videoId}-${System.nanoTime()}",
+                                                        title = related.title,
+                                                        videoId = related.videoId,
+                                                        thumbnailUrl = related.thumbnailUrl,
+                                                        mediaUri = related.url
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        if (relatedVideos.isEmpty()) {
+                                            item(key = "dual-related-empty") {
+                                                Text("No recommendations available yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } else {
                         LazyColumn(

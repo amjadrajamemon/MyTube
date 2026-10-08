@@ -109,6 +109,7 @@ fun SettingsScreen(
     var pipEnabled by remember { mutableStateOf(currentSettings.pipEnabled) }
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
+    var sideBySideEpisodeFeeds by remember { mutableStateOf(currentSettings.sideBySideEpisodeFeeds) }
     var playerControllerScale by remember {
         mutableFloatStateOf(currentSettings.playerControllerScale.coerceIn(0.85f, 1.50f))
     }
@@ -515,6 +516,7 @@ fun SettingsScreen(
                 HorizontalDivider()
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
                 ToggleRow("Auto-load Up Next", autoLoadUpNext) { autoLoadUpNext = it }
+                ToggleRow("Portrait feeds · Side by side", sideBySideEpisodeFeeds) { sideBySideEpisodeFeeds = it }
                 HorizontalDivider()
 
                 ToggleRow("Swipe shelf · Relevant row", showRelevantShelf) { showRelevantShelf = it }
@@ -661,6 +663,7 @@ fun SettingsScreen(
                             pipEnabled = pipEnabled,
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
+                            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
                             playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
                             equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
                             showRelevantShelf = showRelevantShelf,

@@ -111,6 +111,7 @@ data class TubeDeckSettings(
     // Performance-first: expensive companion shelves are opt-in by default.
     val autoLoadEpisodes: Boolean = false,
     val autoLoadUpNext: Boolean = false,
+    val sideBySideEpisodeFeeds: Boolean = true,
 
     // Native-player controller and upward-swipe continuation shelf.
     val playerControllerScale: Float = 1.20f,

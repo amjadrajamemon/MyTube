@@ -414,6 +414,7 @@ class NativePlayerActivity : ComponentActivity() {
                     inPictureInPicture = isPipMode,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
+                    sideBySideEpisodeFeeds = settings.sideBySideEpisodeFeeds,
                     showRelevantShelf = settings.showRelevantShelf,
                     showEpisodesShelf = settings.showEpisodesShelf,
                     playerControllerScale = settings.playerControllerScale,

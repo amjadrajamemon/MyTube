@@ -1,5 +1,7 @@
 name: Build MyTube Android APKs
 
+# 2026-10-08: Rebuild v1.8.2 ARM64 and Universal APKs with complete verification.
+
 on:
   push:
     branches: [ main, fix/v1.8.2-episodes-captions-history-reset ]

@@ -211,7 +211,8 @@ fun BrowserScreen(
 
     // Persistent WebView instance. A Chromium renderer crash makes its WebView permanently
     // unusable; rendererGeneration creates a fresh instance while retaining MyTube's logical URL.
-    val persistentWebView = remember(rendererGeneration, settings.desktopYoutubeUiEnabled) {
+    val desktopSiteEnabled = settings.desktopYoutubeUiEnabled
+    val persistentWebView = remember(rendererGeneration, desktopSiteEnabled) {
         val generationAtCreation = rendererGeneration
         WebView(context).apply {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -226,7 +227,7 @@ fun BrowserScreen(
             this.settings.databaseEnabled = true
             this.settings.useWideViewPort = true
             this.settings.loadWithOverviewMode = true
-            if (settings.desktopYoutubeUiEnabled) {
+            if (desktopSiteEnabled) {
                 this.settings.userAgentString =
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
                 this.settings.setSupportZoom(true)

@@ -30,7 +30,7 @@ jobs:
       - name: Verify v1.8.4 dual-APK source
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           test -f source/settings.gradle.kts
           grep -q 'versionName = "1.8.4"' source/app/build.gradle.kts
           grep -q 'versionCode = 86' source/app/build.gradle.kts

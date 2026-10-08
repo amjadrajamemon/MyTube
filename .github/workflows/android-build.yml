@@ -2,7 +2,7 @@ name: Build MyTube Android APKs
 
 on:
   push:
-    branches: [ main, fix/v1.8.3-episodes-captions-history-reset ]
+    branches: [ main, fix/v1.8.3-auto-episodes ]
     paths:
       - 'source/**'
       - '.github/workflows/android-build.yml'
@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.8.2"' source/app/build.gradle.kts
+          grep -q 'versionName = "1.8.3"' source/app/build.gradle.kts
           grep -q 'versionCode = 85' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
@@ -644,7 +644,7 @@ jobs:
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
             printf '%s\n' "$BADGING" | grep -Fq "versionCode='85'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.2'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.3'"
             if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
               echo "::error::$EDITION APK is unexpectedly debuggable."
               exit 1

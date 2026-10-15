@@ -229,7 +229,7 @@ jobs:
           grep -Fq 'equalizerController.probeDts()' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'isTvLikePlaybackDevice(context)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq '.setEnableDecoderFallback(true)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
-          grep -Fq 'requestedTarget.coerceAtMost(720)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'requestedTarget.coerceAtMost(if (carHeadUnit) 480 else 720)' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'COMMENTS_PRIMARY_TIMEOUT_MS = 8_000L' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           grep -Fq 'COMMENTS_FALLBACK_TIMEOUT_MS = 10_000L' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           grep -Fq 'youtube:max_comments=$safeLimit,$safeLimit,0,0;comment_sort=top' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt

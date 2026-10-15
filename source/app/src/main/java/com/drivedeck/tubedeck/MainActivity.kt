@@ -1405,8 +1405,11 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(intent) }.onFailure { error ->
             PlaybackSessionRegistry.close(playbackSessionId)
             android.util.Log.e("MyTubePlayback", "Native Activity launch failed", error)
-            Toast.makeText(this, "Native player unavailable; opening web player", Toast.LENGTH_LONG).show()
-            inboundUrl = media.mediaUri
+            Toast.makeText(
+                this,
+                "Native player could not start. Select Web player in MyTube Settings.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 

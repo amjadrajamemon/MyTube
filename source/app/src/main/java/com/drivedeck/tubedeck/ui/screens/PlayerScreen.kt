@@ -494,6 +494,7 @@ fun NativeExoPlayer(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val carHeadUnit = remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context) }
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)

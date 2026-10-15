@@ -121,8 +121,18 @@ class NativePlayerActivity : ComponentActivity() {
         playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
         initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
-            finish()
-            return
+            // XY AUTO and other low-memory head units may recreate this Activity after their
+            // OS has killed our process. The process-local registry is then empty even though
+            // Android restored a genuine, non-exported player Intent. Do not silently finish.
+            val restoredMedia = mediaFromIntent(intent)
+            val scheme = runCatching { Uri.parse(restoredMedia.mediaUri).scheme.orEmpty() }
+                .getOrDefault("")
+            if (playbackSessionId.isBlank() || scheme !in setOf("https", "http", "file", "content")) {
+                finish()
+                return
+            }
+            playbackSessionId = PlaybackSessionRegistry.open()
+            android.util.Log.w("MyTubePlayback", "Restored a playback session after process/task recreation")
         }
 
         lifecycleScope.launch {
@@ -151,12 +161,16 @@ class NativePlayerActivity : ComponentActivity() {
         })
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            setPictureInPictureParams(
-                PlaybackPipActions.buildParams(
-                    context = this,
-                    activityClass = NativePlayerActivity::class.java
+            // Several car ROMs advertise PiP but reject the parameter call; it must not
+            // prevent the video Activity from appearing.
+            runCatching {
+                setPictureInPictureParams(
+                    PlaybackPipActions.buildParams(
+                        context = this,
+                        activityClass = NativePlayerActivity::class.java
+                    )
                 )
-            )
+            }.onFailure { android.util.Log.w("MyTubePlayback", "PiP unavailable on this ROM", it) }
         }
 
         replaceMedia(mediaFromIntent(intent), recordWatch = true)

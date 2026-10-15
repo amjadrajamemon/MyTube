@@ -125,6 +125,7 @@ import com.drivedeck.tubedeck.player.PlaybackEqualizerController
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
@@ -185,6 +186,7 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val carHeadUnit = remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context) }
 
     // Normal playback Back is intentionally owned by the parent Activity so its
     // single/double-Back state machine cannot be bypassed by a nested Compose handler.
@@ -193,8 +195,11 @@ fun PlayerScreen(
     val originalOrientation = remember(activity) {
         activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
-    DisposableEffect(activity, inPictureInPicture, autoRotatePlayback) {
-        activity?.requestedOrientation = if (inPictureInPicture || !autoRotatePlayback) originalOrientation
+    DisposableEffect(activity, inPictureInPicture, autoRotatePlayback, carHeadUnit) {
+        // Car displays are physically fixed. XY AUTO sensor/rotation callbacks can cause
+        // destructive Activity lifecycle changes while a decoder is starting.
+        val rotationAllowed = autoRotatePlayback && !carHeadUnit
+        activity?.requestedOrientation = if (inPictureInPicture || !rotationAllowed) originalOrientation
             else ActivityInfo.SCREEN_ORIENTATION_SENSOR
         val tiltListener = object : OrientationEventListener(context) {
             private var lastQuadrant: Int? = null
@@ -212,7 +217,7 @@ fun PlayerScreen(
                 lastQuadrant = quadrant
             }
         }
-        if (autoRotatePlayback && !inPictureInPicture && tiltListener.canDetectOrientation()) {
+        if (rotationAllowed && !inPictureInPicture && tiltListener.canDetectOrientation()) {
             tiltListener.enable()
         }
         onDispose {
@@ -572,7 +577,7 @@ fun NativeExoPlayer(
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
-    val tvSafePlayback = remember(context) { isTvLikePlaybackDevice(context) }
+    val tvSafePlayback = remember(context) { isTvLikePlaybackDevice(context) || CarHeadUnitPolicy.isCarHeadUnit(context) }
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
             shouldCapture = liveDubEngine::isAudioCaptureEnabled,
@@ -581,19 +586,25 @@ fun NativeExoPlayer(
     }
 
     val exoPlayer = remember(media.id) {
-        val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun buildAudioSink(
-                context: Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean
-            ): AudioSink {
-                return DefaultAudioSink.Builder(context)
-                    .setEnableFloatOutput(false)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(pcmTap))
-                    .build()
-            }
-        }.setEnableDecoderFallback(true)
+        val renderersFactory: DefaultRenderersFactory = if (carHeadUnit) {
+            // Older vendor audio drivers can fail when custom PCM processors are attached.
+            // Prefer the stock Media3 sink over the Live Dub PCM tap on these head units.
+            DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        } else {
+            object : DefaultRenderersFactory(context) {
+                override fun buildAudioSink(
+                    context: Context,
+                    enableFloatOutput: Boolean,
+                    enableAudioTrackPlaybackParams: Boolean
+                ): AudioSink {
+                    return DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(false)
+                        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                        .setAudioProcessors(arrayOf(pcmTap))
+                        .build()
+                }
+            }.setEnableDecoderFallback(true)
+        }
         // Fast first frame, but keep a deep reservoir once playback is running. The small
         // playback/rebuffer thresholds avoid long blank waits on weak links; the 90 s ceiling
         // gives unstable networks room to download ahead whenever bandwidth is temporarily good.
@@ -995,7 +1006,7 @@ fun NativeExoPlayer(
                     resolved?.subtitles?.isNotEmpty() == true
             }
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                equalizerSnapshot = equalizerController.attach(audioSessionId)
+                if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(audioSessionId)
             }
             override fun onCues(cueGroup: CueGroup) {
                 val cue = cueGroup.cues
@@ -1053,7 +1064,7 @@ fun NativeExoPlayer(
                             hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
 
                             val decoderSafeHeight = fresh.progressiveOptions
-                                .filter { it.videoMimeType == "video/mp4" && it.height <= 720 }
+                                .filter { it.videoMimeType == "video/mp4" && it.height <= (if (carHeadUnit) 480 else 720) }
                                 .maxByOrNull { it.height }
                                 ?.height
                                 ?: fresh.progressiveOptions
@@ -1101,7 +1112,7 @@ fun NativeExoPlayer(
             }
         }
         exoPlayer.addListener(listener)
-        equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
+        if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
             exoPlayer.removeListener(listener)
             equalizerController.release()
@@ -1134,7 +1145,9 @@ fun NativeExoPlayer(
                             bandwidthMeter.bitrateEstimate
                         )
                     }
-                    val safeTarget = chooseFastStartHeight(result, requestedTarget.coerceAtMost(720))
+                    val safeTarget = chooseFastStartHeight(
+                        result, requestedTarget.coerceAtMost(if (carHeadUnit) 480 else 720)
+                    )
                     loadResolvedStream(
                         result,
                         safeTarget,

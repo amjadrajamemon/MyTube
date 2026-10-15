@@ -1402,7 +1402,12 @@ class MainActivity : ComponentActivity() {
                 resumeFromAudio?.positionMs ?: 0L
             )
         }
-        startActivity(intent)
+        runCatching { startActivity(intent) }.onFailure { error ->
+            PlaybackSessionRegistry.close(playbackSessionId)
+            android.util.Log.e("MyTubePlayback", "Native Activity launch failed", error)
+            Toast.makeText(this, "Native player unavailable; opening web player", Toast.LENGTH_LONG).show()
+            inboundUrl = media.mediaUri
+        }
     }
 
     override fun onStart() {

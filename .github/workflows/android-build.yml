@@ -103,7 +103,7 @@ jobs:
       - name: Verify OAuth + navigation release-critical source
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           AUTH=source/app/src/main/java/com/drivedeck/tubedeck/auth/GoogleAccountSession.kt
           MAIN=source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
           NATIVE=source/app/src/main/java/com/drivedeck/tubedeck/NativePlayerActivity.kt

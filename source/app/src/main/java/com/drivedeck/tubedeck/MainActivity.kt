@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.install(applicationContext)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
 
@@ -1147,6 +1148,7 @@ class MainActivity : ComponentActivity() {
                                     PlayerScreen(
                                         media = media,
                                         playerMode = settings.playerMode,
+                                        xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                                         sponsorSegments = sponsorSegments,
                                         pipEnabled = settings.pipEnabled,
                     inPictureInPicture = isPipMode,

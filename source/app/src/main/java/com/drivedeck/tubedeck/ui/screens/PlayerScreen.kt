@@ -21,6 +21,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.view.MotionEvent
+import android.view.LayoutInflater
 import android.view.OrientationEventListener
 import android.view.View
 import android.view.ViewGroup
@@ -88,6 +89,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import com.drivedeck.tubedeck.R
+import com.drivedeck.tubedeck.player.PlaybackDiagnostics
+import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MediaItem.SubtitleConfiguration
 import androidx.media3.common.MimeTypes
@@ -182,11 +188,12 @@ fun PlayerScreen(
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
     onResolvedTitleChanged: (String) -> Unit = {},
+    xyAutoCompatibilityMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context) }
+    val carHeadUnit = xyAutoCompatibilityMode
 
     // Normal playback Back is intentionally owned by the parent Activity so its
     // single/double-Back state machine cannot be bypassed by a nested Compose handler.
@@ -243,6 +250,7 @@ fun PlayerScreen(
 
         else -> NativeExoPlayer(
             media = media,
+            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
             inPictureInPicture = inPictureInPicture,
@@ -490,11 +498,12 @@ fun NativeExoPlayer(
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
     onResolvedTitleChanged: (String) -> Unit = {},
+    xyAutoCompatibilityMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context) }
+    val carHeadUnit = xyAutoCompatibilityMode
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
@@ -503,7 +512,16 @@ fun NativeExoPlayer(
     val controllerFontSize = (11f * controllerScale).sp
     val controllerGap = (4f * controllerScale).dp
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val trackSelector = remember(media.id) { DefaultTrackSelector(context) }
+    val trackSelector = remember(media.id, carHeadUnit) {
+        DefaultTrackSelector(context).apply {
+            if (carHeadUnit) {
+                setParameters(buildUponParameters()
+                    .setPreferredVideoMimeTypes(MimeTypes.VIDEO_H264)
+                    .setPreferredAudioMimeTypes(MimeTypes.AUDIO_AAC)
+                    .setMaxVideoSize(854, 480))
+            }
+        }
+    }
     val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
     val dataSourceFactory = remember(media.id) {
         val httpFactory = DefaultHttpDataSource.Factory()
@@ -578,7 +596,7 @@ fun NativeExoPlayer(
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
-    val tvSafePlayback = remember(context) { isTvLikePlaybackDevice(context) || CarHeadUnitPolicy.isCarHeadUnit(context) }
+    val tvSafePlayback = isTvLikePlaybackDevice(context) || carHeadUnit
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
             shouldCapture = liveDubEngine::isAudioCaptureEnabled,
@@ -586,11 +604,14 @@ fun NativeExoPlayer(
         )
     }
 
-    val exoPlayer = remember(media.id) {
+    val exoPlayer = remember(media.id, carHeadUnit) {
         val renderersFactory: DefaultRenderersFactory = if (carHeadUnit) {
             // Older vendor audio drivers can fail when custom PCM processors are attached.
             // Prefer the stock Media3 sink over the Live Dub PCM tap on these head units.
-            DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+            DefaultRenderersFactory(context)
+                .setEnableDecoderFallback(true)
+                .forceDisableMediaCodecAsynchronousQueueing()
+                .setMediaCodecSelector(MediaCodecSelector.PREFER_SOFTWARE)
         } else {
             object : DefaultRenderersFactory(context) {
                 override fun buildAudioSink(
@@ -611,12 +632,13 @@ fun NativeExoPlayer(
         // gives unstable networks room to download ahead whenever bandwidth is temporarily good.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                18_000,
-                90_000,
+                if (carHeadUnit) 10_000 else 18_000,
+                if (carHeadUnit) 30_000 else 90_000,
                 500,
                 1_250
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(if (carHeadUnit) 16 * 1024 * 1024 else C.LENGTH_UNSET)
+            .setPrioritizeTimeOverSizeThresholds(!carHeadUnit)
             .build()
         ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
@@ -698,7 +720,7 @@ fun NativeExoPlayer(
     }
 
     val mediaSession = remember(exoPlayer) {
-        MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}").build()
+        MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}").build()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
@@ -735,11 +757,7 @@ fun NativeExoPlayer(
             return
         }
 
-        val option = sourceMedia.options
-            .filter { it.height <= requestedHeight }
-            .maxByOrNull { it.height }
-            ?: sourceMedia.options.maxByOrNull { it.height }
-            ?: return
+        val option = selectResolvedOption(sourceMedia, requestedHeight, carHeadUnit) ?: return
         val position = if (preservePosition) {
             exoPlayer.currentPosition
         } else {
@@ -749,7 +767,7 @@ fun NativeExoPlayer(
         isPreparing = true
         firstFrameRendered = false
         val preparedSource = runCatching {
-            buildResolvedSource(dataSourceFactory, sourceMedia, option.height)
+            buildResolvedSource(dataSourceFactory, sourceMedia, option)
         }.getOrElse { sourceError ->
             isPreparing = false
             isBuffering = false
@@ -999,6 +1017,7 @@ fun NativeExoPlayer(
                 if (!firstFrameRendered) {
                     firstFrameRendered = true
                     PlaybackStartupTelemetry.markFirstFrame(media.mediaUri)
+                    PlaybackDiagnostics.record(context, "first_frame", "compat=$carHeadUnit")
                 }
             }
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
@@ -1035,6 +1054,7 @@ fun NativeExoPlayer(
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
+                PlaybackDiagnostics.record(context, "player_error", "${error.errorCodeName}: ${error.cause?.javaClass?.simpleName.orEmpty()}")
                 isPreparing = false
                 isBuffering = false
                 val retryable = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
@@ -1112,10 +1132,21 @@ fun NativeExoPlayer(
                 }
             }
         }
+        val analytics = object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                PlaybackDiagnostics.record(context, "video_decoder", decoderName)
+            }
+            override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                PlaybackDiagnostics.record(context, "audio_decoder", decoderName)
+            }
+        }
+        PlaybackDiagnostics.record(context, "player_created", "compat=$carHeadUnit")
+        exoPlayer.addAnalyticsListener(analytics)
         exoPlayer.addListener(listener)
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
             exoPlayer.removeListener(listener)
+            exoPlayer.removeAnalyticsListener(analytics)
             equalizerController.release()
             liveDubEngine.close()
             mediaSession.release()
@@ -1257,7 +1288,7 @@ fun NativeExoPlayer(
     LaunchedEffect(firstFrameRendered, autoQuality, resolved, inPictureInPicture) {
         // Never switch representations while Android is shrinking/holding the decoder in PiP.
         // Several OEM codec stacks fail a decoder re-init during that surface transition.
-        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture) return@LaunchedEffect
+        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture || carHeadUnit) return@LaunchedEffect
         // SmartTube-style resilience for extracted progressive/DASH URLs: continuously reassess
         // the sustainable representation. Downshifts are fast; upgrades require repeated stable
         // samples so fluctuating mobile links do not bounce between qualities.
@@ -1467,9 +1498,14 @@ fun NativeExoPlayer(
                 Modifier.fillMaxSize().background(Color.Black)
             }
         ) {
+            key(carHeadUnit) {
             AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply {
+                    val view = if (carHeadUnit) {
+                        LayoutInflater.from(ctx).inflate(R.layout.mytube_car_player_view, null, false) as PlayerView
+                    } else PlayerView(ctx)
+                    PlaybackDiagnostics.record(ctx, "video_surface", view.videoSurfaceView?.javaClass?.simpleName.orEmpty())
+                    view.apply {
                         player = exoPlayer
                         useController = false
                         setKeepContentOnPlayerReset(true)
@@ -1478,12 +1514,14 @@ fun NativeExoPlayer(
                     }
                 },
                 update = { view ->
+                    view.player = exoPlayer
                     view.resizeMode = resizeMode
                     view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
                 },
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { view -> view.player = null }
             )
+            }
 
             if (gestureEnabled) {
                 Box(
@@ -4850,14 +4888,25 @@ private fun isPipMode(activity: Activity?): Boolean {
 }
 
 @OptIn(UnstableApi::class)
+private fun selectResolvedOption(
+    resolved: YoutubeStreamResolver.ResolvedMedia,
+    requestedHeight: Int,
+    compatibilityMode: Boolean
+): YoutubeStreamResolver.VideoOption? {
+    val candidates = if (compatibilityMode) {
+        resolved.progressiveOptions.filter { it.videoMimeType == "video/mp4" && it.height <= 480 }
+            .ifEmpty { resolved.options.filter { it.videoMimeType == "video/mp4" } }
+            .ifEmpty { resolved.options }
+    } else resolved.options
+    val height = PlaybackQualityPolicy.chooseHeight(candidates.map { it.height }, requestedHeight, compatibilityMode)
+    return candidates.firstOrNull { it.height == height }
+}
+
 private fun buildResolvedSource(
     factory: DefaultDataSource.Factory,
     resolved: YoutubeStreamResolver.ResolvedMedia,
-    requestedHeight: Int
+    option: YoutubeStreamResolver.VideoOption
 ): MediaSource {
-    val option = resolved.options.filter { it.height <= requestedHeight }.maxByOrNull { it.height }
-        ?: resolved.options.maxByOrNull { it.height }
-        ?: throw IllegalStateException("No playable video stream was extracted")
     val subtitles = resolved.subtitles.map { subtitle ->
         SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
             .setMimeType(subtitle.mimeType)

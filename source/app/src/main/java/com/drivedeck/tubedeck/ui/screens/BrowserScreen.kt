@@ -4,7 +4,8 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Bitmap
 import android.os.Build
-import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
@@ -30,7 +31,7 @@ import java.io.ByteArrayInputStream
 import org.json.JSONArray
 import kotlinx.coroutines.delay
 
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 fun BrowserScreen(
     currentUrl: String,
@@ -62,8 +63,7 @@ fun BrowserScreen(
     val currentSettings by rememberUpdatedState(settings)
     val currentIsActive by rememberUpdatedState(isActive)
     val latestUrl by rememberUpdatedState(currentUrl)
-    var lastObservedVideoId by remember { mutableStateOf<String?>(null) }
-    var lastNativeRequestAt by remember { mutableLongStateOf(0L) }
+    val nativeNavigation = remember { NativeVideoNavigationPolicy() }
     val pendingHistoryReset = remember { mutableIntStateOf(0) }
     val appliedHistoryReset = remember { mutableIntStateOf(0) }
     val appliedNavigationGeneration = remember { mutableIntStateOf(-1) }
@@ -73,23 +73,11 @@ fun BrowserScreen(
         if (url?.startsWith("https://") != true) return
         val videoId = YoutubeUrls.videoId(url)
         if (currentSettings.playerMode == PlayerMode.NATIVE && videoId != null) {
-            val now = SystemClock.elapsedRealtime()
+            val foreground = currentIsActive && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (!nativeNavigation.shouldOpen(videoId, YoutubeUrls.videoId(view?.url.orEmpty()), explicitNavigation, foreground)) return
+            currentOnNativeVideo(url)
 
-            // Main-frame clicks are explicit user choices and may intentionally reopen the same
-            // video. Passive WebView callbacks/polling for the same consumed watch URL must never
-            // relaunch the player; that was the source of the search/video/back loop.
-            val shouldLaunch =
-                explicitNavigation ||
-                    lastObservedVideoId != videoId ||
-                    now - lastNativeRequestAt > 10_000L
-
-            if (shouldLaunch) {
-                lastObservedVideoId = videoId
-                lastNativeRequestAt = now
-                currentOnNativeVideo(url)
-            }
-
-            if (!explicitNavigation) {
+            if (!explicitNavigation && YoutubeUrls.videoId(view?.url.orEmpty()) == videoId) {
                 // YouTube SPA navigation may already have pushed /watch into WebView history.
                 // Go back to the preserved results page instead of loadUrl(), which would create
                 // another history entry and cause Back to bounce into /watch again.
@@ -215,6 +203,14 @@ fun BrowserScreen(
     val persistentWebView = remember(rendererGeneration, desktopSiteEnabled) {
         val generationAtCreation = rendererGeneration
         WebView(context).apply {
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) nativeNavigation.onUserGesture()
+                false
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && keyCode in setOf(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER)) nativeNavigation.onUserGesture()
+                false
+            }
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -260,6 +256,7 @@ fun BrowserScreen(
                     if (!url.startsWith("https://")) return true
                     if (request?.isForMainFrame == true && currentSettings.playerMode == PlayerMode.NATIVE) {
                         if (YoutubeUrls.videoId(url) != null) {
+                            if (request.hasGesture()) nativeNavigation.onUserGesture()
                             observeUrl(view, url, explicitNavigation = true)
                             return true
                         }

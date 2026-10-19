@@ -1,6 +1,10 @@
 package com.drivedeck.tubedeck.ui.screens
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +38,7 @@ import com.drivedeck.tubedeck.data.model.DownloadMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
+import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
@@ -96,6 +101,7 @@ fun SettingsScreen(
     var homeTrendingEnabled by remember { mutableStateOf(currentSettings.homeTrendingEnabled) }
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
+    var xyAutoCompatibilityMode by remember { mutableStateOf(currentSettings.xyAutoCompatibilityMode) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
@@ -367,6 +373,20 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            SettingsCard(title = "XY AUTO car player") {
+                ToggleRow("XY AUTO compatibility", xyAutoCompatibilityMode) { xyAutoCompatibilityMode = it }
+                Text(
+                    "Use if native playback returns to search on your car unit. Prefers software decoding and lower video quality. Save settings before playing.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("MyTube playback report", PlaybackDiagnostics.report(context)))
+                    Toast.makeText(context, "Playback report copied", Toast.LENGTH_SHORT).show()
+                }) { Text("Copy playback report") }
             }
 
             SettingsCard(title = "Google / YouTube") {
@@ -657,6 +677,7 @@ fun SettingsScreen(
                             playlistMode = playlistMode,
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
+                            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,

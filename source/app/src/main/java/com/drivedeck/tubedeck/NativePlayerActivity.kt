@@ -116,8 +116,10 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.install(applicationContext)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_create", "restored=${savedInstanceState != null} compat=${repository.settings.value.xyAutoCompatibilityMode}")
         playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
         initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
@@ -423,6 +425,7 @@ class NativePlayerActivity : ComponentActivity() {
                 PlayerScreen(
                     media = media,
                     playerMode = com.drivedeck.tubedeck.data.model.PlayerMode.NATIVE,
+                    xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                     sponsorSegments = sponsorSegments,
                     pipEnabled = settings.pipEnabled,
                     inPictureInPicture = isPipMode,
@@ -994,6 +997,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_resume", "closing=$closingPlayer pip=$isPipMode")
         if (!closingPlayer && playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -1015,6 +1019,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_stop", "finishing=$isFinishing config=$isChangingConfigurations pip=$isPipMode")
         if (!isPipMode && !enteringPip) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -1062,6 +1067,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_destroy", "finishing=$isFinishing config=$isChangingConfigurations")
         playlistLoadJob?.cancel()
         playlistLoadJob = null
         pipExitResolutionJob?.cancel()

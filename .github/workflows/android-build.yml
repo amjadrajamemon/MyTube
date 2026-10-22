@@ -829,15 +829,9 @@ jobs:
         timeout-minutes: 5
         run: bash ci/native-playback-smoke.sh
 
-      - name: Upload verified v1.8.9 build artifact
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: MyTube-v1.8.9-verified-build
-          path: dist/
-          if-no-files-found: error
-          retention-days: 14
+      # Large APKs are published directly as Release assets below. Uploading
+      # them to Actions artifact storage is redundant and can exceed the
+      # repository's Actions storage quota.
 
       - name: Publish v1.8.9 dual APK release
         if: github.ref == 'refs/heads/main'

@@ -47,6 +47,18 @@ internal object PlaybackSessionRegistry {
         previous?.invoke()
     }
 
+    /** An Activity being replaced must not revoke the replacement's playback token. */
+    fun closeOwned(sessionId: String?, expectedOwner: Any): Boolean = synchronized(lock) {
+        if (sessionId.isNullOrBlank() || owner !== expectedOwner || ownerSessionId != sessionId) {
+            return@synchronized false
+        }
+        if (latestSessionId == sessionId) latestSessionId = null
+        ownerSessionId = null
+        owner = null
+        stopOwner = null
+        true
+    }
+
     fun close(sessionId: String?) {
         if (sessionId.isNullOrBlank()) return
         synchronized(lock) {

@@ -26,7 +26,7 @@ assert_resumed() {
   return 1
 }
 PACKAGE=com.aistudio.tubedeck.kxmvd
-APK="$PWD/dist/MyTube-v1.8.8-XYAUTO-UNIVERSAL.apk"
+APK="$PWD/dist/MyTube-v1.8.9-XYAUTO-UNIVERSAL.apk"
 adb wait-for-device
 adb root
 adb wait-for-device

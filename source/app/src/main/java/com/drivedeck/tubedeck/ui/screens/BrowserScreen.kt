@@ -29,6 +29,7 @@ import com.drivedeck.tubedeck.ui.theme.*
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
+import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
 import kotlinx.coroutines.delay
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -55,6 +56,9 @@ fun BrowserScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
+    val resourceLimits = remember(settings.xyAutoCompatibilityMode) {
+        PlaybackResourcePolicy.detect(context.applicationContext, settings.xyAutoCompatibilityMode)
+    }
     val currentOnUrlChanged by rememberUpdatedState(onUrlChanged)
     val currentOnNativeVideo by rememberUpdatedState(onNativeVideo)
     val currentOnNativePlaylist by rememberUpdatedState(onNativePlaylist)
@@ -122,7 +126,8 @@ fun BrowserScreen(
     }
 
     val tubeDeckInjectedScript = remember(
-        settings.adBlockEnabled, settings.blockVideoAds, settings.blockBannerAds, settings.blockShortsEnabled
+        settings.adBlockEnabled, settings.blockVideoAds, settings.blockBannerAds, settings.blockShortsEnabled,
+        resourceLimits.constrained
     ) {
         """
         (function() {
@@ -173,7 +178,7 @@ fun BrowserScreen(
                     }
                 """ else ""}
             }
-            ${if (settings.adBlockEnabled && settings.blockVideoAds) "window.__tdInterval = setInterval(runAdBlockEngine, 750);" else "window.__tdInterval = null;"}
+            ${if (settings.adBlockEnabled && settings.blockVideoAds) "window.__tdInterval = setInterval(runAdBlockEngine, ${if (resourceLimits.constrained) 1500 else 750});" else "window.__tdInterval = null;"}
         })();
         """.trimIndent()
     }
@@ -393,13 +398,12 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(persistentWebView, lifecycleOwner) {
+    LaunchedEffect(persistentWebView, lifecycleOwner, isActive, resourceLimits.constrained) {
+        // Cancel polling while Browser is not visible; do not wake every 2.5s in the background.
+        if (!isActive) return@LaunchedEffect
         while (true) {
-            delay(2500)
-            if (
-                !currentIsActive ||
-                !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-            ) {
+            delay(if (resourceLimits.constrained) 5_000L else 2_500L)
+            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 continue
             }
             persistentWebView.evaluateJavascript("location.href") { result ->

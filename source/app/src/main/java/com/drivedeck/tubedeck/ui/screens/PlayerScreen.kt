@@ -94,6 +94,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import com.drivedeck.tubedeck.R
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
+import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MediaItem.SubtitleConfiguration
 import androidx.media3.common.MimeTypes
@@ -524,6 +525,9 @@ fun NativeExoPlayer(
     val context = LocalContext.current
     val activity = context as? Activity
     val carHeadUnit = xyAutoCompatibilityMode
+    val resourceLimits = remember(context, carHeadUnit) {
+        PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
+    }
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
@@ -532,13 +536,17 @@ fun NativeExoPlayer(
     val controllerFontSize = (11f * controllerScale).sp
     val controllerGap = (4f * controllerScale).dp
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val trackSelector = remember(media.id, carHeadUnit) {
+    val trackSelector = remember(media.id, carHeadUnit, resourceLimits) {
         DefaultTrackSelector(context).apply {
             if (carHeadUnit) {
                 setParameters(buildUponParameters()
                     .setPreferredVideoMimeTypes(MimeTypes.VIDEO_H264)
                     .setPreferredAudioMimeTypes(MimeTypes.AUDIO_AAC)
-                    .setMaxVideoSize(854, 480))
+                    .setMaxVideoSize(resourceLimits.maxAutoVideoWidth, resourceLimits.maxAutoVideoHeight))
+            } else if (resourceLimits.constrained) {
+                // Limit AUTO adaptive representations on low-end hardware, not manual user choices.
+                setParameters(buildUponParameters()
+                    .setMaxVideoSize(resourceLimits.maxAutoVideoWidth, resourceLimits.maxAutoVideoHeight))
             }
         }
     }
@@ -617,7 +625,7 @@ fun NativeExoPlayer(
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
-    val tvSafePlayback = isTvLikePlaybackDevice(context) || carHeadUnit
+    val tvSafePlayback = isTvLikePlaybackDevice(context) || resourceLimits.constrained
     val pcmTap = remember(media.id) {
         PlaybackPcmTapProcessor(
             shouldCapture = liveDubEngine::isAudioCaptureEnabled,
@@ -625,7 +633,7 @@ fun NativeExoPlayer(
         )
     }
 
-    val exoPlayer = remember(media.id, carHeadUnit) {
+    val exoPlayer = remember(media.id, carHeadUnit, resourceLimits) {
         val renderersFactory: DefaultRenderersFactory = if (carHeadUnit) {
             // Older vendor audio drivers can fail when custom PCM processors are attached.
             // Prefer the stock Media3 sink over the Live Dub PCM tap on these head units.
@@ -648,18 +656,17 @@ fun NativeExoPlayer(
                 }
             }.setEnableDecoderFallback(true)
         }
-        // Fast first frame, but keep a deep reservoir once playback is running. The small
-        // playback/rebuffer thresholds avoid long blank waits on weak links; the 90 s ceiling
-        // gives unstable networks room to download ahead whenever bandwidth is temporarily good.
+        // Heap-aware buffering: small devices cannot afford a 90-second decode/input queue.
+        // Faster devices keep the original buffer so streaming remains resilient.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                if (carHeadUnit) 10_000 else 18_000,
-                if (carHeadUnit) 30_000 else 90_000,
+                resourceLimits.minBufferMs,
+                resourceLimits.maxBufferMs,
                 500,
                 1_250
             )
-            .setTargetBufferBytes(if (carHeadUnit) 16 * 1024 * 1024 else C.LENGTH_UNSET)
-            .setPrioritizeTimeOverSizeThresholds(!carHeadUnit)
+            .setTargetBufferBytes(if (resourceLimits.constrained) resourceLimits.targetBufferBytes else C.LENGTH_UNSET)
+            .setPrioritizeTimeOverSizeThresholds(!resourceLimits.constrained)
             .build()
         ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
@@ -778,7 +785,10 @@ fun NativeExoPlayer(
             return
         }
 
-        val option = selectResolvedOption(sourceMedia, requestedHeight, carHeadUnit) ?: return
+        val effectiveHeight = if (autoSelected) {
+            requestedHeight.coerceAtMost(resourceLimits.maxAutoVideoHeight)
+        } else requestedHeight
+        val option = selectResolvedOption(sourceMedia, effectiveHeight, carHeadUnit) ?: return
         val position = if (preservePosition) {
             exoPlayer.currentPosition
         } else {
@@ -1199,7 +1209,7 @@ fun NativeExoPlayer(
                         )
                     }
                     val safeTarget = chooseFastStartHeight(
-                        result, requestedTarget.coerceAtMost(if (carHeadUnit) 480 else 720)
+                        result, requestedTarget.coerceAtMost(if (resourceLimits.constrained) resourceLimits.maxAutoVideoHeight else 720)
                     )
                     loadResolvedStream(
                         result,
@@ -1309,7 +1319,7 @@ fun NativeExoPlayer(
     LaunchedEffect(firstFrameRendered, autoQuality, resolved, inPictureInPicture) {
         // Never switch representations while Android is shrinking/holding the decoder in PiP.
         // Several OEM codec stacks fail a decoder re-init during that surface transition.
-        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture || carHeadUnit) return@LaunchedEffect
+        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture || !resourceLimits.allowAdaptiveUpgrade) return@LaunchedEffect
         // SmartTube-style resilience for extracted progressive/DASH URLs: continuously reassess
         // the sustainable representation. Downshifts are fast; upgrades require repeated stable
         // samples so fluctuating mobile links do not bounce between qualities.
@@ -1359,7 +1369,7 @@ fun NativeExoPlayer(
             .asSequence()
             .map { it.url }
             .distinct()
-            .take(2)
+            .take(resourceLimits.relatedPrefetchCount)
             .forEach { YoutubeStreamResolver.prefetch(context, it) }
     }
 

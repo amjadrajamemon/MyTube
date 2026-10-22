@@ -366,7 +366,13 @@ fun BrowserScreen(
             persistentWebView.onResume()
         } else {
             persistentWebView.evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
+                """(function(){
+                    document.querySelectorAll('video,audio').forEach(function(v){v.pause();});
+                    document.querySelectorAll('iframe').forEach(function(f){
+                        try { f.contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*'); } catch(e){}
+                    });
+                    return true;
+                })();""".trimIndent(),
                 null
             )
             persistentWebView.onPause()

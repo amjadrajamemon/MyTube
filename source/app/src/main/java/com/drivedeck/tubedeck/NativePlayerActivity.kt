@@ -123,6 +123,11 @@ class NativePlayerActivity : ComponentActivity() {
         playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
         initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
+            // An older pending launch must not displace a newer user-selected video.
+            if (PlaybackSessionRegistry.hasActiveSession()) {
+                finish()
+                return
+            }
             // XY AUTO and other low-memory head units may recreate this Activity after their
             // OS has killed our process. The process-local registry is then empty even though
             // Android restored a genuine, non-exported player Intent. Do not silently finish.
@@ -135,6 +140,10 @@ class NativePlayerActivity : ComponentActivity() {
             }
             playbackSessionId = PlaybackSessionRegistry.open()
             android.util.Log.w("MyTubePlayback", "Restored a playback session after process/task recreation")
+        }
+        if (!PlaybackSessionRegistry.claim(playbackSessionId, this) { stopForReplacement() }) {
+            finish()
+            return
         }
 
         lifecycleScope.launch {
@@ -699,6 +708,10 @@ class NativePlayerActivity : ComponentActivity() {
             PlaybackSessionRegistry.close(playbackSessionId)
             playbackSessionId = incomingSessionId
         }
+        if (!PlaybackSessionRegistry.claim(playbackSessionId, this) { stopForReplacement() }) {
+            stopForReplacement()
+            return
+        }
         replaceMedia(mediaFromIntent(intent), recordWatch = true)
     }
 
@@ -875,6 +888,17 @@ class NativePlayerActivity : ComponentActivity() {
 
             PlaybackBackAction.IGNORE -> Unit
         }
+    }
+
+    /** The incoming player gets sole ownership; stop video and audio before finishing. */
+    private fun stopForReplacement() {
+        if (closingPlayer) return
+        closingPlayer = true
+        playerActive = false
+        foregroundPlaybackAllowed = false
+        pauseGeneration += 1
+        NativePipSessionBridge.clear(playbackSessionId)
+        finish()
     }
 
     private fun closePlaybackCompletely() {

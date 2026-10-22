@@ -77,6 +77,8 @@ class NativePlayerActivity : ComponentActivity() {
         const val EXTRA_QUALITY_LABEL = "native_player_quality"
         const val EXTRA_SESSION_ID = "native_player_session_id"
         const val EXTRA_START_POSITION_MS = "native_player_start_position_ms"
+        private const val STATE_PLAYBACK_SESSION_ID = "retained_playback_session_id"
+        private const val STATE_PLAYBACK_POSITION_MS = "retained_playback_position_ms"
     }
 
     private lateinit var repository: TubeDeckRepository
@@ -120,8 +122,14 @@ class NativePlayerActivity : ComponentActivity() {
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_create", "restored=${savedInstanceState != null} compat=${repository.settings.value.xyAutoCompatibilityMode}")
-        playbackSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
-        initialPlaybackPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L).coerceAtLeast(0L)
+        // Android recreates this Activity after rotation, UI-mode or display changes.
+        // The original launch Intent can still contain the pre-restoration session ID;
+        // saved state is authoritative only while the process registry confirms it.
+        val savedSessionId = savedInstanceState?.getString(STATE_PLAYBACK_SESSION_ID).orEmpty()
+        playbackSessionId = savedSessionId.takeIf { PlaybackSessionRegistry.isActive(it) }
+            ?: intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        initialPlaybackPositionMs = (savedInstanceState?.getLong(STATE_PLAYBACK_POSITION_MS)
+            ?: intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)).coerceAtLeast(0L)
         if (!PlaybackSessionRegistry.isActive(playbackSessionId)) {
             // An older pending launch must not displace a newer user-selected video.
             if (PlaybackSessionRegistry.hasActiveSession()) {
@@ -1088,6 +1096,14 @@ class NativePlayerActivity : ComponentActivity() {
             }
         )
         finish()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        // Keep the registry's effective token across Activity recreation, without
+        // incorrectly resurrecting a replaced session after a new video was chosen.
+        outState.putString(STATE_PLAYBACK_SESSION_ID, playbackSessionId)
+        outState.putLong(STATE_PLAYBACK_POSITION_MS, currentPlaybackPositionMs.coerceAtLeast(0L))
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {

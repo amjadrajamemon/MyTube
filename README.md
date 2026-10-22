@@ -1,5 +1,9 @@
 # MyTube
 
+## v1.8.9 — single-session player and blackout mode
+
+New media preempts previous native/PiP ownership and browser media is paused at player switches. The app launches to its Home feed without focusing Search. A black-screen action on the bottom of native and embedded web playback keeps audio playing; tap the black panel to restore video. These are source-level changes pending CI validation and physical car-unit verification.
+
 Standalone Android application, package `com.aistudio.tubedeck.kxmvd`.
 
 ## v1.8.8 — XY AUTO native playback correction

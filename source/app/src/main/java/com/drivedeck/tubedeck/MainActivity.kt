@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.install(applicationContext)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
@@ -464,6 +465,8 @@ class MainActivity : ComponentActivity() {
                     when (playbackHost) {
                         PlaybackHost.NATIVE -> launchNativePlayer(media)
                         PlaybackHost.WEB -> {
+                            PlaybackSessionRegistry.stopForWeb()
+                            pauseBrowserMediaForSwitch()
                             val previousAudio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
                             val targetUrl =
                                 previousAudio
@@ -1356,6 +1359,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Preserve browser history while silencing any older WebView media. */
+    private fun pauseBrowserMediaForSwitch() {
+        webViewInstance?.runCatching {
+            evaluateJavascript(
+                """(function(){
+                   document.querySelectorAll('video,audio').forEach(function(v){v.pause();});
+                   document.querySelectorAll('iframe').forEach(function(f){
+                     try { f.contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*'); } catch(e){}
+                   });
+                   return true;
+                })();""".trimIndent(), null
+            )
+        }
+    }
+
     private fun launchNativePlayer(media: OfflineMedia) {
         if (
             PlaybackHostRouter.choose(
@@ -1384,6 +1402,7 @@ class MainActivity : ComponentActivity() {
             YoutubeStreamResolver.promoteForHandoffResume(media.mediaUri)
         }
 
+        pauseBrowserMediaForSwitch()
         // Start the measurable tap-to-first-frame path before extraction or Activity launch.
         com.drivedeck.tubedeck.player.PlaybackStartupTelemetry.markTap(media.mediaUri)
         YoutubeStreamResolver.prefetch(applicationContext, media.mediaUri)

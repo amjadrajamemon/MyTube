@@ -115,6 +115,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         player = ExoPlayer.Builder(this)
+            .setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setLoadControl(fastAudioLoadControl)
             .build().apply {

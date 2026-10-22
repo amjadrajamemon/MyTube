@@ -669,6 +669,8 @@ fun NativeExoPlayer(
             .setPrioritizeTimeOverSizeThresholds(!resourceLimits.constrained)
             .build()
         ExoPlayer.Builder(context, renderersFactory)
+            // Let Android stop/duck competing audio sessions immediately on player takeover.
+            .setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, true)
             .setTrackSelector(trackSelector)
             .setBandwidthMeter(bandwidthMeter)
             .setLoadControl(loadControl)

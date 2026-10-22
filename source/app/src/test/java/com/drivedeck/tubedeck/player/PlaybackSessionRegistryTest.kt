@@ -43,6 +43,21 @@ class PlaybackSessionRegistryTest {
         PlaybackSessionRegistry.close(latest)
     }
 
+    @Test fun replacedActivityCannotCloseRecreatedPlayerWithSameSession() {
+        PlaybackSessionRegistry.stopForWeb()
+        val session = PlaybackSessionRegistry.open()
+        val oldActivity = Any()
+        val recreatedActivity = Any()
+        var replaced = 0
+        assertTrue(PlaybackSessionRegistry.claim(session, oldActivity) { replaced++ })
+        assertTrue(PlaybackSessionRegistry.claim(session, recreatedActivity) {})
+        assertEquals(1, replaced)
+        assertFalse(PlaybackSessionRegistry.closeOwned(session, oldActivity))
+        assertTrue(PlaybackSessionRegistry.isActive(session))
+        assertTrue(PlaybackSessionRegistry.closeOwned(session, recreatedActivity))
+        assertFalse(PlaybackSessionRegistry.hasActiveSession())
+    }
+
     @Test fun webTakeoverRevokesNativeOrPip() {
         PlaybackSessionRegistry.stopForWeb()
         val session = PlaybackSessionRegistry.open()

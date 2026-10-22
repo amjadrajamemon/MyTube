@@ -312,6 +312,7 @@ fun WebPlayer(
     var downloadActionsVisible by remember { mutableStateOf(true) }
     var webRenderCrashed by remember(media.id) { mutableStateOf(false) }
     var webViewGeneration by remember(media.id) { mutableIntStateOf(0) }
+    var blackoutMode by rememberSaveable(media.id) { mutableStateOf(false) }
 
     LaunchedEffect(downloadActionsVisible, isCustomViewShowing) {
         if (downloadActionsVisible && !isCustomViewShowing) {
@@ -461,6 +462,17 @@ fun WebPlayer(
             ) {
                 DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
             }
+            IconButton(
+                onClick = { blackoutMode = true },
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                    .padding(bottom = 10.dp).background(Color.Black.copy(alpha = .65f), CircleShape)
+            ) {
+                Icon(Icons.Default.VisibilityOff, "Black screen, continue audio", tint = Color.White)
+            }
+        }
+        if (blackoutMode) {
+            // An opaque screen mask: audio and stream position are retained.
+            Box(Modifier.fillMaxSize().background(Color.Black).clickable { blackoutMode = false })
         }
     }
 }
@@ -568,6 +580,7 @@ fun NativeExoPlayer(
     var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
     var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var blackoutMode by rememberSaveable(media.id) { mutableStateOf(false) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
@@ -2226,6 +2239,18 @@ fun NativeExoPlayer(
                                 }
 
                                 IconButton(
+                                    onClick = { blackoutMode = true; controlsVisible = false },
+                                    modifier = Modifier.size(controllerHeight)
+                                ) {
+                                    Icon(
+                                        Icons.Default.VisibilityOff,
+                                        "Black screen, continue audio",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+
+                                IconButton(
                                     onClick = {
                                         isFullscreen = !isFullscreen
                                         controlsVisible = true
@@ -2361,6 +2386,13 @@ fun NativeExoPlayer(
                         }
                     }
                 }
+            }
+            if (blackoutMode && !inPictureInPicture) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black)
+                        .clickable { blackoutMode = false; controlsVisible = true }
+                        .zIndex(200f)
+                )
             }
         }
 

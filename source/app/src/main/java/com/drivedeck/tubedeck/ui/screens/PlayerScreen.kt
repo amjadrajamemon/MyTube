@@ -400,7 +400,15 @@ fun WebPlayer(
             },
             modifier = Modifier.fillMaxSize(),
             onRelease = { view ->
-                runCatching { view.stopLoading() }
+                // Embedded video must not keep its audio renderer after a player switch.
+                runCatching {
+                    view.evaluateJavascript(
+                        """(function(){document.querySelectorAll('video,audio').forEach(function(v){v.pause();});return true;})();""", null
+                    )
+                    view.loadUrl("about:blank")
+                    view.onPause()
+                    view.stopLoading()
+                }
                 runCatching { view.destroy() }
             }
         )

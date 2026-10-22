@@ -1117,9 +1117,12 @@ class NativePlayerActivity : ComponentActivity() {
         playbackBackCoordinator.reset()
         playerActive = false
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (isFinishing && !isChangingConfigurations) {
+        if (isFinishing && !isChangingConfigurations &&
+            PlaybackSessionRegistry.closeOwned(playbackSessionId, this)
+        ) {
+            // A configuration-recreated Activity can own this exact session now.
+            // Its predecessor must never clear the new owner's PiP/audio state.
             NativePipSessionBridge.clear(playbackSessionId)
-            PlaybackSessionRegistry.close(playbackSessionId)
             if (!explicitAudioHandoff) {
                 BackgroundAudioController.stop(applicationContext)
             }

@@ -22,6 +22,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
@@ -679,6 +681,13 @@ fun DriveDeckTopHeader(
     searchPlaceholder: String = "Search YouTube",
     modifier: Modifier = Modifier
 ) {
+    // First composition should focus the Home feed rather than opening the IME.
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = TubeDeckSurface,

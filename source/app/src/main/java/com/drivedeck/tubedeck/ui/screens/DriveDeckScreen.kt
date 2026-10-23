@@ -30,6 +30,7 @@ import com.drivedeck.tubedeck.data.model.HomeVideo
 import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
+import com.drivedeck.tubedeck.ui.components.SearchAssistField
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 
@@ -41,6 +42,9 @@ fun DriveDeckScreen(
     onOpenDownloads: () -> Unit,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
+    recentSearches: List<String> = emptyList(),
+    onRemoveRecentSearch: (String) -> Unit = {},
+    onClearRecentSearches: () -> Unit = {},
     watchHistory: List<HomeVideo> = emptyList(),
     suggestedVideos: List<HomeVideo> = emptyList(),
     trendingVideos: List<HomeVideo> = emptyList(),
@@ -77,7 +81,10 @@ fun DriveDeckScreen(
         DriveDeckTopHeader(
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
-            onSearch = { onExecuteSearch(searchQuery) },
+            onSearch = onExecuteSearch,
+            recentSearches = recentSearches,
+            onRemoveRecentSearch = onRemoveRecentSearch,
+            onClearRecentSearches = onClearRecentSearches,
             onOpenDownloads = onOpenDownloads,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
@@ -674,7 +681,10 @@ private fun VideoViews(viewCount: Long) {
 fun DriveDeckTopHeader(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
+    onSearch: (String) -> Unit,
+    recentSearches: List<String>,
+    onRemoveRecentSearch: (String) -> Unit,
+    onClearRecentSearches: () -> Unit,
     onOpenDownloads: () -> Unit,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
@@ -710,39 +720,18 @@ fun DriveDeckTopHeader(
                 }
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                placeholder = { Text(searchPlaceholder, color = Color.Gray, fontSize = 15.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = TubeDeckTextSecondary) },
-                trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (YoutubeSearchPolicy.isLiveIntent(searchQuery)) {
-                            Text("LIVE", color = Color.Red, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                            Spacer(Modifier.width(2.dp))
-                        }
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onSearchQueryChange("") }) {
-                                Icon(Icons.Default.Close, null, tint = Color.LightGray)
-                            }
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TubeDeckTextPrimary,
-                    unfocusedTextColor = TubeDeckTextPrimary,
-                    focusedBorderColor = TubeDeckAccentCyan,
-                    unfocusedBorderColor = Color.DarkGray,
-                    focusedContainerColor = TubeDeckSurfaceVariant,
-                    unfocusedContainerColor = TubeDeckSurfaceVariant,
-                    cursorColor = TubeDeckAccentCyan
-                ),
-                shape = RoundedCornerShape(24.dp)
+            SearchAssistField(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onSearch = onSearch,
+                recentSearches = recentSearches,
+                onRemoveRecentSearch = onRemoveRecentSearch,
+                onClearRecentSearches = onClearRecentSearches,
+                placeholder = searchPlaceholder,
+                showRecentChips = true,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
 }
+

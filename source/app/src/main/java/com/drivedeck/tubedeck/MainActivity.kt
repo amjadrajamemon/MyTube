@@ -69,6 +69,7 @@ import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -104,6 +105,10 @@ class MainActivity : ComponentActivity() {
     private var activePlaybackTitle: String = "YouTube audio"
     private var activePlaybackArtwork: String = ""
     private var activePlaybackPositionMs: Long = 0L
+    private var automaticAudioHandoff by mutableStateOf(false)
+    private var audioHandoffJob: Job? = null
+    private var embeddedPlaybackRequested = false
+    private var automaticEmbeddedHandoff = false
     private var closeActivePlaybackUi: (() -> Unit)? = null
     private val playbackBackCoordinator = PlaybackBackCoordinator()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
@@ -335,6 +340,7 @@ class MainActivity : ComponentActivity() {
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
+                val recentSearches by repository.recentSearches.collectAsStateWithLifecycle()
                 val homeSuggestions by repository.homeSuggestions.collectAsStateWithLifecycle()
                 val homeTrending by repository.homeTrending.collectAsStateWithLifecycle()
                 val homeLive by repository.homeLive.collectAsStateWithLifecycle()
@@ -814,6 +820,9 @@ class MainActivity : ComponentActivity() {
                             Column {
                                 TopNavBar(
                                     currentUrl = currentUrl,
+                                    recentSearches = recentSearches,
+                                    onRemoveRecentSearch = repository::removeRecentSearch,
+                                    onClearRecentSearches = repository::clearRecentSearches,
                                     canGoBack = webCanGoBack || appCanGoBack,
                                     canGoForward = webCanGoForward || appCanGoForward,
                                     activeDownloadCount = activeDownloads.size,
@@ -964,6 +973,9 @@ class MainActivity : ComponentActivity() {
                         when (currentScreen) {
                             ActiveScreen.HOME, ActiveScreen.MIXES -> {
                                 DriveDeckScreen(
+                                    recentSearches = recentSearches,
+                                    onRemoveRecentSearch = repository::removeRecentSearch,
+                                    onClearRecentSearches = repository::clearRecentSearches,
                                     searchQuery = if (currentScreen == ActiveScreen.MIXES) {
                                         mixesSearchQuery
                                     } else {
@@ -1205,7 +1217,9 @@ class MainActivity : ComponentActivity() {
                                         },
                                         googleAccount = googleAccount,
                                         onGoogleAccountClick = onGoogleAccountClick,
-                                        onPlaybackPositionChanged = { activePlaybackPositionMs = it }
+                                        onPlaybackPositionChanged = { activePlaybackPositionMs = it },
+                                        onPlaybackRequestedChanged = { embeddedPlaybackRequested = it },
+                                        foregroundPlaybackAllowed = !automaticAudioHandoff
                                     )
                                     }
                                 }
@@ -1443,6 +1457,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (automaticAudioHandoff) {
+            automaticAudioHandoff = false
+            audioHandoffJob?.cancel()
+            audioHandoffJob = null
+            if (automaticEmbeddedHandoff && BackgroundAudioController.snapshot() != null) {
+                closeActivePlaybackUi?.invoke()
+            } else {
+                val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+                val position = audio?.positionMs ?: activePlaybackPositionMs
+                webViewInstance?.evaluateJavascript(
+                    "(function(){var v=document.querySelector('video');if(v){v.currentTime=${position.coerceAtLeast(0L)}/1000;var p=v.play();if(p&&p.catch){p.catch(function(){});}}})()", null
+                )
+            }
+            automaticEmbeddedHandoff = false
+        }
         homeRefreshRequest += 1
         if (BackgroundAudioController.snapshot() != null && !NativePipSessionBridge.isActive()) {
             resumeAudioRequest += 1
@@ -1475,8 +1504,8 @@ class MainActivity : ComponentActivity() {
             pendingChooserAfterPipExit = false
         }
         if (!isPipMode && !enteringPip && playerActive) {
-            // Web playback must not silently survive task/background transitions. Only explicit
-            // Audio-only is allowed to continue after the visible player leaves the foreground.
+            // The visible Web player is paused; the foreground audio service owns continuation
+            // after Home. Other stops (dialogs, calls, lifecycle changes) do not start audio.
             webViewInstance?.runCatching {
                 evaluateJavascript(
                     "(function(){var v=document.querySelector('video');if(v){v.pause();}return true;})()",
@@ -1485,6 +1514,16 @@ class MainActivity : ComponentActivity() {
             }
         }
         super.onStop()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isFinishing && !isChangingConfigurations && !isPipMode && !enteringPip &&
+            !pipExitPendingStop && !PlaybackSessionRegistry.hasActiveSession() &&
+            (webViewInstance?.url?.let { YoutubeUrls.videoId(it) } != null ||
+                (playerActive && embeddedPlaybackRequested))) {
+            handoffActivePlaybackToAudio(automatic = true)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1656,15 +1695,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handoffActivePlaybackToAudio() {
+    private fun handoffActivePlaybackToAudio(automatic: Boolean = false) {
+        if (audioHandoffJob?.isActive == true || automaticAudioHandoff) return
         pipChoicePending = false
-        val sourceUrl = activePlaybackUrl
+        val sourceUrl = activePlaybackUrl.ifBlank {
+            if (automatic) webViewInstance?.url.orEmpty() else ""
+        }
         if (sourceUrl.isBlank()) {
             Toast.makeText(this, "No active video is available for audio-only playback", Toast.LENGTH_SHORT).show()
             return
         }
 
         fun startAt(positionMs: Long) {
+            if (isFinishing) return
+            automaticAudioHandoff = automatic
+            automaticEmbeddedHandoff = automatic && YoutubeUrls.videoId(sourceUrl) == null
             // Pause the Web player before requesting the service so two media engines never play
             // the same audio during the handoff handshake.
             webViewInstance?.runCatching {
@@ -1673,7 +1718,7 @@ class MainActivity : ComponentActivity() {
                     null
                 )
             }
-            lifecycleScope.launch {
+            audioHandoffJob = lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 BackgroundAudioController.handoff(
                     context = this@MainActivity,
                     sourceUrl = sourceUrl,
@@ -1682,13 +1727,20 @@ class MainActivity : ComponentActivity() {
                     positionMs = positionMs.coerceAtLeast(0L)
                 ).onSuccess {
                     playerActive = false
+                    if (automatic) {
+                        automaticAudioHandoff = false
+                        finish()
+                        return@onSuccess
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         finishAndRemoveTask()
                     } else {
                         finishAffinity()
                     }
                 }.onFailure {
-                    if (playerActive) {
+                    val visible = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                    automaticAudioHandoff = automatic && !visible
+                    if (playerActive && visible) {
                         webViewInstance?.runCatching {
                             evaluateJavascript(
                                 "(function(){var v=document.querySelector('video');if(v){var p=v.play();if(p&&p.catch){p.catch(function(){});} }return true;})()",
@@ -1708,12 +1760,12 @@ class MainActivity : ComponentActivity() {
         val web = webViewInstance
         if (web != null && YoutubeUrls.videoId(sourceUrl) != null) {
             web.evaluateJavascript(
-                "(function(){var v=document.querySelector('video');return v?Math.floor(v.currentTime*1000):0;})()"
+                "(function(){var v=document.querySelector('video');return v?((!v.paused&&!v.ended)?'1':'0')+'|'+Math.floor(v.currentTime*1000):'0|0';})()"
             ) { value ->
-                val parsed = value
-                    ?.trim()
-                    ?.trim('"')
-                    ?.toDoubleOrNull()
+                val parts = value?.trim()?.trim('"')?.split('|').orEmpty()
+                // A user-paused video must remain paused when Home is pressed.
+                if (automatic && parts.firstOrNull() != "1") return@evaluateJavascript
+                val parsed = parts.getOrNull(1)?.toDoubleOrNull()
                     ?.toLong()
                     ?: activePlaybackPositionMs
                 startAt(parsed)
@@ -1787,5 +1839,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
 
 

@@ -188,6 +188,7 @@ fun PlayerScreen(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
+    onPlaybackRequestedChanged: (Boolean) -> Unit = {},
     onResolvedTitleChanged: (String) -> Unit = {},
     xyAutoCompatibilityMode: Boolean = false,
     modifier: Modifier = Modifier
@@ -288,6 +289,7 @@ fun PlayerScreen(
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             onPlaybackPositionChanged = onPlaybackPositionChanged,
+            onPlaybackRequestedChanged = onPlaybackRequestedChanged,
             onResolvedTitleChanged = onResolvedTitleChanged,
             modifier = modifier.fillMaxSize()
         )
@@ -518,6 +520,7 @@ fun NativeExoPlayer(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     onPlaybackPositionChanged: (Long) -> Unit = {},
+    onPlaybackRequestedChanged: (Boolean) -> Unit = {},
     onResolvedTitleChanged: (String) -> Unit = {},
     xyAutoCompatibilityMode: Boolean = false,
     modifier: Modifier = Modifier
@@ -528,6 +531,7 @@ fun NativeExoPlayer(
     val resourceLimits = remember(context, carHeadUnit) {
         PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
     }
+    val latestForegroundPlaybackAllowed by rememberUpdatedState(foregroundPlaybackAllowed)
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
@@ -953,10 +957,18 @@ fun NativeExoPlayer(
     val latestOnPlayPlaylistItem by rememberUpdatedState(onPlayPlaylistItem)
     val latestPlaylistItems by rememberUpdatedState(playlistItems)
     val latestPlaylistIndex by rememberUpdatedState(playlistIndex)
+    val latestOnPlaybackRequestedChanged by rememberUpdatedState(onPlaybackRequestedChanged)
 
     DisposableEffect(exoPlayer, mediaSession) {
         val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                latestOnPlaybackRequestedChanged(playWhenReady)
+            }
             override fun onIsPlayingChanged(playing: Boolean) {
+                if (playing && !latestForegroundPlaybackAllowed) {
+                    exoPlayer.pause()
+                    return
+                }
                 isPlaying = playing
                 if (!playing && !exoPlayer.playWhenReady && liveDubEnabled) liveDubEngine.pauseForPlayback()
             }
@@ -5105,4 +5117,5 @@ private fun formatDuration(millis: Long): String {
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 }
+
 

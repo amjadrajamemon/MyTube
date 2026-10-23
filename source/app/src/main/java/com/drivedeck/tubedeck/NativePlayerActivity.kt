@@ -60,6 +60,7 @@ import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
 import java.util.UUID
 import java.util.ArrayDeque
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,6 +99,9 @@ class NativePlayerActivity : ComponentActivity() {
     private var pipChoicePending = false
     private var pipExitPendingStop = false
     private var explicitAudioHandoff = false
+    private var automaticAudioHandoff = false
+    private var audioHandoffJob: Job? = null
+    private var playbackRequested = false
     private var pendingFreshResumeFromPip = false
     private var playlistLoadJob: Job? = null
     private var activePlaylistId by mutableStateOf<String?>(null)
@@ -518,6 +522,7 @@ class NativePlayerActivity : ComponentActivity() {
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
+                    onPlaybackRequestedChanged = { playbackRequested = it },
                     onResolvedTitleChanged = { title ->
                         if (title.isNotBlank() && currentMedia.title != title) {
                             currentMedia = currentMedia.copy(title = title)
@@ -930,14 +935,16 @@ class NativePlayerActivity : ComponentActivity() {
         finish()
     }
 
-    private fun handoffToBackgroundAudio() {
+    private fun handoffToBackgroundAudio(automatic: Boolean = false) {
+        if (closingPlayer || audioHandoffJob?.isActive == true) return
+        automaticAudioHandoff = automatic
         pipChoicePending = false
         val media = currentMedia
         // Freeze the video host before starting the service. This prevents the old ExoPlayer and
         // the new audio-only ExoPlayer from speaking simultaneously during the startup handshake.
         foregroundPlaybackAllowed = false
-        pauseGeneration += 1
-        lifecycleScope.launch {
+        if (!automatic) pauseGeneration += 1
+        audioHandoffJob = lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             BackgroundAudioController.handoff(
                 context = this@NativePlayerActivity,
                 sourceUrl = media.mediaUri,
@@ -947,6 +954,15 @@ class NativePlayerActivity : ComponentActivity() {
             ).onSuccess {
                 explicitAudioHandoff = true
                 pipExitPendingStop = false
+                if (automatic) {
+                    // Keep the task available. Returning to this Activity hands the single
+                    // service session back at its current position, without opening a new task.
+                    if (!automaticAudioHandoff) return@onSuccess
+                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                        restoreAutomaticAudio()
+                    }
+                    return@onSuccess
+                }
                 closingPlayer = true
                 playerActive = false
                 NativePipSessionBridge.clear(playbackSessionId)
@@ -954,15 +970,39 @@ class NativePlayerActivity : ComponentActivity() {
                 moveTaskToBack(true)
                 finish()
             }.onFailure {
+                val visible = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                automaticAudioHandoff = automatic && !visible
                 // Handoff failed: resume the existing video instead of leaving it silently paused.
-                foregroundPlaybackAllowed = true
-                resumeGeneration += 1
+                foregroundPlaybackAllowed = visible
+                if (visible) resumeGeneration += 1
                 Toast.makeText(
                     this@NativePlayerActivity,
                     it.message ?: "Background audio could not start",
                     Toast.LENGTH_LONG
                 ).show()
             }
+        }
+    }
+
+    private fun restoreAutomaticAudio() {
+        if (!automaticAudioHandoff || closingPlayer) return
+        automaticAudioHandoff = false
+        audioHandoffJob?.cancel()
+        audioHandoffJob = null
+        val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+        initialPlaybackPositionMs = audio?.positionMs ?: currentPlaybackPositionMs
+        currentPlaybackPositionMs = initialPlaybackPositionMs
+        explicitAudioHandoff = false
+        pauseGeneration = 0
+        currentMedia = currentMedia.copy(id = UUID.randomUUID().toString())
+        foregroundPlaybackAllowed = true
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (playerActive && playbackRequested && !closingPlayer && !isFinishing &&
+            !isChangingConfigurations && !isPipMode && !enteringPip && !pipExitPendingStop) {
+            handoffToBackgroundAudio(automatic = true)
         }
     }
 
@@ -1019,7 +1059,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!closingPlayer) {
+        if (!closingPlayer && !automaticAudioHandoff) {
             foregroundPlaybackAllowed = true
             if (playerActive) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1029,6 +1069,7 @@ class NativePlayerActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        restoreAutomaticAudio()
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_resume", "closing=$closingPlayer pip=$isPipMode")
         if (!closingPlayer && playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1171,5 +1212,6 @@ class NativePlayerActivity : ComponentActivity() {
         }
     }
 }
+
 
 

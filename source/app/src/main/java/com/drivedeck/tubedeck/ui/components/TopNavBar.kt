@@ -45,6 +45,9 @@ fun TopNavBar(
     onOpenOffline: () -> Unit,
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
+    recentSearches: List<String> = emptyList(),
+    onRemoveRecentSearch: (String) -> Unit = {},
+    onClearRecentSearches: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
@@ -91,44 +94,17 @@ fun TopNavBar(
             }
 
             // High Visibility Search Bar - Unified Design
-            OutlinedTextField(
-                value = queryText,
-                onValueChange = { queryText = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .height(56.dp),
-                placeholder = { Text("Search or enter HTTPS URL...", color = Color.Gray) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = TubeDeckAccentCyan) },
-                trailingIcon = {
-                    if (queryText.isNotEmpty()) {
-                        IconButton(onClick = { queryText = "" }) {
-                            Icon(Icons.Default.Close, null, tint = Color.Gray)
-                        }
-                    }
-                },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    color = TubeDeckTextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = {
-                    focusManager.clearFocus()
-                    onNavigate(queryText)
-                }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TubeDeckTextPrimary,
-                    unfocusedTextColor = TubeDeckTextPrimary,
-                    focusedBorderColor = TubeDeckAccentCyan,
-                    unfocusedBorderColor = TubeDeckBorder,
-                    focusedContainerColor = Color.Black,
-                    unfocusedContainerColor = Color.Black,
-                    cursorColor = TubeDeckAccentCyan
-                ),
-                shape = RoundedCornerShape(12.dp)
+            SearchAssistField(
+                query = queryText,
+                onQueryChange = { queryText = it },
+                onSearch = onNavigate,
+                recentSearches = recentSearches,
+                onRemoveRecentSearch = onRemoveRecentSearch,
+                onClearRecentSearches = onClearRecentSearches,
+                placeholder = "Search or enter HTTPS URL...",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             )
         }
     }
 }
+

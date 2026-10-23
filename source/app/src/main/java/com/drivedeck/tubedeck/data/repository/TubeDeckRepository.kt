@@ -64,6 +64,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadHistory: StateFlow<List<DownloadTask>> = _downloadHistory.asStateFlow()
     private val _watchHistory = MutableStateFlow(loadWatchHistory())
     val watchHistory: StateFlow<List<HomeVideo>> = _watchHistory.asStateFlow()
+    private val _recentSearches = MutableStateFlow(loadRecentSearches())
+    val recentSearches: StateFlow<List<String>> = _recentSearches.asStateFlow()
     private val _homeSuggestions = MutableStateFlow(loadHomeSuggestions())
     val homeSuggestions: StateFlow<List<HomeVideo>> = _homeSuggestions.asStateFlow()
     private val _homeTrending = MutableStateFlow<List<HomeVideo>>(emptyList())
@@ -223,10 +225,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
     fun getVideoThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
     fun recordSearch(query: String) {
-        val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
-        if (clean.length < 2 || clean.equals("Playlist", ignoreCase = true)) return
-        val current = loadRecentSearches()
-        val next = (listOf(clean) + current.filterNot { it.equals(clean, ignoreCase = true) }).take(8)
+        saveRecentSearches(SearchAssistPolicy.record(query, _recentSearches.value))
+    }
+
+    fun removeRecentSearch(query: String) {
+        saveRecentSearches(_recentSearches.value.filterNot { it.equals(query, ignoreCase = true) })
+    }
+
+    fun clearRecentSearches() = saveRecentSearches(emptyList())
+
+    private fun saveRecentSearches(next: List<String>) {
+        _recentSearches.value = next
         val array = JSONArray()
         next.forEach { array.put(it) }
         prefs.edit()
@@ -239,9 +248,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private fun loadRecentSearches(): List<String> = runCatching {
         val array = JSONArray(prefs.getString("recent_searches_json", "[]"))
         List(array.length()) { index -> array.optString(index).trim() }
-            .filter { it.length >= 2 }
-            .distinct()
-            .take(8)
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .take(20)
     }.getOrDefault(emptyList())
 
     private fun relatedToHome(item: YoutubeStreamResolver.RelatedVideo, live: Boolean = false) =
@@ -1519,3 +1528,4 @@ class TubeDeckRepository private constructor(private val context: Context) {
 
 data class FileClipboard(val ids: Set<String>, val move: Boolean)
 data class FileOperationResult(val succeeded: Int, val failed: Int, val detail: String)
+

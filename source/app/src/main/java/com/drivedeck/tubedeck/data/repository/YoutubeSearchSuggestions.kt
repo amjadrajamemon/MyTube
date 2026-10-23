@@ -21,7 +21,7 @@ internal object YoutubeSearchSuggestions {
         synchronized(cache) {
             cache[key]?.takeIf { System.currentTimeMillis() - it.at < 300_000L }?.terms
         }?.let { return@withContext it }
-        val endpoint = "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt" +
+        val endpoint = "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&ie=utf-8&oe=utf-8" +
             "&hl=${URLEncoder.encode(language, "UTF-8")}&q=${URLEncoder.encode(clean, "UTF-8")}"
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         try {

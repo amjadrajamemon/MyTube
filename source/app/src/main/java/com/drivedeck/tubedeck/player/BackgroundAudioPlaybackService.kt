@@ -442,7 +442,11 @@ object BackgroundAudioController {
             BackgroundAudioPlaybackService.stop(context)
         }
         startup.finish(request.id)
-        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        result.exceptionOrNull()?.let {
+            // A handshake timeout is a recoverable startup failure. Only cancellation of the
+            // caller (returning to video, closing or replacement playback) aborts its coroutine.
+            if (it is CancellationException && it !is kotlinx.coroutines.TimeoutCancellationException) throw it
+        }
         return result
     }
 }

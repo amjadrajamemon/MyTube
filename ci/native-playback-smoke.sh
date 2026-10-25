@@ -26,7 +26,7 @@ assert_resumed() {
   return 1
 }
 PACKAGE=com.aistudio.tubedeck.kxmvd
-APK="$PWD/dist/MyTube-v1.8.10-XYAUTO-UNIVERSAL.apk"
+APK="$PWD/dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk"
 # Keep the local fixture playing long enough to verify background progression.
 command -v ffmpeg >/dev/null || { sudo apt-get update -qq; sudo apt-get install -y -qq ffmpeg; }
 ffmpeg -hide_banner -loglevel error -stream_loop -1 -i ci/native-playback-fixture.mp4 -t 90 -c copy -y /tmp/mytube-home-fixture.mp4

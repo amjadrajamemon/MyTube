@@ -36,6 +36,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+    private val _screenBlackoutEnabled = MutableStateFlow(prefs.getBoolean("screen_blackout_enabled", false))
+    val screenBlackoutEnabled: StateFlow<Boolean> = _screenBlackoutEnabled.asStateFlow()
+
+    fun enableScreenBlackout() {
+        prefs.edit().putBoolean("screen_blackout_enabled", true).apply()
+        _screenBlackoutEnabled.value = true
+    }
+
+    /** This is the only in-app action that clears blackout; media/lifecycle events never do. */
+    fun restoreScreenAfterDoubleTap() {
+        prefs.edit().putBoolean("screen_blackout_enabled", false).apply()
+        _screenBlackoutEnabled.value = false
+    }
     private val stateStore = AtomicJsonStore(context)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lock = Any()

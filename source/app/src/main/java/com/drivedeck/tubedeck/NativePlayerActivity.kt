@@ -208,6 +208,7 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         setContent {
+            com.drivedeck.tubedeck.ui.components.PlaybackBlackoutHost(repository) {
             val settings by repository.settings.collectAsStateWithLifecycle()
             TubeDeckTheme(
                 fontScale = settings.fontScale,
@@ -640,6 +641,7 @@ class NativePlayerActivity : ComponentActivity() {
                     }
                 }
                 }
+            }
             }
         }
 

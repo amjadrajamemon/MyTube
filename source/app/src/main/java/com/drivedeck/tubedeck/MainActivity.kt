@@ -153,6 +153,7 @@ class MainActivity : ComponentActivity() {
         openDownloadsQueueRequest = intent?.getBooleanExtra("open_downloads_queue", false) == true
 
         setContent {
+            com.drivedeck.tubedeck.ui.components.PlaybackBlackoutHost(repository) {
             val settings by repository.settings.collectAsStateWithLifecycle()
             val nativePipSessionId by NativePipSessionBridge.activeSessionId.collectAsStateWithLifecycle()
             var previewAppearance by remember { mutableStateOf<TubeDeckSettings?>(null) }
@@ -1369,6 +1370,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -46,10 +46,10 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 92
-        versionName = "1.8.10"
+        versionCode = 93
+        versionName = "1.8.11"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "GOOGLE_DEVICE_CLIENT_ID", "\"$googleDeviceClientId\"")
         buildConfigField("String", "GOOGLE_DEVICE_CLIENT_SECRET", "\"$googleDeviceClientSecret\"")

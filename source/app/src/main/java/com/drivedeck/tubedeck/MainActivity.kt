@@ -123,6 +123,13 @@ class MainActivity : ComponentActivity() {
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.install(applicationContext)
         enableEdgeToEdge()
         repository = TubeDeckRepository.get(applicationContext)
+        // The notification may create this Activity afresh on some car ROMs, instead
+        // of delivering onNewIntent. Always restore the existing native task first.
+        if (intent?.action == BackgroundAudioPlaybackService.ACTION_RETURN_TO_VIDEO &&
+            !returnToExistingNativePlayerIfPresent()) {
+            lastNativeLaunchAt = 0L
+            resumeAudioRequest += 1
+        }
 
         lifecycleScope.launch {
             PlaybackPipCommandBus.commands.collect { action ->
@@ -542,7 +549,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(resumeAudioRequest) {
-                    if (resumeAudioRequest == 0 || NativePipSessionBridge.isActive()) return@LaunchedEffect
+                    if (resumeAudioRequest == 0 || NativePipSessionBridge.isActive() ||
+                        PlaybackSessionRegistry.hasActiveSession()) return@LaunchedEffect
                     val audio = BackgroundAudioController.snapshot() ?: return@LaunchedEffect
                     lastNativeLaunchAt = 0L
                     openOnlineMedia(OfflineMedia(
@@ -1450,6 +1458,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun returnToExistingNativePlayerIfPresent(): Boolean {
+        if (!PlaybackSessionRegistry.hasActiveSession()) return false
+        return runCatching {
+            startActivity(Intent(this, NativePlayerActivity::class.java).apply {
+                action = BackgroundAudioPlaybackService.ACTION_RETURN_TO_VIDEO
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+            true
+        }.getOrDefault(false)
+    }
+
     override fun onStart() {
         super.onStart()
         if (::repository.isInitialized) {
@@ -1475,7 +1494,8 @@ class MainActivity : ComponentActivity() {
             automaticEmbeddedHandoff = false
         }
         homeRefreshRequest += 1
-        if (BackgroundAudioController.snapshot() != null && !NativePipSessionBridge.isActive()) {
+        if (BackgroundAudioController.snapshot() != null && !NativePipSessionBridge.isActive() &&
+            !PlaybackSessionRegistry.hasActiveSession()) {
             resumeAudioRequest += 1
         }
         legacyPlaybackBackCallback.isEnabled = playerActive || NativePipSessionBridge.isActive()
@@ -1533,10 +1553,12 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         when (intent.action) {
             BackgroundAudioPlaybackService.ACTION_RETURN_TO_VIDEO -> {
-                // User explicitly tapped the audio-only notification. Reuse the existing
-                // snapshot/position handback path so there is never a second audio session.
-                lastNativeLaunchAt = 0L
-                resumeAudioRequest += 1
+                // Reopen the current NativePlayerActivity (same session, same stream)
+                // rather than replacing it and accidentally closing the whole task.
+                if (!returnToExistingNativePlayerIfPresent()) {
+                    lastNativeLaunchAt = 0L
+                    resumeAudioRequest += 1
+                }
                 return
             }
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {

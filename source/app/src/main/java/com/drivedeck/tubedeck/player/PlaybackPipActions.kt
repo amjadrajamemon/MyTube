@@ -20,7 +20,8 @@ internal object PlaybackPipActions {
     fun buildParams(
         context: Context,
         activityClass: Class<*>,
-        aspectRatio: Rational = Rational(16, 9)
+        aspectRatio: Rational = Rational(16, 9),
+        autoEnterEnabled: Boolean = false
     ): PictureInPictureParams {
         @Suppress("UNUSED_VARIABLE")
         val retainedForNamedCallCompatibility = activityClass
@@ -51,7 +52,7 @@ internal object PlaybackPipActions {
             .setActions(listOf(keepAction, audioAction))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(false)
+            builder.setAutoEnterEnabled(autoEnterEnabled)
             builder.setSeamlessResizeEnabled(true)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

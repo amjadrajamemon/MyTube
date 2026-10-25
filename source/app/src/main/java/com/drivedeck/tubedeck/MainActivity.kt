@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
     private var enteringPip = false
     private var playerActive = false
     private var autoPipEnabled = true
+    private var lastHomePipEligibility: Boolean? = null
     private var webPlaybackActive by mutableStateOf(false)
     private var webPlaybackPositionMs by mutableLongStateOf(0L)
     private var lastWebResolverWarmVideoId: String? = null
@@ -701,6 +702,11 @@ class MainActivity : ComponentActivity() {
                     playerActive = currentScreen == ActiveScreen.PLAYER ||
                         (currentScreen == ActiveScreen.BROWSER && webPlaybackActive)
                     autoPipEnabled = settings.pipEnabled
+                    // Android 12+ can start PiP on the Home gesture before onUserLeaveHint.
+                    updateHomePipEligibility(settings.pipEnabled && (
+                        (currentScreen == ActiveScreen.PLAYER && embeddedPlaybackRequested) ||
+                        (currentScreen == ActiveScreen.BROWSER && webPlaybackActive)
+                    ))
                     if (playerActive) {
                         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     } else {
@@ -1540,11 +1546,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (!isFinishing && !isChangingConfigurations && !isPipMode && !enteringPip &&
-            !pipExitPendingStop && !PlaybackSessionRegistry.hasActiveSession() &&
-            (webViewInstance?.url?.let { YoutubeUrls.videoId(it) } != null ||
-                (playerActive && embeddedPlaybackRequested))) {
-            handoffActivePlaybackToAudio(automatic = true)
+        if (isFinishing || isChangingConfigurations || isPipMode || enteringPip ||
+            pipExitPendingStop || PlaybackSessionRegistry.hasActiveSession()) return
+
+        // Home must retain the *existing video decoder and audio track* in PiP.
+        // Never pause the WebView or switch to a second ExoPlayer just for Home.
+        // A paused video should not automatically start playing in the background.
+        if (playerActive && (webPlaybackActive || embeddedPlaybackRequested)) {
+            if (autoPipEnabled) triggerPip(fallbackToAudioOnFailure = true)
+            else handoffActivePlaybackToAudio(automatic = true)
         }
     }
 
@@ -1799,27 +1809,50 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun triggerPip() {
+    private fun updateHomePipEligibility(eligible: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || lastHomePipEligibility == eligible) return
+        lastHomePipEligibility = eligible
+        runCatching {
+            setPictureInPictureParams(
+                PlaybackPipActions.buildParams(
+                    context = this,
+                    activityClass = MainActivity::class.java,
+                    autoEnterEnabled = eligible
+                )
+            )
+        }.onFailure { android.util.Log.w("MyTubePlayback", "Auto PiP not available", it) }
+    }
+
+    private fun triggerPip(fallbackToAudioOnFailure: Boolean = false) {
         if (isPipMode || enteringPip) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
             pipChoicePending = true
             pipExitPendingStop = false
-            val params = PlaybackPipActions.buildParams(
-                context = this,
-                activityClass = MainActivity::class.java
-            )
             val entered = runCatching {
+                val params = PlaybackPipActions.buildParams(
+                    context = this,
+                    activityClass = MainActivity::class.java,
+                    autoEnterEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                        (webPlaybackActive || embeddedPlaybackRequested)
+                )
                 setPictureInPictureParams(params)
                 enterPictureInPictureMode(params)
-            }.getOrDefault(false)
-            if (!entered) {
-                enteringPip = false
-                pipChoicePending = false
-                playbackBackCoordinator.onPipEnterFailed()
-                showPlaybackExitChoices = true
-                Toast.makeText(this, "Could not enter picture-in-picture", Toast.LENGTH_SHORT).show()
+            }.getOrElse {
+                android.util.Log.w("MyTubePlayback", "Home PiP entry failed", it)
+                false
             }
+            if (entered) return
+            enteringPip = false
+            pipChoicePending = false
+            playbackBackCoordinator.onPipEnterFailed()
+        }
+        // Audio-only is a last resort when the ROM rejects PiP, not the Home default.
+        if (fallbackToAudioOnFailure) {
+            handoffActivePlaybackToAudio(automatic = true)
+        } else {
+            showPlaybackExitChoices = true
+            Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
         }
     }
 

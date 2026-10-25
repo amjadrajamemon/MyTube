@@ -84,7 +84,7 @@ class NativePlayerActivity : ComponentActivity() {
     }
 
     private lateinit var repository: TubeDeckRepository
-    private var isPipMode = false
+    private var isPipMode by mutableStateOf(false)
     private var playerActive = true
     private var closingPlayer = false
     private var playbackBackDecisionJob: Job? = null
@@ -103,6 +103,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var automaticAudioHandoff = false
     private var audioHandoffJob: Job? = null
     private var playbackRequested = false
+    private var lastHomePipEligibility: Boolean? = null
     private var pendingFreshResumeFromPip = false
     private var playlistLoadJob: Job? = null
     private var activePlaylistId by mutableStateOf<String?>(null)
@@ -524,7 +525,10 @@ class NativePlayerActivity : ComponentActivity() {
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
-                    onPlaybackRequestedChanged = { playbackRequested = it },
+                    onPlaybackRequestedChanged = {
+                        playbackRequested = it
+                        updateHomePipEligibility()
+                    },
                     onResolvedTitleChanged = { title ->
                         if (title.isNotBlank() && currentMedia.title != title) {
                             currentMedia = currentMedia.copy(title = title)
@@ -1030,10 +1034,13 @@ class NativePlayerActivity : ComponentActivity() {
         if (playerActive && playbackRequested && !closingPlayer && !isFinishing &&
             !isChangingConfigurations && !isPipMode && !enteringPip && !pipExitPendingStop &&
             !automaticAudioHandoff && BackgroundAudioController.snapshot() == null) {
-            // Notification return-to-video and in-app navigation can also deliver
-            // onUserLeaveHint. Never create a second service while audio is already
-            // owned by the foreground MediaSession.
-            handoffToBackgroundAudio(automatic = true)
+            // Home keeps the current ExoPlayer and sound in the system mini-window.
+            // Switching engines here used to pause video AND audio on some Android ROMs.
+            if (repository.settings.value.pipEnabled) {
+                enterPlayerPip(fallbackToAudioOnFailure = true)
+            } else {
+                handoffToBackgroundAudio(automatic = true)
+            }
         }
     }
 
@@ -1061,30 +1068,53 @@ class NativePlayerActivity : ComponentActivity() {
         startActivity(intent)
     }
 
-    private fun enterPlayerPip() {
+    private fun updateHomePipEligibility() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val eligible = repository.settings.value.pipEnabled && playerActive &&
+            playbackRequested && !closingPlayer && !automaticAudioHandoff && !isPipMode
+        if (lastHomePipEligibility == eligible) return
+        lastHomePipEligibility = eligible
+        runCatching {
+            setPictureInPictureParams(
+                PlaybackPipActions.buildParams(
+                    context = this,
+                    activityClass = NativePlayerActivity::class.java,
+                    autoEnterEnabled = eligible
+                )
+            )
+        }.onFailure { android.util.Log.w("MyTubePlayback", "Auto PiP not available", it) }
+    }
+
+    private fun enterPlayerPip(fallbackToAudioOnFailure: Boolean = false) {
         if (isPipMode || enteringPip || closingPlayer) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             enteringPip = true
             pipChoicePending = true
             pipExitPendingStop = false
             foregroundPlaybackAllowed = true
-            val params = PlaybackPipActions.buildParams(
-                context = this,
-                activityClass = NativePlayerActivity::class.java
-            )
             val entered = runCatching {
+                val params = PlaybackPipActions.buildParams(
+                    context = this,
+                    activityClass = NativePlayerActivity::class.java,
+                    autoEnterEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                        playbackRequested
+                )
                 setPictureInPictureParams(params)
                 enterPictureInPictureMode(params)
-            }.getOrDefault(false)
-            if (!entered) {
-                enteringPip = false
-                pipChoicePending = false
-                playbackBackCoordinator.onPipEnterFailed()
-                showPlaybackExitChoices = true
-                Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
+            }.getOrElse {
+                android.util.Log.w("MyTubePlayback", "Native Home PiP entry failed", it)
+                false
             }
+            if (entered) return
+            enteringPip = false
+            pipChoicePending = false
+            playbackBackCoordinator.onPipEnterFailed()
+        }
+        if (fallbackToAudioOnFailure) {
+            handoffToBackgroundAudio(automatic = true)
         } else {
             showPlaybackExitChoices = true
+            Toast.makeText(this, "Picture-in-picture is unavailable", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1121,6 +1151,7 @@ class NativePlayerActivity : ComponentActivity() {
         super.onResume()
         restoreAutomaticAudio()
         reclaimAudioOnForegroundReturn()
+        updateHomePipEligibility()
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_resume", "closing=$closingPlayer pip=$isPipMode")
         if (!closingPlayer && playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1231,6 +1262,7 @@ class NativePlayerActivity : ComponentActivity() {
         val wasInPip = isPipMode
         isPipMode = isInPictureInPictureMode
         enteringPip = false
+        updateHomePipEligibility()
         playbackBackCoordinator.onPipModeChanged(isInPictureInPictureMode)
 
         if (isInPictureInPictureMode && playerActive && !closingPlayer) {

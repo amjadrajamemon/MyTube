@@ -66,6 +66,9 @@ class BlackoutInstrumentation : Instrumentation() {
         val center = screenCenter()
         tap(center.first, center.second)
         SystemClock.sleep(600L)
+        check(repository.screenBlackoutEnabled.value) {
+            "Single tap disabled blackout unexpectedly; investigate overlay double-tap gesture leakage"
+        }
         awaitMask()
         check(onMain { player(activity)?.playWhenReady } == true) { "Single tap affected playback" }
         press(center.first, center.second, 900L)
@@ -218,7 +221,11 @@ class BlackoutInstrumentation : Instrumentation() {
         for (x in listOf(bitmap.width / 4, bitmap.width / 2, 3 * bitmap.width / 4)) {
             for (y in listOf(bitmap.height / 4, bitmap.height / 2, 3 * bitmap.height / 4)) {
                 val pixel = bitmap.getPixel(x, y)
-                check(Color.red(pixel) < 8 && Color.green(pixel) < 8 && Color.blue(pixel) < 8) { "Non-black frame at $x,$y" }
+                check(Color.red(pixel) < 8 && Color.green(pixel) < 8 && Color.blue(pixel) < 8) {
+                    "Non-black frame at $x,$y: ARGB=0x${Integer.toHexString(pixel)}; " +
+                        "blackoutEnabled=${repository.screenBlackoutEnabled.value}; " +
+                        "maskAccessibilityVisible=${node(maskDescription) != null}"
+                }
             }
         }
         bitmap.recycle()

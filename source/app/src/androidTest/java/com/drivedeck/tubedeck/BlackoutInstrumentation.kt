@@ -59,6 +59,10 @@ class BlackoutInstrumentation : Instrumentation() {
         tap(eye.centerX(), eye.centerY())
         awaitMask()
         assertBlackPixels()
+        // Let Android's double-tap recognition window expire after pressing the
+        // blackout eye. Otherwise the first touch on the new mask can be paired
+        // with the eye-button tap and misclassified as a user double-tap.
+        SystemClock.sleep(700L)
         val center = screenCenter()
         tap(center.first, center.second)
         SystemClock.sleep(600L)

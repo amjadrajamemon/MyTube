@@ -46,6 +46,7 @@ import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.BackgroundAudioController
+import com.drivedeck.tubedeck.player.BackgroundAudioPlaybackService
 import com.drivedeck.tubedeck.player.NativePipSessionBridge
 import com.drivedeck.tubedeck.player.PlaybackBackAction
 import com.drivedeck.tubedeck.player.PlaybackBackCoordinator
@@ -688,6 +689,30 @@ class NativePlayerActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
+            BackgroundAudioPlaybackService.ACTION_RETURN_TO_VIDEO -> {
+                // Notification return is a hand-back to this existing native session,
+                // not a request to launch a second player or close the current task.
+                if (closingPlayer || !PlaybackSessionRegistry.isActive(playbackSessionId)) return
+                audioHandoffJob?.cancel()
+                audioHandoffJob = null
+                automaticAudioHandoff = false
+                explicitAudioHandoff = false
+                val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
+                if (audio != null && (audio.sourceUrl == currentMedia.mediaUri ||
+                    YoutubeUrls.videoId(audio.sourceUrl)?.let {
+                        it == YoutubeUrls.videoId(currentMedia.mediaUri)
+                    } == true)) {
+                    initialPlaybackPositionMs = audio.positionMs.coerceAtLeast(0L)
+                    currentPlaybackPositionMs = initialPlaybackPositionMs
+                }
+                foregroundPlaybackAllowed = true
+                pauseGeneration = 0
+                resumeGeneration += 1
+                com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(
+                    this, "notification_video_restored", "position=$currentPlaybackPositionMs"
+                )
+                return
+            }
             PlaybackPipActions.ACTION_EXPAND_PLAYER -> {
                 playbackBackDecisionJob?.cancel()
                 playbackBackDecisionJob = null

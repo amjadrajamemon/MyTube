@@ -54,11 +54,13 @@ path = Path(f'dist/{profile}-prefs.xml')
 tree = ET.parse(path)
 root = tree.getroot()
 for node in list(root):
-    if node.attrib.get('name') in {'xyAutoCompatibilityMode', 'playerMode', 'desktopYoutubeUiEnabled'}:
+    if node.attrib.get('name') in {'xyAutoCompatibilityMode', 'playerMode', 'desktopYoutubeUiEnabled', 'pipEnabled'}:
         root.remove(node)
 ET.SubElement(root, 'boolean', name='xyAutoCompatibilityMode', value='true' if profile == 'xyauto' else 'false')
 ET.SubElement(root, 'string', name='playerMode').text = 'NATIVE'
 ET.SubElement(root, 'boolean', name='desktopYoutubeUiEnabled', value='false')
+# Exercise the explicit audio-only fallback here. PiP-on-Home has its own test below.
+ET.SubElement(root, 'boolean', name='pipEnabled', value='false')
 tree.write(path, encoding='utf-8', xml_declaration=True)
 PY
   OWNER="$(adb shell stat -c %u "$PREFS" | tr -d '\r')"
@@ -143,6 +145,63 @@ PYHOME
     exit 1
   fi
 done
+
+# Independently verify the default Home-key PiP path. The legacy audio-only
+# assertions above must not reject a successful PiP transition.
+adb shell am force-stop "$PACKAGE"
+adb pull "$PREFS" dist/pip-prefs.xml
+python3 - <<'PYPIPPREFS'
+from pathlib import Path
+import xml.etree.ElementTree as ET
+path = Path('dist/pip-prefs.xml')
+tree = ET.parse(path)
+root = tree.getroot()
+for node in list(root):
+    if node.attrib.get('name') in {'pipEnabled', 'playerMode', 'xyAutoCompatibilityMode'}:
+        root.remove(node)
+ET.SubElement(root, 'boolean', name='pipEnabled', value='true')
+ET.SubElement(root, 'boolean', name='xyAutoCompatibilityMode', value='false')
+ET.SubElement(root, 'string', name='playerMode').text = 'NATIVE'
+tree.write(path, encoding='utf-8', xml_declaration=True)
+PYPIPPREFS
+adb push dist/pip-prefs.xml "$PREFS"
+adb shell chown "$OWNER:$OWNER" "$PREFS"
+adb shell restorecon "$PREFS"
+adb logcat -c
+adb shell am start -W -n "$PACKAGE/com.drivedeck.tubedeck.NativePlayerActivity" \
+  --es native_player_session_id fixture-pip \
+  --es native_player_media_id fixture-pip \
+  --es native_player_title NativePipFixture \
+  --es native_player_media_uri "file:///data/user/0/$PACKAGE/files/native-playback-fixture.mp4"
+for attempt in $(seq 1 20); do
+  adb logcat -d -s MyTubePlayback:I > dist/pip-playback.txt
+  grep -q 'first_frame' dist/pip-playback.txt && break
+  sleep 1
+done
+grep -q 'first_frame' dist/pip-playback.txt
+assert_resumed 'com.drivedeck.tubedeck.NativePlayerActivity' dist/pip-foreground.txt
+adb shell dumpsys media_session > dist/pip-before-media.txt
+adb shell input keyevent KEYCODE_HOME
+sleep 5
+adb shell dumpsys activity activities > dist/pip-activity.txt
+adb shell dumpsys media_session > dist/pip-after-media.txt
+python3 - <<'PYPIPASSERT'
+import re
+from pathlib import Path
+activity = Path('dist/pip-activity.txt').read_text()
+assert re.search(r'(?:mode|windowingMode)=pinned', activity), 'Home did not enter Android PiP'
+def position(path):
+    log = Path(path).read_text()
+    match = re.search(r'androidx\.media3\.session\.id\.drivedeck-fixture-pip[^\n]*[\s\S]*?state=PlaybackState \{state=PLAYING\(3\), position=(\d+)', log)
+    assert match, 'PiP media session is not PLAYING: ' + path
+    return int(match.group(1))
+before = position('dist/pip-before-media.txt')
+after = position('dist/pip-after-media.txt')
+assert after - before > 2000, f'PiP playback stalled after Home: {before} -> {after}'
+print(f'PASS: Home entered Android PiP and playback progressed {after-before} ms')
+PYPIPASSERT
+adb shell am force-stop "$PACKAGE"
+
 # Stream access can be blocked on CI IPs. Regardless of source availability, the native
 # Activity must retain ownership and show a playback error instead of returning to search.
 for video in aqz-KE-bpKQ jNQXAC9IVRw; do

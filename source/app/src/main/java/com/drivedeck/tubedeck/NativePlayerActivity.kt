@@ -1003,7 +1003,11 @@ class NativePlayerActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (playerActive && playbackRequested && !closingPlayer && !isFinishing &&
-            !isChangingConfigurations && !isPipMode && !enteringPip && !pipExitPendingStop) {
+            !isChangingConfigurations && !isPipMode && !enteringPip && !pipExitPendingStop &&
+            !automaticAudioHandoff && BackgroundAudioController.snapshot() == null) {
+            // Notification return-to-video and in-app navigation can also deliver
+            // onUserLeaveHint. Never create a second service while audio is already
+            // owned by the foreground MediaSession.
             handoffToBackgroundAudio(automatic = true)
         }
     }
@@ -1128,14 +1132,10 @@ class NativePlayerActivity : ComponentActivity() {
         }
         if (!isPipMode && !enteringPip && !closingPlayer) {
             foregroundPlaybackAllowed = false
-            // Some car launchers and Android emulators skip onUserLeaveHint for Home.
-            // An active native session must still transfer into audio-only playback.
-            if (playerActive && playbackRequested && !automaticAudioHandoff &&
-                audioHandoffJob?.isActive != true && !isFinishing && !isChangingConfigurations &&
-                PlaybackSessionRegistry.isActive(playbackSessionId)) {
-                com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "home_audio_fallback")
-                handoffToBackgroundAudio(automatic = true)
-            }
+            // onStop also runs when the audio notification returns to video and when
+            // another in-app Activity becomes visible. Starting an audio handoff here
+            // resurrected the service *after* return-to-video had stopped it.
+            // Android's onUserLeaveHint handles the real Home transition above.
         }
         super.onStop()
     }

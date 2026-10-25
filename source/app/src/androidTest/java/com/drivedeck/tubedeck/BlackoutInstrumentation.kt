@@ -186,7 +186,18 @@ class BlackoutInstrumentation : Instrumentation() {
 
     private fun awaitMask() { await("blackout overlay") { repository.screenBlackoutEnabled.value && node(maskDescription) != null } }
 
-    private fun screenCenter(): Pair<Int, Int> = awaitNode(maskDescription).let { it.centerX() to it.centerY() }
+    private fun screenCenter(): Pair<Int, Int> {
+        // The overlay has already passed awaitMask() and the opaque-black screenshot
+        // assertion. System-bar transitions on Android 14 can briefly clear the active
+        // accessibility window; derive touch coordinates from the actual display rather
+        // than requiring a second accessibility lookup while that window is changing.
+        val screenshot = checkNotNull(uiAutomation.takeScreenshot())
+        return try {
+            screenshot.width / 2 to screenshot.height / 2
+        } finally {
+            screenshot.recycle()
+        }
+    }
 
     private fun assertBlackPixels() {
         SystemClock.sleep(150L)

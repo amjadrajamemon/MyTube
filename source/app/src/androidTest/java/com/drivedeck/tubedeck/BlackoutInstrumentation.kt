@@ -5,6 +5,7 @@ package com.drivedeck.tubedeck
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
@@ -12,6 +13,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.InputDevice
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
@@ -138,16 +140,19 @@ class BlackoutInstrumentation : Instrumentation() {
 
     private fun launchNative(fixture: File, title: String): NativePlayerActivity {
         val session = onMain {
+            repository.updateSettings(repository.settings.value.copy(autoRotatePlayback = false))
             val registry = Class.forName("com.drivedeck.tubedeck.player.PlaybackSessionRegistry")
             registry.getMethod("open").invoke(registry.getField("INSTANCE").get(null)) as String
         }
-        return startActivitySync(Intent(targetContext, NativePlayerActivity::class.java).apply {
+        val activity = startActivitySync(Intent(targetContext, NativePlayerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(NativePlayerActivity.EXTRA_SESSION_ID, session)
             putExtra(NativePlayerActivity.EXTRA_MEDIA_ID, title)
             putExtra(NativePlayerActivity.EXTRA_TITLE, title)
             putExtra(NativePlayerActivity.EXTRA_MEDIA_URI, Uri.fromFile(fixture).toString())
         }) as NativePlayerActivity
+        onMain { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+        return activity
     }
 
     private fun currentMedia(activity: Activity) = invoke(activity, "getCurrentMedia", emptyArray(), emptyArray()) as OfflineMedia
@@ -202,9 +207,11 @@ class BlackoutInstrumentation : Instrumentation() {
     private fun press(x: Int, y: Int, holdMs: Long) {
         val down = SystemClock.uptimeMillis()
         val event = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x.toFloat(), y.toFloat(), 0)
+        event.source = InputDevice.SOURCE_TOUCHSCREEN
         check(uiAutomation.injectInputEvent(event, true)); event.recycle()
         SystemClock.sleep(holdMs)
         val up = MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x.toFloat(), y.toFloat(), 0)
+        up.source = InputDevice.SOURCE_TOUCHSCREEN
         check(uiAutomation.injectInputEvent(up, true)); up.recycle()
     }
 

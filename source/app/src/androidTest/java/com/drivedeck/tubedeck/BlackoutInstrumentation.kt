@@ -188,7 +188,13 @@ class BlackoutInstrumentation : Instrumentation() {
         return checkNotNull(result)
     }
 
-    private fun awaitMask() { await("blackout overlay") { repository.screenBlackoutEnabled.value && node(maskDescription) != null } }
+    private fun awaitMask() {
+        // Immersive bar transitions occasionally make the Compose accessibility
+        // window temporarily unavailable on the API 34 emulator. Validate the
+        // actual screen pixels as well as the persistent blackout state instead.
+        await("blackout preference") { repository.screenBlackoutEnabled.value }
+        assertBlackPixels()
+    }
 
     private fun screenCenter(): Pair<Int, Int> {
         // The overlay has already passed awaitMask() and the opaque-black screenshot

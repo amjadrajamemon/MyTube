@@ -1069,9 +1069,29 @@ class NativePlayerActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * A foreground native player must never coexist with a background audio session.
+     * Android can restore the player task directly, without delivering MainActivity's
+     * RETURN_TO_VIDEO callback. Reclaim the exact service position and stop the service.
+     */
+    private fun reclaimAudioOnForegroundReturn() {
+        if (closingPlayer || automaticAudioHandoff || !playerActive) return
+        val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext) ?: return
+        if (audio.sourceUrl == currentMedia.mediaUri ||
+            YoutubeUrls.videoId(audio.sourceUrl)?.let { it == YoutubeUrls.videoId(currentMedia.mediaUri) } == true) {
+            initialPlaybackPositionMs = audio.positionMs.coerceAtLeast(0L)
+            currentPlaybackPositionMs = initialPlaybackPositionMs
+            foregroundPlaybackAllowed = true
+            resumeGeneration += 1
+        }
+        com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "foreground_audio_reclaimed",
+            "position=${audio.positionMs}")
+    }
+
     override fun onResume() {
         super.onResume()
         restoreAutomaticAudio()
+        reclaimAudioOnForegroundReturn()
         com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "activity_resume", "closing=$closingPlayer pip=$isPipMode")
         if (!closingPlayer && playerActive) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1108,6 +1128,14 @@ class NativePlayerActivity : ComponentActivity() {
         }
         if (!isPipMode && !enteringPip && !closingPlayer) {
             foregroundPlaybackAllowed = false
+            // Some car launchers and Android emulators skip onUserLeaveHint for Home.
+            // An active native session must still transfer into audio-only playback.
+            if (playerActive && playbackRequested && !automaticAudioHandoff &&
+                audioHandoffJob?.isActive != true && !isFinishing && !isChangingConfigurations &&
+                PlaybackSessionRegistry.isActive(playbackSessionId)) {
+                com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(this, "home_audio_fallback")
+                handoffToBackgroundAudio(automatic = true)
+            }
         }
         super.onStop()
     }

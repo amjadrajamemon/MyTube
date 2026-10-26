@@ -128,11 +128,25 @@ class BlackoutInstrumentation : Instrumentation() {
         checkpoint("automatic-next kept blackout; launch Web host")
         // Switching presentation hosts cannot clear a preference owned by the app window.
         onMain { repository.updateSettings(repository.settings.value.copy(playerMode = PlayerMode.WEB)) }
-        val web = startActivitySync(Intent(targetContext, MainActivity::class.java).apply {
+        // startActivitySync() waits for the UI thread to become idle, which can
+        // hang indefinitely when the WebView/Compose host continuously schedules
+        // work. Observe the actual Activity launch with a bounded monitor instead.
+        // A missing or blocked Web host must still FAIL the regression.
+        val webIntent = Intent(targetContext, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = Uri.parse("https://www.youtube.com/watch?v=aqz-KE-bpKQ")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
+        }
+        val webMonitor = addMonitor(MainActivity::class.java.name, null, false)
+        val web = try {
+            targetContext.startActivity(webIntent)
+            checkNotNull(waitForMonitorWithTimeout(webMonitor, 20_000L)) {
+                "Timed out waiting for Web host MainActivity to launch (20 seconds)"
+            }
+        } finally {
+            removeMonitor(webMonitor)
+        }
+        checkpoint("Web host Activity launch observed")
         awaitMask()
         assertBlackPixels()
         checkpoint("Web host retained blackout")

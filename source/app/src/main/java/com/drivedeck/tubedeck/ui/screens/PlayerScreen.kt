@@ -5110,7 +5110,10 @@ private fun setFullscreen(activity: Activity, fullscreen: Boolean) {
     controller.systemBarsBehavior =
         androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-    if (fullscreen || com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(activity.applicationContext).screenBlackoutEnabled.value) {
+    // Only an explicit fullscreen player view may hide Android system bars.
+    // Blackout is a separate opaque panel; linking it to immersive mode summoned
+    // Android's first-use confirmation window above the blackout mask.
+    if (fullscreen) {
         controller.hide(WindowInsetsCompat.Type.systemBars())
     } else {
         controller.show(WindowInsetsCompat.Type.systemBars())

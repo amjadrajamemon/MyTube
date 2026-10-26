@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck.ui.components
 
 import android.graphics.PixelFormat
+import android.graphics.drawable.ColorDrawable
 import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
@@ -44,6 +45,13 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             val hostWindow = activity.window
             val hostView = hostWindow.decorView
             val manager = activity.getSystemService(WindowManager::class.java)
+            // A second independently drawn layer keeps the Activity fully black
+            // while the separate application-panel surface is being recreated.
+            // OEM launchers may briefly expose a grey app background when the
+            // player/Web host switches orientation even with the panel attached.
+            val previousForeground = hostView.foreground
+            val protectiveForeground = ColorDrawable(android.graphics.Color.BLACK)
+            hostView.foreground = protectiveForeground
             val detector = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: MotionEvent): Boolean = true
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean = true
@@ -110,6 +118,10 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             // it again on blackout made the confirmation steal touch focus.
             onDispose {
                 disposed = true
+                // Only restore what we installed; never erase another owner’s UI.
+                if (hostView.foreground === protectiveForeground) {
+                    hostView.foreground = previousForeground
+                }
                 hostView.removeOnAttachStateChangeListener(attach)
                 if (installed) {
                     runCatching { manager.removeViewImmediate(mask) }

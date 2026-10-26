@@ -57,14 +57,22 @@ class BlackoutInstrumentation : Instrumentation() {
         }
     }
 
+    private fun checkpoint(stage: String) {
+        android.util.Log.i("MyTubeBlackout", "CHECKPOINT phase=$phase stage=$stage")
+        sendStatus(0, Bundle().apply { putString("stream", "\nBLACKOUT_CHECKPOINT: $phase — $stage\n") })
+    }
+
     private fun verifyTransitions(fixture: File) {
         check(!repository.screenBlackoutEnabled.value) { "Expected a clear display before the eye button test" }
+        checkpoint("launch native player")
         val activity = launchNative(fixture, "Blackout first video")
         await("native player ready") { onMain { player(activity)?.duration?.let { it > 1_000L } == true } }
         val eye = awaitNode("Black screen, continue audio")
+        checkpoint("activate blackout eye control")
         tap(eye.centerX(), eye.centerY())
         awaitMask()
         assertBlackPixels()
+        checkpoint("opaque blackout screenshot confirmed")
         // Let Android's double-tap recognition window expire after pressing the
         // blackout eye. Otherwise the first touch on the new mask can be paired
         // with the eye-button tap and misclassified as a user double-tap.
@@ -77,9 +85,11 @@ class BlackoutInstrumentation : Instrumentation() {
         }
         awaitMask()
         check(onMain { player(activity)?.playWhenReady } == true) { "Single tap affected playback" }
+        checkpoint("single tap consumed; test long press")
         press(center.first, center.second, 900L)
         awaitMask()
 
+        checkpoint("long press consumed; launch manually selected video")
         // The same callback used when a user selects another video must retain the mask.
         val replacement = OfflineMedia("blackout-manual", "Blackout manually selected video", "", "", Uri.fromFile(fixture).toString())
         onMain { invoke(activity, "launchRelatedPlayer", arrayOf(OfflineMedia::class.java), arrayOf(replacement)) }
@@ -87,6 +97,7 @@ class BlackoutInstrumentation : Instrumentation() {
         awaitMask()
         assertBlackPixels()
 
+        checkpoint("manual video replacement retained blackout")
         // Configure a real playlist continuation, then let Media3 emit STATE_ENDED.
         onMain {
             repository.updateSettings(repository.settings.value.copy(playbackContinuationMode = PlaybackContinuationMode.AUTO_NEXT))
@@ -104,13 +115,17 @@ class BlackoutInstrumentation : Instrumentation() {
             p.seekTo((p.duration - 250L).coerceAtLeast(0L))
             p.play()
         }
+        checkpoint("waiting for actual Media3 automatic-next transition")
         await("automatic next video", 20_000L) { onMain { currentMedia(activity).videoId == "jNQXAC9IVRw" } }
         awaitMask()
         assertBlackPixels()
         check(repository.screenBlackoutEnabled.value)
+        checkpoint("native Activity finishing before Web host")
         onMain { activity.finish() }
-        waitForIdleSync()
+        await("native Activity closing", 10_000L) { activity.isFinishing || activity.isDestroyed }
+        SystemClock.sleep(250L)
 
+        checkpoint("automatic-next kept blackout; launch Web host")
         // Switching presentation hosts cannot clear a preference owned by the app window.
         onMain { repository.updateSettings(repository.settings.value.copy(playerMode = PlayerMode.WEB)) }
         val web = startActivitySync(Intent(targetContext, MainActivity::class.java).apply {
@@ -120,11 +135,13 @@ class BlackoutInstrumentation : Instrumentation() {
         })
         awaitMask()
         assertBlackPixels()
+        checkpoint("Web host retained blackout")
         onMain {
             repository.updateSettings(repository.settings.value.copy(playerMode = PlayerMode.NATIVE))
             web.finish()
         }
-        waitForIdleSync()
+        await("Web Activity closing", 10_000L) { web.isFinishing || web.isDestroyed }
+        SystemClock.sleep(250L)
         check(repository.screenBlackoutEnabled.value) { "Activity replacement cleared blackout" }
         // Leave the preference set; the next instrumentation invocation starts a fresh process.
         sendStatus(0, Bundle().apply { putString("stream", "PASS: eye button; single/long tap ignored; manual selection; actual automatic next; Web host; activity replacement; opaque black pixels.\n") })
@@ -132,6 +149,7 @@ class BlackoutInstrumentation : Instrumentation() {
 
     private fun verifyProcessRestart(fixture: File) {
         check(repository.screenBlackoutEnabled.value) { "Blackout was lost after process restart" }
+        checkpoint("verify blackout restored after force-stop")
         val activity = launchNative(fixture, "Blackout restored after process restart")
         awaitMask()
         assertBlackPixels()
@@ -141,6 +159,7 @@ class BlackoutInstrumentation : Instrumentation() {
         tap(center.first, center.second)
         SystemClock.sleep(600L)
         awaitMask()
+        checkpoint("single tap after restart consumed; check double tap")
         // Send two physical taps inside Android's double-tap window. The mask consumes both.
         tap(center.first, center.second)
         SystemClock.sleep(80L)

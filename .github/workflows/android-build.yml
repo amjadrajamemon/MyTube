@@ -831,6 +831,15 @@ jobs:
           adb shell settings put global window_animation_scale 0
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
+          # Android's OS-owned first-use immersive confirmation window sits ABOVE
+          # app windows (including our opaque video-blackout overlay) and captures
+          # taps. Treat the ephemeral CI emulator as an already-onboarded Android
+          # device so the visual test measures the app instead of the OS tutorial.
+          # This changes emulator settings only; no device permissions or app
+          # settings are modified in production.
+          adb shell settings put secure immersive_mode_confirmations confirmed
+          test "$(adb shell settings get secure immersive_mode_confirmations | tr -d '\r')" = "confirmed"
+          ! adb shell dumpsys window windows | grep -Eq 'mCurrentFocus=Window\\{[^}]+ImmersiveModeConfirmation'
           sleep 25
 
       - name: Verify Home audio, search and XY AUTO playback

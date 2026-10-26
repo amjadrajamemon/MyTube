@@ -196,6 +196,15 @@ class BlackoutInstrumentation : Instrumentation() {
         // window temporarily unavailable on the API 34 emulator. Validate the
         // actual screen pixels as well as the persistent blackout state instead.
         await("blackout preference") { repository.screenBlackoutEnabled.value }
+        // StateFlow updates before the Android compositor presents the separate
+        // blackout window. Wait for actual opaque pixels rather than falsely failing
+        // on a stale SurfaceView frame during the dialog-window transition.
+        val deadline = SystemClock.uptimeMillis() + 10_000L
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (runCatching { assertBlackPixels() }.isSuccess) return
+            SystemClock.sleep(150L)
+        }
+        // Preserve the original strong assertion and precise failing ARGB report.
         assertBlackPixels()
     }
 
@@ -218,17 +227,20 @@ class BlackoutInstrumentation : Instrumentation() {
         val bitmap = if (raw.config == Bitmap.Config.HARDWARE) {
             checkNotNull(raw.copy(Bitmap.Config.ARGB_8888, false)).also { raw.recycle() }
         } else raw
-        for (x in listOf(bitmap.width / 4, bitmap.width / 2, 3 * bitmap.width / 4)) {
-            for (y in listOf(bitmap.height / 4, bitmap.height / 2, 3 * bitmap.height / 4)) {
-                val pixel = bitmap.getPixel(x, y)
-                check(Color.red(pixel) < 8 && Color.green(pixel) < 8 && Color.blue(pixel) < 8) {
-                    "Non-black frame at $x,$y: ARGB=0x${Integer.toHexString(pixel)}; " +
-                        "blackoutEnabled=${repository.screenBlackoutEnabled.value}; " +
-                        "maskAccessibilityVisible=${node(maskDescription) != null}"
+        try {
+            for (x in listOf(bitmap.width / 4, bitmap.width / 2, 3 * bitmap.width / 4)) {
+                for (y in listOf(bitmap.height / 4, bitmap.height / 2, 3 * bitmap.height / 4)) {
+                    val pixel = bitmap.getPixel(x, y)
+                    check(Color.red(pixel) < 8 && Color.green(pixel) < 8 && Color.blue(pixel) < 8) {
+                        "Non-black frame at $x,$y: ARGB=0x${Integer.toHexString(pixel)}; " +
+                            "blackoutEnabled=${repository.screenBlackoutEnabled.value}; " +
+                            "maskAccessibilityVisible=${node(maskDescription) != null}"
+                    }
                 }
             }
+        } finally {
+            bitmap.recycle()
         }
-        bitmap.recycle()
     }
 
     private fun tap(x: Int, y: Int) = press(x, y, 35L)

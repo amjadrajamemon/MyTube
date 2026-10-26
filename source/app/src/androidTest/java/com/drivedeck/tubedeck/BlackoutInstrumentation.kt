@@ -47,7 +47,13 @@ class BlackoutInstrumentation : Instrumentation() {
             val report = Bundle().apply { putString("stream", "\nBLACKOUT_TESTS_PASSED: $phase\n") }
             finish(Activity.RESULT_OK, report)
         } catch (error: Throwable) {
-            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("shortMsg", error.stackTraceToString()) })
+            // Capture foreground/window ownership at the actual failure, not after
+            // the emulator has shut down. Report it even when screenshot checks fail.
+            val details = runCatching { failureDiagnostics() }.getOrElse { it.toString() }
+            android.util.Log.e("MyTubeBlackout", "Blackout check failed:\\n$details", error)
+            finish(Activity.RESULT_CANCELED, Bundle().apply {
+                putString("shortMsg", error.stackTraceToString() + "\\nWindow diagnostics:\\n" + details)
+            })
         }
     }
 
@@ -241,6 +247,29 @@ class BlackoutInstrumentation : Instrumentation() {
         } finally {
             bitmap.recycle()
         }
+    }
+
+    private fun failureDiagnostics(): String {
+        val visiblePackage = uiAutomation.rootInActiveWindow?.packageName ?: "<none>"
+        val commands = listOf(
+            "dumpsys activity activities",
+            "dumpsys window windows"
+        )
+        val pattern = Regex(
+            "ResumedActivity|topResumedActivity|mResumedActivity|mCurrentFocus|" +
+                "mFocusedApp|NativePlayerActivity|MainActivity|Playback Blackout|mHasSurface|mAttrs="
+        )
+        val result = commands.joinToString("\\n") { command ->
+            val lines = uiAutomation.executeShellCommand(command).use { descriptor ->
+                java.io.FileInputStream(descriptor.fileDescriptor).bufferedReader().use { reader ->
+                    reader.lineSequence().filter { pattern.containsMatchIn(it) }
+                        .take(40).joinToString("\\n")
+                }
+            }
+            "$command:\\n$lines"
+        }
+        return "activeAccessibilityPackage=$visiblePackage; blackoutEnabled=" +
+            "${repository.screenBlackoutEnabled.value}\\n$result"
     }
 
     private fun tap(x: Int, y: Int) = press(x, y, 35L)

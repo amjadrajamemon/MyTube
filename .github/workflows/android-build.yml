@@ -839,7 +839,11 @@ jobs:
           # settings are modified in production.
           adb shell settings put secure immersive_mode_confirmations confirmed
           test "$(adb shell settings get secure immersive_mode_confirmations | tr -d '\r')" = "confirmed"
-          ! adb shell dumpsys window windows | grep -Eq 'mCurrentFocus=Window\\{[^}]+ImmersiveModeConfirmation'
+          # Fail early if Android's OS tutorial still owns input focus.
+          if adb shell dumpsys window windows | grep -F 'mCurrentFocus=' | grep -Fq 'ImmersiveModeConfirmation'; then
+            echo "::error::The OS immersive tutorial is still intercepting the emulator display"
+            exit 1
+          fi
           sleep 25
 
       - name: Verify Home audio, search and XY AUTO playback

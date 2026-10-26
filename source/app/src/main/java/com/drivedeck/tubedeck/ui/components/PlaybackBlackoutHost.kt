@@ -1,7 +1,6 @@
 package com.drivedeck.tubedeck.ui.components
 
 import android.graphics.PixelFormat
-import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
@@ -16,10 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 
@@ -49,13 +44,6 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             val hostWindow = activity.window
             val hostView = hostWindow.decorView
             val manager = activity.getSystemService(WindowManager::class.java)
-            val insets = WindowCompat.getInsetsController(hostWindow, hostView)
-            val oldBehavior = insets.systemBarsBehavior
-            val wereVisible = ViewCompat.getRootWindowInsets(hostView)?.let {
-                it.isVisible(WindowInsetsCompat.Type.statusBars()) ||
-                    it.isVisible(WindowInsetsCompat.Type.navigationBars())
-            } ?: true
-
             val detector = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: MotionEvent): Boolean = true
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean = true
@@ -116,9 +104,10 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             if (hostView.isAttachedToWindow) {
                 attach.onViewAttachedToWindow(hostView)
             }
-            insets.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insets.hide(WindowInsetsCompat.Type.systemBars())
+            // This overlay must not request immersive mode. Android displays its own
+            // first-use ImmersiveModeConfirmation window ABOVE application panels.
+            // The host player alone owns fullscreen/system-bar policy; requesting
+            // it again on blackout made the confirmation steal touch focus.
             onDispose {
                 disposed = true
                 hostView.removeOnAttachStateChangeListener(attach)
@@ -126,8 +115,6 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
                     runCatching { manager.removeViewImmediate(mask) }
                     installed = false
                 }
-                if (wereVisible) insets.show(WindowInsetsCompat.Type.systemBars())
-                insets.systemBarsBehavior = oldBehavior
             }
         }
     }

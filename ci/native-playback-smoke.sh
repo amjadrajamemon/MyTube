@@ -184,20 +184,33 @@ adb shell dumpsys media_session > dist/pip-before-media.txt
 adb shell input keyevent KEYCODE_HOME
 sleep 5
 adb shell dumpsys activity activities > dist/pip-activity.txt
-adb shell dumpsys media_session > dist/pip-after-media.txt
+# The virtual device can rebuffer during the system PiP animation. Validate
+# ongoing playback instead of imposing a single early position sample.
 python3 - <<'PYPIPASSERT'
 import re
+import subprocess
+import time
 from pathlib import Path
 activity = Path('dist/pip-activity.txt').read_text()
 assert re.search(r'(?:mode|windowingMode)=pinned', activity), 'Home did not enter Android PiP'
-def position(path):
-    log = Path(path).read_text()
-    match = re.search(r'androidx\.media3\.session\.id\.drivedeck-fixture-pip[^\n]*[\s\S]*?state=PlaybackState \{state=PLAYING\(3\), position=(\d+)', log)
-    assert match, 'PiP media session is not PLAYING: ' + path
-    return int(match.group(1))
-before = position('dist/pip-before-media.txt')
-after = position('dist/pip-after-media.txt')
-assert after - before > 2000, f'PiP playback stalled after Home: {before} -> {after}'
+pattern = r'androidx\\.media3\\.session\\.id\\.drivedeck-fixture-pip[^\\n]*[\\s\\S]*?state=PlaybackState \\{state=PLAYING\\(3\\), position=(\\d+)'
+def position(text):
+    match = re.search(pattern, text)
+    return int(match.group(1)) if match else None
+before_text = Path('dist/pip-before-media.txt').read_text()
+before = position(before_text)
+assert before is not None, 'PiP media session was not PLAYING before Home'
+deadline = time.monotonic() + 12
+after = None
+while True:
+    latest = subprocess.run(['adb','shell','dumpsys','media_session'], text=True, capture_output=True, check=True, timeout=20).stdout
+    Path('dist/pip-after-media.txt').write_text(latest)
+    after = position(latest)
+    if after is not None and after - before > 2000:
+        break
+    if time.monotonic() >= deadline:
+        raise AssertionError(f'PiP playback did not advance 2 seconds after Home: {before} -> {after}')
+    time.sleep(2)
 print(f'PASS: Home entered Android PiP and playback progressed {after-before} ms')
 PYPIPASSERT
 adb shell am force-stop "$PACKAGE"

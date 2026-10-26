@@ -235,16 +235,25 @@ class BlackoutInstrumentation : Instrumentation() {
         // window temporarily unavailable on the API 34 emulator. Validate the
         // actual screen pixels as well as the persistent blackout state instead.
         await("blackout preference") { repository.screenBlackoutEnabled.value }
-        // StateFlow updates before the Android compositor presents the separate
-        // blackout window. Wait for actual opaque pixels rather than falsely failing
-        // on a stale SurfaceView frame during the dialog-window transition.
-        val deadline = SystemClock.uptimeMillis() + 10_000L
+        // The Android compositor may briefly switch from landscape to portrait
+        // buffers after a host transition. One black sample is NOT proof that
+        // the mask stays black, so require a sustained interval of opaque pixels.
+        // A truly uncovered video or Web host still fails after the bounded wait.
+        val deadline = SystemClock.uptimeMillis() + 15_000L
+        var stableSince = -1L
         while (SystemClock.uptimeMillis() < deadline) {
-            if (runCatching { assertBlackPixels() }.isSuccess) return
-            SystemClock.sleep(150L)
+            if (runCatching { assertBlackPixels() }.isSuccess) {
+                val now = SystemClock.uptimeMillis()
+                if (stableSince < 0L) stableSince = now
+                if (now - stableSince >= 1_500L) return
+            } else {
+                stableSince = -1L
+            }
+            SystemClock.sleep(120L)
         }
-        // Preserve the original strong assertion and precise failing ARGB report.
+        // Retain precise failing pixel information if the video is still visible.
         assertBlackPixels()
+        error("Blackout did not remain continuously black for 1.5 seconds")
     }
 
     private fun screenCenter(): Pair<Int, Int> {

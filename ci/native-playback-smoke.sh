@@ -193,7 +193,7 @@ import time
 from pathlib import Path
 activity = Path('dist/pip-activity.txt').read_text()
 assert re.search(r'(?:mode|windowingMode)=pinned', activity), 'Home did not enter Android PiP'
-pattern = r'androidx\\.media3\\.session\\.id\\.drivedeck-fixture-pip[^\\n]*[\\s\\S]*?state=PlaybackState \\{state=PLAYING\\(3\\), position=(\\d+)'
+pattern = r'androidx\.media3\.session\.id\.drivedeck-fixture-pip[^\n]*[\s\S]*?state=PlaybackState \{state=PLAYING\(3\), position=(\d+)'
 def position(text):
     match = re.search(pattern, text)
     return int(match.group(1)) if match else None

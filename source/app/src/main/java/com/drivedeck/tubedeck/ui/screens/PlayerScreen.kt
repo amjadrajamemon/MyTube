@@ -42,6 +42,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -75,6 +76,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.nativeKeyEvent
+import androidx.compose.ui.input.key.type
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -137,6 +146,8 @@ import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -567,6 +578,11 @@ fun NativeExoPlayer(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(1L) }
     var controlsVisible by remember { mutableStateOf(true) }
+    val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
+    val tvSurfaceFocus = remember { FocusRequester() }
+    val tvPlayPauseFocus = remember { FocusRequester() }
+    var tvSurfaceFocused by remember { mutableStateOf(false) }
+    var tvControlsFocused by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -1483,10 +1499,11 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(controlsVisible, autoHideControls) {
-        if (controlsVisible && autoHideControls) {
+    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused) {
+        // Do not hide TV controls while a remote or keyboard has focus inside them.
+        if (controlsVisible && autoHideControls && !tvControlsFocused) {
             delay(4200)
-            controlsVisible = false
+            if (!tvControlsFocused) controlsVisible = false
         }
     }
 
@@ -1529,7 +1546,70 @@ fun NativeExoPlayer(
         activity?.let { setFullscreen(it, isFullscreen) }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    LaunchedEffect(media.id, tvNavigation) {
+        if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
+    }
+
+    val tvRemoteKeys = if (tvNavigation) Modifier
+        .focusRequester(tvSurfaceFocus)
+        .onFocusChanged { tvSurfaceFocused = it.isFocused }
+        .onPreviewKeyEvent { key ->
+            if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
+                false
+            } else {
+                when (key.nativeKeyEvent.keyCode) {
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        controlsVisible = true
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { exoPlayer.play(); controlsVisible = true; true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
+                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> { exoPlayer.pause(); controlsVisible = true; true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
+                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD) 1 else -1
+                        exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
+                            .coerceIn(0L, duration.coerceAtLeast(0L)))
+                        controlsVisible = true
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                    AndroidKeyEvent.KEYCODE_ENTER,
+                    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
+                    AndroidKeyEvent.KEYCODE_BUTTON_A,
+                    AndroidKeyEvent.KEYCODE_SPACE -> {
+                        if (!tvSurfaceFocused) false else {
+                            controlsVisible = true
+                            tvPlayPauseFocus.requestFocus()
+                            true
+                        }
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT,
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (!tvSurfaceFocused) false else {
+                            val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                            exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
+                                .coerceIn(0L, duration.coerceAtLeast(0L)))
+                            controlsVisible = true
+                            true
+                        }
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN,
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                        if (!tvSurfaceFocused) false else {
+                            controlsVisible = true
+                            tvPlayPauseFocus.requestFocus()
+                            true
+                        }
+                    }
+                    else -> false
+                }
+            }
+        }
+        .focusable() else Modifier
+
+    Column(modifier = modifier.fillMaxSize().background(Color.Black).then(tvRemoteKeys)) {
         Box(
             modifier = if (compactPortrait) {
                 Modifier.fillMaxWidth().aspectRatio(16f / 13f).background(Color.Black)
@@ -1898,6 +1978,7 @@ fun NativeExoPlayer(
             FadeVisibility(visible = controlsVisible && !inPictureInPicture) {
                 Box(
                     Modifier.fillMaxSize()
+                        .onFocusChanged { tvControlsFocused = it.hasFocus }
                         .background(Color.Black.copy(alpha = .35f))
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
@@ -1967,7 +2048,7 @@ fun NativeExoPlayer(
                             IconButton(
                                 onClick = { onPreviousItem?.invoke() },
                                 enabled = onPreviousItem != null,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipPrevious,
@@ -1981,7 +2062,7 @@ fun NativeExoPlayer(
                                 onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                                 shape = CircleShape,
                                 color = TubeDeckAccentCyan,
-                                modifier = Modifier.size(centerControlDiameter)
+                                modifier = Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter).tvInputHighlight(CircleShape)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -2012,7 +2093,7 @@ fun NativeExoPlayer(
                                     }
                                 },
                                 enabled = nextEnabled,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipNext,
@@ -4172,6 +4253,7 @@ private fun EpisodeVideoCard(
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -4240,6 +4322,7 @@ private fun RelatedVideoCard(
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

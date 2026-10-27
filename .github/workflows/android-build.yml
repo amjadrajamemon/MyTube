@@ -716,8 +716,8 @@ jobs:
             "$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null
             BADGING="$("$AAPT2" dump badging "$APK")"
             printf '%s\n' "$BADGING" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionCode='93'"
-            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.11'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionCode='94'"
+            printf '%s\n' "$BADGING" | grep -Fq "versionName='1.8.12'"
             if printf '%s\n' "$BADGING" | grep -Fq 'application-debuggable'; then
               echo "::error::$EDITION APK is unexpectedly debuggable."
               exit 1

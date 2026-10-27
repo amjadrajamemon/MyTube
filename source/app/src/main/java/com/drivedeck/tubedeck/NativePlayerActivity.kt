@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -121,6 +122,13 @@ class NativePlayerActivity : ComponentActivity() {
         )
     )
     private val playbackBackCoordinator = PlaybackBackCoordinator()
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (playerActive && !closingPlayer &&
+            com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
+        ) return true
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

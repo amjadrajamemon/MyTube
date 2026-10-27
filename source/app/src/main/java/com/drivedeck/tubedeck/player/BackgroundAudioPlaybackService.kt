@@ -219,24 +219,44 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 val suggested = cached?.relatedVideos?.firstOrNull {
                     it.videoId.isNotBlank() && it.videoId != YoutubeUrls.videoId(original)
                 }
-                val next = suggested ?: withTimeoutOrNull(8_000L) {
-                    YoutubeStreamResolver.searchVideos(searchHint, 12).firstOrNull {
-                        it.videoId.isNotBlank() && it.videoId != YoutubeUrls.videoId(original)
+                val currentVideoId = YoutubeUrls.videoId(original).orEmpty()
+                val watchNext = if (suggested == null) {
+                    runCatching {
+                        withTimeoutOrNull(8_000L) {
+                            YoutubeWatchNextClient.resolve(original, currentVideoId)
+                                .relatedVideos.firstOrNull {
+                                    it.videoId.isNotBlank() && it.videoId != currentVideoId
+                                }
+                        }
+                    }.getOrNull()
+                } else null
+                val searchNext = if (suggested == null && watchNext == null &&
+                    searchHint.isNotBlank() && searchHint != "Now Playing"
+                ) {
+                    withTimeoutOrNull(8_000L) {
+                        YoutubeStreamResolver.searchVideos(searchHint, 12).firstOrNull {
+                            it.videoId.isNotBlank() && it.videoId != currentVideoId
+                        }
                     }
-                }
-                if (next == null || sourceUrl != original) return@launch
+                } else null
+                val nextUrl = suggested?.url
+                    ?: watchNext?.videoId?.let { "https://www.youtube.com/watch?v=$it" }
+                    ?: searchNext?.url
+                val nextTitle = suggested?.title ?: watchNext?.title ?: searchNext?.title
+                val nextArtwork = suggested?.thumbnailUrl ?: watchNext?.thumbnailUrl ?: searchNext?.thumbnailUrl
+                if (nextUrl.isNullOrBlank() || sourceUrl != original) return@launch
 
                 val nextPlayable = withContext(Dispatchers.IO) {
-                    val resolved = YoutubeStreamResolver.resolve(applicationContext, next.url)
+                    val resolved = YoutubeStreamResolver.resolve(applicationContext, nextUrl)
                     YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
                 }
                 if (nextPlayable.isNullOrBlank() || sourceUrl != original) return@launch
 
                 player.pause()
                 BackgroundAudioController.markStopped(original)
-                sourceUrl = next.url
-                currentTitle = next.title
-                currentArtwork = next.thumbnailUrl
+                sourceUrl = nextUrl
+                currentTitle = nextTitle.orEmpty().ifBlank { "YouTube audio" }
+                currentArtwork = nextArtwork
                 // The existing foreground session and audio focus remain active.
                 // onIsPlayingChanged updates the controller snapshot for Return to Video.
                 startupPending = true

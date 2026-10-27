@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.view.InputDevice
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,10 +28,24 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
     val pm = context.packageManager
     val mode = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)
         ?.currentModeType ?: (context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK)
+    val largeDisplay = context.resources.configuration.smallestScreenWidthDp >= 600
+    // Many inexpensive AOSP TV boxes advertise a touchscreen despite having
+    // only an air mouse, mini keyboard, or D-pad attached. Detect those real,
+    // external controllers rather than relying exclusively on Leanback flags.
+    val physicalRemote = if (largeDisplay) {
+        InputDevice.getDeviceIds().any { id ->
+            val device = InputDevice.getDevice(id)
+            device != null && !device.isVirtual && (
+                device.sources and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE ||
+                device.sources and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD ||
+                device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
+            )
+        }
+    } else false
     return mode == Configuration.UI_MODE_TYPE_TELEVISION ||
         pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
-        (!pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) &&
-            context.resources.configuration.smallestScreenWidthDp >= 600)
+        (largeDisplay && !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) ||
+        physicalRemote
 }
 
 /**

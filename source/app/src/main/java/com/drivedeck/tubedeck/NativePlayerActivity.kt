@@ -123,6 +123,9 @@ class NativePlayerActivity : ComponentActivity() {
     )
     private val playbackBackCoordinator = PlaybackBackCoordinator()
 
+    // ComponentActivity implements the public Android key dispatch hook through
+    // androidx.core. OEM head units sometimes send media keys only to this hook.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (playerActive && !closingPlayer &&
             com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)

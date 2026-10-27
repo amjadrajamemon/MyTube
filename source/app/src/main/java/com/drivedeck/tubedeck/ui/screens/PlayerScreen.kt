@@ -42,6 +42,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.content.Intent
+import android.os.SystemClock
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -763,8 +765,105 @@ fun NativeExoPlayer(
         }
     }
 
+    // The source player contains only one resolved CDN stream, not a Media3 playlist.
+    // Consequently Media3's default seekToNext() silently does nothing for remote
+    // Next/Previous buttons. Send both remote and pointer actions through one queue
+    // selection path rather than seeking within that single source.
+    val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val episodeList = continuationEpisodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
+    val episodeIndex = episodeList.indexOfFirst { it.videoId == sourceVideoId }
+    val nextEpisode = if (episodeIndex in 0 until episodeList.lastIndex) {
+        episodeList[episodeIndex + 1]
+    } else null
+    val relatedNext = resolved?.relatedVideos?.firstOrNull {
+        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+    }
+    val sharedNextAction: (() -> Unit)? = when {
+        onNextItem != null -> onNextItem
+        playbackContinuationMode == PlaybackContinuationMode.EPISODES &&
+            nextEpisode != null && onPlayRelated != null -> {
+            {
+                onPlayRelated(
+                    OfflineMedia(
+                        id = "episode-next-${nextEpisode.videoId}-${System.nanoTime()}",
+                        title = nextEpisode.title,
+                        videoId = nextEpisode.videoId,
+                        thumbnailUrl = nextEpisode.thumbnailUrl,
+                        mediaUri = "https://www.youtube.com/watch?v=${nextEpisode.videoId}"
+                    )
+                )
+            }
+        }
+        relatedNext != null && onPlayRelated != null -> {
+            {
+                onPlayRelated(
+                    OfflineMedia(
+                        id = "remote-next-${relatedNext.videoId}-${System.nanoTime()}",
+                        title = relatedNext.title,
+                        videoId = relatedNext.videoId,
+                        thumbnailUrl = relatedNext.thumbnailUrl,
+                        mediaUri = relatedNext.url
+                    )
+                )
+            }
+        }
+        else -> null
+    }
+    val currentNextAction by rememberUpdatedState(sharedNextAction)
+    val currentPreviousAction by rememberUpdatedState(onPreviousItem)
+    var lastNextKeyTime by remember(media.id) { mutableLongStateOf(0L) }
+    var lastPreviousKeyTime by remember(media.id) { mutableLongStateOf(0L) }
+
+    fun dispatchNextKey(): Boolean {
+        val action = currentNextAction ?: return false
+        val now = SystemClock.elapsedRealtime()
+        // Some OEM car/TV units deliver a media key through both the Activity and
+        // the MediaSession. Debounce those duplicate ACTION_DOWN events only.
+        if (now - lastNextKeyTime >= 450L) {
+            lastNextKeyTime = now
+            action()
+        }
+        return true
+    }
+
+    fun dispatchPreviousKey(): Boolean {
+        val action = currentPreviousAction ?: return false
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPreviousKeyTime >= 450L) {
+            lastPreviousKeyTime = now
+            action()
+        }
+        return true
+    }
+
+    val currentDispatchNext by rememberUpdatedState(::dispatchNextKey)
+    val currentDispatchPrevious by rememberUpdatedState(::dispatchPreviousKey)
     val mediaSession = remember(exoPlayer) {
-        MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}").build()
+        MediaSession.Builder(context, exoPlayer)
+            .setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}")
+            .setCallback(object : MediaSession.Callback {
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    intent: Intent
+                ): Boolean {
+                    @Suppress("DEPRECATION")
+                    val event: AndroidKeyEvent? = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, AndroidKeyEvent::class.java)
+                    } else {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (event?.action != AndroidKeyEvent.ACTION_DOWN || event.repeatCount != 0) {
+                        return false
+                    }
+                    return when (event.keyCode) {
+                        AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> currentDispatchNext()
+                        AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> currentDispatchPrevious()
+                        else -> false // Media3 retains play/pause, headset and seek handling.
+                    }
+                }
+            })
+            .build()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
@@ -1567,6 +1666,8 @@ fun NativeExoPlayer(
                 false
             } else {
                 when (key.nativeKeyEvent.keyCode) {
+                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> dispatchNextKey()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> dispatchPreviousKey()
                     AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                         controlsVisible = true
@@ -2083,24 +2184,9 @@ fun NativeExoPlayer(
                                 }
                             }
 
-                            val nextEnabled = onNextItem != null || (suggestedNext != null && onPlayRelated != null)
+                            val nextEnabled = sharedNextAction != null
                             IconButton(
-                                onClick = {
-                                    when {
-                                        onNextItem != null -> onNextItem.invoke()
-                                        suggestedNext != null && onPlayRelated != null -> {
-                                            onPlayRelated.invoke(
-                                                OfflineMedia(
-                                                    id = "next-${suggestedNext.videoId}-${System.nanoTime()}",
-                                                    title = suggestedNext.title,
-                                                    videoId = suggestedNext.videoId,
-                                                    thumbnailUrl = suggestedNext.thumbnailUrl,
-                                                    mediaUri = suggestedNext.url
-                                                )
-                                            )
-                                        }
-                                    }
-                                },
+                                onClick = { sharedNextAction?.invoke() },
                                 enabled = nextEnabled,
                                 modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {

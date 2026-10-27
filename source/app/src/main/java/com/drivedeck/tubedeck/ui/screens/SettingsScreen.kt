@@ -39,6 +39,7 @@ import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
@@ -238,6 +239,7 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .height(54.dp)
                                     .clip(RoundedCornerShape(10.dp))
+                                    .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
                                         appearancePreset = preset.name
                                         fontScale = preset.fontScale
@@ -363,6 +365,7 @@ fun SettingsScreen(
                         val isSelected = playerMode == mode
                         Surface(
                             modifier = Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp))
+                                .tvInputHighlight(RoundedCornerShape(10.dp))
                                 .clickable { playerMode = mode }
                                 .border(1.2.dp, if (isSelected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(10.dp)),
                             color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.15f) else Color.Transparent
@@ -750,6 +753,7 @@ private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) ->
             val isSelected = selectedMode == mode
             Surface(
                 modifier = Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp))
+                    .tvInputHighlight(RoundedCornerShape(8.dp))
                     .clickable { onSelect(mode) }
                     .border(1.dp, if (isSelected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(8.dp)),
                 color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.1f) else Color.Transparent
@@ -774,6 +778,7 @@ private fun QualityGrid(selectedQuality: String, onSelect: (String) -> Unit, qua
                             .weight(1f)
                             .height(36.dp)
                             .clip(RoundedCornerShape(8.dp))
+                            .tvInputHighlight(RoundedCornerShape(8.dp))
                             .clickable { onSelect(q) }
                             .border(1.dp, if (isSelected) TubeDeckAccentCyan else Color.DarkGray, RoundedCornerShape(8.dp)),
                         color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.15f) else Color.Transparent

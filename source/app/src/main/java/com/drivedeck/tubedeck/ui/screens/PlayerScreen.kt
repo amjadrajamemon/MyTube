@@ -779,6 +779,7 @@ fun NativeExoPlayer(
     val relatedNext = resolved?.relatedVideos?.firstOrNull {
         it.videoId.isNotBlank() && it.videoId != sourceVideoId
     }
+    var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     val sharedNextAction: (() -> Unit)? = when {
         onNextItem != null -> onNextItem
         playbackContinuationMode == PlaybackContinuationMode.EPISODES &&
@@ -806,6 +807,49 @@ fun NativeExoPlayer(
                         mediaUri = relatedNext.url
                     )
                 )
+            }
+        }
+        // A single direct ExoPlayer item has no media-session next entry. The
+        // native resolver may also finish after the Next button is pressed.
+        // Provide a bounded on-demand fallback instead of a disabled button.
+        onPlayRelated != null && sourceVideoId.isNotBlank() -> {
+            {
+                if (!nextLookupInProgress) {
+                    val title = resolved?.title?.takeIf { it.isNotBlank() && it != "Now Playing" }
+                        ?: media.title.takeIf { it.isNotBlank() && it != "Now Playing" }
+                    if (title == null) {
+                        Toast.makeText(context, "Next video is still loading", Toast.LENGTH_SHORT).show()
+                    } else {
+                        nextLookupInProgress = true
+                        playbackScope.launch {
+                            try {
+                                val candidates = withTimeoutOrNull(8_000L) {
+                                    YoutubeStreamResolver.searchVideos(title, 16)
+                                }.orEmpty()
+                                val next = candidates.firstOrNull {
+                                    it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                }
+                                if (next == null) {
+                                    Toast.makeText(context, "No next video available", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onPlayRelated(OfflineMedia(
+                                        id = "fallback-next-${next.videoId}-${System.nanoTime()}",
+                                        title = next.title,
+                                        videoId = next.videoId,
+                                        thumbnailUrl = next.thumbnailUrl,
+                                        mediaUri = next.url
+                                    ))
+                                }
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Unable to find next video", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                nextLookupInProgress = false
+                            }
+                        }
+                    }
+                }
             }
         }
         else -> null

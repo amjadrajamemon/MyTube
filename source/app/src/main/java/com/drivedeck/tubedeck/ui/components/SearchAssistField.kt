@@ -67,7 +67,7 @@ fun SearchAssistField(
     LaunchedEffect(autoFocus) {
         if (autoFocus) {
             searchFocusRequester.requestFocus()
-            if (tvMode) keyboard?.hide() // Hardware remote focuses search without forcing a TV IME.
+            // The TV's IME is available for remotes; a physical keyboard can type directly.
         }
     }
 

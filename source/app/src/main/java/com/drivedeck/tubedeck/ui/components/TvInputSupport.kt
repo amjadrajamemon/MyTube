@@ -25,6 +25,8 @@ import com.drivedeck.tubedeck.ui.theme.TubeDeckAccentCyan
  * keyboard/D-pad navigation on inexpensive non-Leanback TV boxes.
  */
 fun isTvLikeNavigationDevice(context: Context): Boolean {
+    if (context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+            .getBoolean("forceTvNavigation", false)) return true
     val pm = context.packageManager
     val mode = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)
         ?.currentModeType ?: (context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK)

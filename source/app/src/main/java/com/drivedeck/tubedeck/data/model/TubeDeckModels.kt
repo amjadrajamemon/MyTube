@@ -86,6 +86,7 @@ data class TubeDeckSettings(
     // Player settings
     val playerMode: PlayerMode = PlayerMode.NATIVE,
     val xyAutoCompatibilityMode: Boolean = false,
+    val forceTvNavigation: Boolean = false,
     // 0 = adaptive Auto. Positive values remember a fixed preferred height.
     val preferredPlaybackQualityHeight: Int = 0,
     val preferredPlaybackSpeed: Float = 1.0f,

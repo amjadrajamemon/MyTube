@@ -781,7 +781,6 @@ fun NativeExoPlayer(
         it.videoId.isNotBlank() && it.videoId != sourceVideoId
     }
     var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
-    var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     val sharedNextAction: (() -> Unit)? = when {
         onNextItem != null -> onNextItem
         playbackContinuationMode == PlaybackContinuationMode.EPISODES &&

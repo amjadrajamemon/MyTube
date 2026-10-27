@@ -781,6 +781,7 @@ fun NativeExoPlayer(
         it.videoId.isNotBlank() && it.videoId != sourceVideoId
     }
     var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
+    var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     val sharedNextAction: (() -> Unit)? = when {
         onNextItem != null -> onNextItem
         playbackContinuationMode == PlaybackContinuationMode.EPISODES &&
@@ -824,22 +825,45 @@ fun NativeExoPlayer(
                         nextLookupInProgress = true
                         playbackScope.launch {
                             try {
-                                val candidates = withTimeoutOrNull(8_000L) {
-                                    YoutubeStreamResolver.searchVideos(title, 16)
-                                }.orEmpty()
-                                val next = candidates.firstOrNull {
-                                    it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                // First use the current video's actual Watch-Next
+                                // recommendations. Only fall back to title search when the
+                                // watch endpoint returns nothing or is unavailable.
+                                val directNext = runCatching {
+                                    withTimeoutOrNull(8_000L) {
+                                        YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId)
+                                            .relatedVideos.firstOrNull {
+                                                it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                            }
+                                    }
+                                }.getOrNull()
+                                val nextMedia = if (directNext != null) {
+                                    OfflineMedia(
+                                        id = "watch-next-${directNext.videoId}-${System.nanoTime()}",
+                                        title = directNext.title,
+                                        videoId = directNext.videoId,
+                                        thumbnailUrl = directNext.thumbnailUrl,
+                                        mediaUri = "https://www.youtube.com/watch?v=${directNext.videoId}"
+                                    )
+                                } else {
+                                    val candidates = withTimeoutOrNull(8_000L) {
+                                        YoutubeStreamResolver.searchVideos(title, 16)
+                                    }.orEmpty()
+                                    candidates.firstOrNull {
+                                        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                    }?.let { next ->
+                                        OfflineMedia(
+                                            id = "search-next-${next.videoId}-${System.nanoTime()}",
+                                            title = next.title,
+                                            videoId = next.videoId,
+                                            thumbnailUrl = next.thumbnailUrl,
+                                            mediaUri = next.url
+                                        )
+                                    }
                                 }
-                                if (next == null) {
+                                if (nextMedia == null) {
                                     Toast.makeText(context, "No next video available", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    onPlayRelated(OfflineMedia(
-                                        id = "fallback-next-${next.videoId}-${System.nanoTime()}",
-                                        title = next.title,
-                                        videoId = next.videoId,
-                                        thumbnailUrl = next.thumbnailUrl,
-                                        mediaUri = next.url
-                                    ))
+                                    onPlayRelated(nextMedia)
                                 }
                             } catch (cancel: CancellationException) {
                                 throw cancel
@@ -857,51 +881,15 @@ fun NativeExoPlayer(
     }
     val currentNextAction by rememberUpdatedState(sharedNextAction)
     val currentPreviousAction by rememberUpdatedState(onPreviousItem)
-    val currentRelatedPlayback by rememberUpdatedState(onPlayRelated)
-    var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     var lastNextKeyTime by remember(media.id) { mutableLongStateOf(0L) }
     var lastPreviousKeyTime by remember(media.id) { mutableLongStateOf(0L) }
 
     fun dispatchNextKey(): Boolean {
+        val action = currentNextAction ?: return false
         val now = SystemClock.elapsedRealtime()
-        // Some OEM car/TV units deliver an event through both Activity and MediaSession.
-        if (now - lastNextKeyTime < 350L) return true
-        val action = currentNextAction
-        if (action != null) {
+        if (now - lastNextKeyTime >= 350L) {
             lastNextKeyTime = now
             action()
-            return true
-        }
-        // A fresh YouTube player may have no loaded related cards. Resolve Watch-Next
-        // on demand rather than treating a physical Next press as a dead button.
-        if (sourceVideoId.isBlank() || currentRelatedPlayback == null) return false
-        if (nextLookupInProgress) return true
-        lastNextKeyTime = now
-        nextLookupInProgress = true
-        playbackScope.launch {
-            try {
-                val next = YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId)
-                    .relatedVideos.firstOrNull { it.videoId.isNotBlank() && it.videoId != sourceVideoId }
-                if (next != null) {
-                    currentRelatedPlayback?.invoke(
-                        OfflineMedia(
-                            id = "remote-next-discovered-${next.videoId}-${System.nanoTime()}",
-                            title = next.title,
-                            videoId = next.videoId,
-                            thumbnailUrl = next.thumbnailUrl,
-                            mediaUri = "https://www.youtube.com/watch?v=${next.videoId}"
-                        )
-                    )
-                } else {
-                    Toast.makeText(context, "No next video is available", Toast.LENGTH_SHORT).show()
-                }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                Toast.makeText(context, "Couldn't find the next video", Toast.LENGTH_SHORT).show()
-            } finally {
-                nextLookupInProgress = false
-            }
         }
         return true
     }

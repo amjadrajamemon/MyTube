@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.webkit.WebView
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -117,6 +118,14 @@ class MainActivity : ComponentActivity() {
         override fun handleOnBackPressed() {
             handlePlaybackBack()
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Some TV/XY AUTO ROMs send transport keys to the Activity, not MediaSession.
+        if (playerActive &&
+            com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
+        ) return true
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

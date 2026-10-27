@@ -120,6 +120,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ComponentActivity implements the public Android key dispatch hook through
+    // androidx.core. OEM head units sometimes send media keys only to this hook.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Some TV/XY AUTO ROMs send transport keys to the Activity, not MediaSession.
         if (playerActive &&

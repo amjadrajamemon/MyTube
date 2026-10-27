@@ -36,8 +36,8 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
         InputDevice.getDeviceIds().any { id ->
             val device = InputDevice.getDevice(id)
             device != null && !device.isVirtual && (
-                device.sources and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE ||
-                device.sources and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD ||
+                (device.sources and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE ||
+                (device.sources and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
                 device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
             )
         }

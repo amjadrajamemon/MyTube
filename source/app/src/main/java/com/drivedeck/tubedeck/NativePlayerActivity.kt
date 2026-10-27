@@ -710,10 +710,26 @@ class NativePlayerActivity : ComponentActivity() {
                 automaticAudioHandoff = false
                 explicitAudioHandoff = false
                 val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
-                if (audio != null && (audio.sourceUrl == currentMedia.mediaUri ||
-                    YoutubeUrls.videoId(audio.sourceUrl)?.let {
-                        it == YoutubeUrls.videoId(currentMedia.mediaUri)
-                    } == true)) {
+                if (audio != null) {
+                    val sameVideo = audio.sourceUrl == currentMedia.mediaUri ||
+                        YoutubeUrls.videoId(audio.sourceUrl)?.let {
+                            it == YoutubeUrls.videoId(currentMedia.mediaUri)
+                        } == true
+                    if (!sameVideo && audio.sourceUrl.isNotBlank()) {
+                        // Background hardware Next can change the audio source while this
+                        // native Activity is suspended. Restore the *new* video, not the
+                        // original one held in the old Activity's saved state.
+                        replaceMedia(
+                            OfflineMedia(
+                                id = UUID.randomUUID().toString(),
+                                title = audio.title,
+                                videoId = YoutubeUrls.videoId(audio.sourceUrl).orEmpty(),
+                                thumbnailUrl = audio.artworkUrl,
+                                mediaUri = audio.sourceUrl
+                            ),
+                            recordWatch = true
+                        )
+                    }
                     initialPlaybackPositionMs = audio.positionMs.coerceAtLeast(0L)
                     currentPlaybackPositionMs = initialPlaybackPositionMs
                 }

@@ -56,6 +56,9 @@ fun DriveDeckScreen(
     liveSearchResults: List<HomeVideo> = emptyList(),
     liveSearchQuery: String = "",
     liveSearchStatus: String = "",
+    videoSearchResults: List<HomeVideo> = emptyList(),
+    videoSearchQuery: String = "",
+    videoSearchStatus: String = "",
     playlistMode: Boolean = false,
     playlistResults: List<PlaylistCandidate> = emptyList(),
     playlistSearchQuery: String = "",
@@ -69,6 +72,8 @@ fun DriveDeckScreen(
     viewStateKey: String = "home",
     onRefreshFeed: () -> Unit = {},
     onClearLiveSearch: () -> Unit = {},
+    onClearVideoSearch: () -> Unit = {},
+    onOpenWebSearch: (String) -> Unit = {},
     onOpenVideo: (HomeVideo) -> Unit = {},
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -131,6 +136,26 @@ fun DriveDeckScreen(
                         action = "Clear",
                         onAction = onClearLiveSearch
                     )
+                }
+            } else if (tvNavigation && videoSearchQuery.isNotBlank()) {
+                item(key = "tv-native-search-results") {
+                    HomeShelf(
+                        "TV results · $videoSearchQuery",
+                        videoSearchResults,
+                        onOpenVideo,
+                        listView = listView,
+                        loading = videoSearchStatus == "Loading",
+                        emptyLabel = videoSearchStatus.takeIf { it.isNotBlank() && it != "Loading" },
+                        action = "Clear",
+                        onAction = onClearVideoSearch
+                    )
+                }
+                item(key = "tv-web-search-fallback") {
+                    TextButton(
+                        onClick = { onOpenWebSearch(videoSearchQuery) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+                            .tvInputHighlight(RoundedCornerShape(10.dp))
+                    ) { Text("Open web search instead") }
                 }
             }
             if (!playlistMode) {
@@ -698,14 +723,17 @@ fun DriveDeckTopHeader(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     searchPlaceholder: String = "Search YouTube",
+    autoFocus: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // First composition should focus the Home feed rather than opening the IME.
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
-        focusManager.clearFocus(force = true)
-        keyboardController?.hide()
+        if (!autoFocus) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
     }
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -738,6 +766,7 @@ fun DriveDeckTopHeader(
                 onClearRecentSearches = onClearRecentSearches,
                 placeholder = searchPlaceholder,
                 showRecentChips = true,
+                autoFocus = autoFocus,
                 modifier = Modifier.fillMaxWidth()
             )
         }

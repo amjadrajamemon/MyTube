@@ -583,6 +583,7 @@ fun NativeExoPlayer(
     val tvPlayPauseFocus = remember { FocusRequester() }
     var tvSurfaceFocused by remember { mutableStateOf(false) }
     var tvControlsFocused by remember { mutableStateOf(false) }
+    var tvPendingControlFocus by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -1550,6 +1551,15 @@ fun NativeExoPlayer(
         if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
     }
 
+    LaunchedEffect(controlsVisible, tvPendingControlFocus) {
+        // The overlay can be absent after auto-hide. Wait until Compose has mounted
+        // the control before invoking FocusRequester, avoiding TV-only crashes.
+        if (controlsVisible && tvPendingControlFocus) {
+            tvPlayPauseFocus.requestFocus()
+            tvPendingControlFocus = false
+        }
+    }
+
     val tvRemoteKeys = if (tvNavigation) Modifier
         .focusRequester(tvSurfaceFocus)
         .onFocusChanged { tvSurfaceFocused = it.isFocused }
@@ -1581,7 +1591,7 @@ fun NativeExoPlayer(
                     AndroidKeyEvent.KEYCODE_SPACE -> {
                         if (!tvSurfaceFocused) false else {
                             controlsVisible = true
-                            tvPlayPauseFocus.requestFocus()
+                            tvPendingControlFocus = true
                             true
                         }
                     }
@@ -1599,7 +1609,7 @@ fun NativeExoPlayer(
                     AndroidKeyEvent.KEYCODE_DPAD_UP -> {
                         if (!tvSurfaceFocused) false else {
                             controlsVisible = true
-                            tvPlayPauseFocus.requestFocus()
+                            tvPendingControlFocus = true
                             true
                         }
                     }

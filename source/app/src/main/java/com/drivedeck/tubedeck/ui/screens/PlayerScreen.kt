@@ -102,6 +102,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import com.drivedeck.tubedeck.R
+import com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
 import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
@@ -1297,8 +1298,10 @@ fun NativeExoPlayer(
         PlaybackDiagnostics.record(context, "player_created", "compat=$carHeadUnit")
         exoPlayer.addAnalyticsListener(analytics)
         exoPlayer.addListener(listener)
+        PlaybackHardwareButtonBridge.register(exoPlayer, { currentDispatchNext() }, { currentDispatchPrevious() })
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
+            PlaybackHardwareButtonBridge.unregister(exoPlayer)
             exoPlayer.removeListener(listener)
             exoPlayer.removeAnalyticsListener(analytics)
             equalizerController.release()

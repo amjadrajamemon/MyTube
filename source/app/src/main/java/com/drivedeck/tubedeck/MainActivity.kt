@@ -63,6 +63,7 @@ import com.drivedeck.tubedeck.ui.components.GoogleDeviceCodeDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.screens.*
 import com.drivedeck.tubedeck.ui.theme.TubeDeckBackground
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
@@ -354,6 +355,9 @@ class MainActivity : ComponentActivity() {
                 val homeTrending by repository.homeTrending.collectAsStateWithLifecycle()
                 val homeLive by repository.homeLive.collectAsStateWithLifecycle()
                 val homeLiveStatus by repository.homeLiveStatus.collectAsStateWithLifecycle()
+                val videoSearchResults by repository.videoSearchResults.collectAsStateWithLifecycle()
+                val videoSearchQuery by repository.videoSearchQuery.collectAsStateWithLifecycle()
+                val videoSearchStatus by repository.videoSearchStatus.collectAsStateWithLifecycle()
                 val liveSearchResults by repository.liveSearchResults.collectAsStateWithLifecycle()
                 val liveSearchQuery by repository.liveSearchQuery.collectAsStateWithLifecycle()
                 val liveSearchStatus by repository.liveSearchStatus.collectAsStateWithLifecycle()
@@ -1006,18 +1010,26 @@ class MainActivity : ComponentActivity() {
                                             when {
                                                 currentScreen == ActiveScreen.MIXES -> {
                                                     repository.clearLiveSearch()
+                                                    repository.clearVideoSearch()
                                                     repository.searchPlaylists(query)
                                                 }
                                                 YoutubeSearchPolicy.isLiveIntent(query) -> {
                                                     // Live discovery stays native so it is not dependent on
                                                     // YouTube's volatile web Live-filter token.
+                                                    repository.clearVideoSearch()
                                                     repository.searchLive(
                                                         query,
                                                         googleSession.currentYoutubeAccessToken()
                                                     )
                                                 }
+                                                isTvLikeNavigationDevice(this@MainActivity) &&
+                                                    !settings.desktopYoutubeUiEnabled -> {
+                                                    repository.clearLiveSearch()
+                                                    repository.searchVideos(query)
+                                                }
                                                 else -> {
                                                     repository.clearLiveSearch()
+                                                    repository.clearVideoSearch()
                                                     browserHistoryResetGeneration += 1
                                                     val destination = YoutubeSearchPolicy.buildSearchUrl(query)
                                                     navigateTo(ActiveScreen.BROWSER, destination)
@@ -1039,6 +1051,14 @@ class MainActivity : ComponentActivity() {
                                     liveSearchResults = liveSearchResults,
                                     liveSearchQuery = liveSearchQuery,
                                     liveSearchStatus = liveSearchStatus,
+                                    videoSearchResults = videoSearchResults,
+                                    videoSearchQuery = videoSearchQuery,
+                                    videoSearchStatus = videoSearchStatus,
+                                    onClearVideoSearch = repository::clearVideoSearch,
+                                    onOpenWebSearch = { query ->
+                                        browserHistoryResetGeneration += 1
+                                        navigateTo(ActiveScreen.BROWSER, YoutubeSearchPolicy.buildSearchUrl(query))
+                                    },
                                     playlistMode = currentScreen == ActiveScreen.MIXES,
                                     playlistResults = playlistSearchResults,
                                     playlistSearchQuery = playlistSearchQuery,

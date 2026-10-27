@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.DownloadQueuePolicy
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.text.DateFormat
 import java.util.Date
@@ -225,6 +226,7 @@ fun DownloadsScreen(
                                     Surface(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
+                                            .tvInputHighlight(RoundedCornerShape(8.dp))
                                             .clickable { filterType = filter }
                                             .border(1.dp, if (isSelected) TubeDeckAccentMint else TubeDeckBorder, RoundedCornerShape(8.dp)),
                                         color = if (isSelected) TubeDeckAccentMint.copy(alpha = 0.2f) else TubeDeckSurfaceVariant
@@ -684,7 +686,7 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                      onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).clickable { onPlay() },
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).tvInputHighlight().clickable { onPlay() },
         color = TubeDeckSurfaceVariant
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
@@ -731,6 +733,7 @@ private fun OfflineMediaListRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .border(1.dp, if (selected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(10.dp))
+            .tvInputHighlight(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, onClick = onPlay),
         color = if (selected) TubeDeckAccentCyan.copy(alpha = 0.07f) else TubeDeckSurfaceVariant
     ) {
@@ -806,6 +809,7 @@ fun QueueTaskCard(
                 if (selected) TubeDeckAccentCyan else TubeDeckBorder,
                 RoundedCornerShape(12.dp)
             )
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable { onSelectedChange(!selected) },
         color = if (selected) TubeDeckAccentCyan.copy(alpha = 0.08f) else TubeDeckSurfaceVariant
     ) {

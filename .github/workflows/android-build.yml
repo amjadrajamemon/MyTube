@@ -4,7 +4,7 @@ name: Build MyTube Android APKs
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'feature/**' ]
     paths:
       - 'source/**'
       - 'ci/**'
@@ -28,13 +28,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify v1.8.11 dual-APK source
+      - name: Verify TV controller, air-mouse and keyboard source
+        shell: bash
+        run: |
+          set -euo pipefail
+          M=source/app/src/main/AndroidManifest.xml
+          H=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TvInputSupport.kt
+          S=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/SearchAssistField.kt
+          P=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'android.intent.category.LEANBACK_LAUNCHER' "$M"
+          grep -Fq 'android.software.leanback.supports_touch' "$M"
+          grep -Fq 'android.hardware.touchscreen' "$M"
+          grep -Fq 'fun isTvLikeNavigationDevice' "$H"
+          grep -Fq 'fun Modifier.tvInputHighlight' "$H"
+          grep -Fq 'itemsIndexed(choices' "$S"
+          grep -Fq 'firstSuggestionFocusRequester.requestFocus()' "$S"
+          grep -Fq 'KEYCODE_DPAD_CENTER' "$P"
+          grep -Fq 'KEYCODE_MEDIA_PLAY_PAUSE' "$P"
+          grep -Fq 'tvPendingControlFocus' "$P"
+          echo "TV navigation source invariants verified."
+
+      - name: Verify v1.8.12 dual-APK source
         shell: bash
         run: |
           set -euxo pipefail
           test -f source/settings.gradle.kts
-          grep -q 'versionName = "1.8.11"' source/app/build.gradle.kts
-          grep -q 'versionCode = 93' source/app/build.gradle.kts
+          grep -q 'versionName = "1.8.12"' source/app/build.gradle.kts
+          grep -q 'versionCode = 94' source/app/build.gradle.kts
           grep -q 'create("arm64")' source/app/build.gradle.kts
           grep -q 'create("universal")' source/app/build.gradle.kts
           grep -q 'armeabi-v7a' source/app/build.gradle.kts
@@ -99,7 +119,7 @@ jobs:
           grep -Fq 'equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f)' "$SETTINGS"
           grep -Fq 'putFloat("equalizerTextScale"' "$REPO"
           grep -Fq 'preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)' "$REPO"
-          echo "Building MyTube v1.8.11 ARM64 + Universal source tree."
+          echo "Building MyTube v1.8.12 ARM64 + Universal source tree."
 
       - name: Verify OAuth + navigation release-critical source
         shell: bash
@@ -635,7 +655,7 @@ jobs:
             grep -Fq 'Activity/History' "$DEX_STRINGS"
             rm -f "$DEX_STRINGS"
           done
-          echo "Compiled APKs contain the v1.8.11 visible refinement surfaces."
+          echo "Compiled APKs contain the v1.8.12 visible refinement surfaces."
 
       - name: Verify APK ABI coverage
         shell: bash
@@ -732,10 +752,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
           {
             echo "Previous v1.6.7 signing certificate: $PREVIOUS_SHA1"
-            echo "Saved stable signing certificate used by v1.8.11: $ACTUAL_SHA1"
+            echo "Saved stable signing certificate used by v1.8.12: $ACTUAL_SHA1"
             test "$ACTUAL_SHA1" = "$PREVIOUS_SHA1"
             echo "The APK is compatible with an update over v1.6.7."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-Install-Compatibility.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-Install-Compatibility.txt"
 
       - name: Preserve verified APK compilation
         if: steps.apk-cache.outputs.cache-hit != 'true'
@@ -761,7 +781,7 @@ jobs:
             echo "Signing SHA-1: $SHA1"
             echo "Required scope: https://www.googleapis.com/auth/youtube.readonly"
             echo "Google Cloud requirement: register an Android OAuth client with this exact package + SHA-1 and enable YouTube Data API v3."
-          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-OAuth-Registration.txt"
+          } | tee "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-OAuth-Registration.txt"
           echo "### MyTube OAuth registration" >> "$GITHUB_STEP_SUMMARY"
           echo '- Package: com.aistudio.tubedeck.kxmvd' >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-1: $SHA1" >> "$GITHUB_STEP_SUMMARY"
@@ -774,15 +794,15 @@ jobs:
           UNIVERSAL="$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
-          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-XYAUTO-ARM64.apk"
-          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk"
+          cp "$ARM64" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-XYAUTO-ARM64.apk"
+          cp "$UNIVERSAL" "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-XYAUTO-UNIVERSAL.apk"
 
           if [ -s "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk" ]; then
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-ARM64-production.apk"
-            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-Universal-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/arm64/release/app-arm64-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-ARM64-production.apk"
+            cp "$GITHUB_WORKSPACE/source/app/build/outputs/apk/universal/release/app-universal-release.apk"               "$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-Universal-production.apk"
           fi
 
-          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-v1.8.11-XYAUTO-Source.zip"
+          SOURCE_ZIP="$GITHUB_WORKSPACE/dist/MyTube-v1.8.12-XYAUTO-Source.zip"
           EXPORT_DIR="$RUNNER_TEMP/mytube-source-export"
           mkdir -p "$EXPORT_DIR/source/app/src/main/assets/models"
           git archive HEAD source .github ci README.md | tar -x -C "$EXPORT_DIR"
@@ -793,14 +813,14 @@ jobs:
           unzip -t "$SOURCE_ZIP" >/dev/null
 
           cd "$GITHUB_WORKSPACE"
-          sha256sum dist/MyTube-v1.8.11-XYAUTO-ARM64.apk > dist/MyTube-v1.8.11-XYAUTO-ARM64.apk.sha256
-          sha256sum dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk > dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk.sha256
-          sha256sum dist/MyTube-v1.8.11-XYAUTO-Source.zip > dist/MyTube-v1.8.11-XYAUTO-Source.zip.sha256
-          if [ -s dist/MyTube-v1.8.11-ARM64-production.apk ]; then
-            sha256sum dist/MyTube-v1.8.11-ARM64-production.apk > dist/MyTube-v1.8.11-ARM64-production.apk.sha256
-            sha256sum dist/MyTube-v1.8.11-Universal-production.apk > dist/MyTube-v1.8.11-Universal-production.apk.sha256
+          sha256sum dist/MyTube-v1.8.12-XYAUTO-ARM64.apk > dist/MyTube-v1.8.12-XYAUTO-ARM64.apk.sha256
+          sha256sum dist/MyTube-v1.8.12-XYAUTO-UNIVERSAL.apk > dist/MyTube-v1.8.12-XYAUTO-UNIVERSAL.apk.sha256
+          sha256sum dist/MyTube-v1.8.12-XYAUTO-Source.zip > dist/MyTube-v1.8.12-XYAUTO-Source.zip.sha256
+          if [ -s dist/MyTube-v1.8.12-ARM64-production.apk ]; then
+            sha256sum dist/MyTube-v1.8.12-ARM64-production.apk > dist/MyTube-v1.8.12-ARM64-production.apk.sha256
+            sha256sum dist/MyTube-v1.8.12-Universal-production.apk > dist/MyTube-v1.8.12-Universal-production.apk.sha256
           fi
-          test -s dist/MyTube-v1.8.11-OAuth-Registration.txt
+          test -s dist/MyTube-v1.8.12-OAuth-Registration.txt
           ls -lh dist/
           cat dist/*.sha256
 
@@ -867,7 +887,7 @@ jobs:
       # them to Actions artifact storage is redundant and can exceed the
       # repository's Actions storage quota.
 
-      - name: Publish v1.8.11 dual APK release
+      - name: Publish v1.8.12 dual APK release
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
@@ -879,11 +899,13 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.8.11-persistent-blackout"
+          TAG="v1.8.12-tv-airmouse-keyboard"
           NOTES="$(cat <<'NOTES'
-          MyTube v1.8.11 keeps the display blank across automatic next-video playback, manual video selection, player replacement, and Web/native changes. Only a deliberate double-tap on the blank screen restores the picture; single taps and long presses are consumed. Blackout is stored independently of any video ID and survives process recreation. Audio playback is retained.
+          MyTube v1.8.12 adds Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
 
-          MyTube v1.8.11 continues playing in background audio when Home is pressed during active playback. A foreground MediaSession service starts during the user-visible transition, before any slow stream resolution. Paused videos stay paused; PiP, explicit Close and replacement playback retain their existing actions. Native video resumes from the service position when MyTube is reopened.
+          MyTube v1.8.12 keeps the display blank across automatic next-video playback, manual video selection, player replacement, and Web/native changes. Only a deliberate double-tap on the blank screen restores the picture; single taps and long presses are consumed. Blackout is stored independently of any video ID and survives process recreation. Audio playback is retained.
+
+          MyTube v1.8.12 continues playing in background audio when Home is pressed during active playback. A foreground MediaSession service starts during the user-visible transition, before any slow stream resolution. Paused videos stay paused; PiP, explicit Close and replacement playback retain their existing actions. Native video resumes from the service position when MyTube is reopened.
 
           Recent searches are visible on Home and in the browser search field, persist across app restarts, and support removing individual terms or clearing the list. Search assistance combines matching history with debounced YouTube suggestions while typing, retains history when offline, and does not open the keyboard on launch.
 
@@ -895,26 +917,26 @@ jobs:
 
 
           ASSETS=(
-            dist/MyTube-v1.8.11-XYAUTO-ARM64.apk
-            dist/MyTube-v1.8.11-XYAUTO-ARM64.apk.sha256
-            dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk
-            dist/MyTube-v1.8.11-XYAUTO-UNIVERSAL.apk.sha256
-            dist/MyTube-v1.8.11-XYAUTO-Source.zip
-            dist/MyTube-v1.8.11-XYAUTO-Source.zip.sha256
-            dist/MyTube-v1.8.11-OAuth-Registration.txt
-            dist/MyTube-v1.8.11-Install-Compatibility.txt
+            dist/MyTube-v1.8.12-XYAUTO-ARM64.apk
+            dist/MyTube-v1.8.12-XYAUTO-ARM64.apk.sha256
+            dist/MyTube-v1.8.12-XYAUTO-UNIVERSAL.apk
+            dist/MyTube-v1.8.12-XYAUTO-UNIVERSAL.apk.sha256
+            dist/MyTube-v1.8.12-XYAUTO-Source.zip
+            dist/MyTube-v1.8.12-XYAUTO-Source.zip.sha256
+            dist/MyTube-v1.8.12-OAuth-Registration.txt
+            dist/MyTube-v1.8.12-Install-Compatibility.txt
             dist/Emulator-smoke-test.txt
             dist/XY-AUTO-playback-report.txt
             dist/Background-audio-search-test.txt
             dist/Blackout-transitions-test.txt
             dist/Blackout-restart-test.txt
           )
-          if [ -s dist/MyTube-v1.8.11-ARM64-production.apk ]; then
+          if [ -s dist/MyTube-v1.8.12-ARM64-production.apk ]; then
             ASSETS+=(
-              dist/MyTube-v1.8.11-ARM64-production.apk
-              dist/MyTube-v1.8.11-ARM64-production.apk.sha256
-              dist/MyTube-v1.8.11-Universal-production.apk
-              dist/MyTube-v1.8.11-Universal-production.apk.sha256
+              dist/MyTube-v1.8.12-ARM64-production.apk
+              dist/MyTube-v1.8.12-ARM64-production.apk.sha256
+              dist/MyTube-v1.8.12-Universal-production.apk
+              dist/MyTube-v1.8.12-Universal-production.apk.sha256
             )
           fi
 
@@ -923,7 +945,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.8.11 ARM64 + Universal" \
+              --title "MyTube v1.8.12 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

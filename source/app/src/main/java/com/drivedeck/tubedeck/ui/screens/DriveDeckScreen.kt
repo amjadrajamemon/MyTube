@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
@@ -31,6 +32,8 @@ import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.components.SearchAssistField
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 
@@ -71,6 +74,8 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
+    val context = LocalContext.current
+    val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
 
     Column(
         modifier = modifier
@@ -88,7 +93,8 @@ fun DriveDeckScreen(
             onOpenDownloads = onOpenDownloads,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
-            searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube"
+            searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube",
+            autoFocus = tvNavigation
         )
 
         ContentViewModeBar(
@@ -285,6 +291,7 @@ private fun PlaylistListRow(playlist: PlaylistCandidate, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(4.dp),
         verticalAlignment = Alignment.Top
@@ -323,7 +330,7 @@ private fun PlaylistTileCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(modifier = modifier.tvInputHighlight().clickable(onClick = onClick)) {
         PlaylistThumbnail(playlist, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
         Spacer(Modifier.height(7.dp))
         Text(
@@ -454,6 +461,7 @@ private fun HomeFeedColumn(
                     Column(
                         modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(9.dp))
+                            .tvInputHighlight(RoundedCornerShape(9.dp))
                             .clickable { onOpenVideo(video) }
                     ) {
                         VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
@@ -462,8 +470,8 @@ private fun HomeFeedColumn(
                             video.title,
                             color = TubeDeckTextPrimary,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = if (listView) 10.5.sp else 11.sp,
-                            lineHeight = 13.sp,
+                            fontSize = if (isTvLikeNavigationDevice(LocalContext.current)) 14.sp else if (listView) 10.5.sp else 11.sp,
+                            lineHeight = if (isTvLikeNavigationDevice(LocalContext.current)) 17.sp else 13.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -581,6 +589,7 @@ private fun VideoListRow(video: HomeVideo, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(4.dp),
         verticalAlignment = Alignment.Top
@@ -615,7 +624,7 @@ private fun VideoTileCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(modifier = modifier.tvInputHighlight().clickable(onClick = onClick)) {
         VideoThumbnail(
             video = video,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)

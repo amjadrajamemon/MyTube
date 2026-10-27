@@ -103,6 +103,7 @@ fun SettingsScreen(
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     var xyAutoCompatibilityMode by remember { mutableStateOf(currentSettings.xyAutoCompatibilityMode) }
+    var forceTvNavigation by remember { mutableStateOf(currentSettings.forceTvNavigation) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
@@ -350,6 +351,14 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "App interface") {
+                ToggleRow("Force Android TV remote / air-mouse mode", forceTvNavigation) {
+                    forceTvNavigation = it
+                }
+                Text(
+                    "Enable on generic TV boxes if MyTube does not recognize the remote, air mouse, or physical keyboard. Supports native TV search and focus navigation without changing phone/car defaults.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
                 ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
                 Text(
                     "Use YouTube's desktop Home, search and watch pages with Standard and Theater views. Downloads and MyTube settings remain accessible. YouTube may restrict Google sign-in inside WebView.",
@@ -681,6 +690,7 @@ fun SettingsScreen(
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
                             xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+                            forceTvNavigation = forceTvNavigation,
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,

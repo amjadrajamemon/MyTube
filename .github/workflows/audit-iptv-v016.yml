@@ -1,0 +1,103 @@
+name: Audit IPTV v0.1.6 alignment
+on:
+  push:
+    branches: ['feature/iptv-v016-alignment-20261028']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout verified IPTV source
+        uses: actions/checkout@v4
+        with:
+          repository: amjadrajamemon/IPTV
+          ref: 6549b9d48ce5204f5ebd81b83b83f96e1b153559
+          path: upstream-iptv
+      - name: Verify latest theme and safe-area build patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Fix interactive theme selector and Android bottom safe area' upstream-iptv/.github/workflows/build-apk.yml
+          grep -Fq 'setOnApplyWindowInsetsListener' upstream-iptv/.github/workflows/build-apk.yml
+      - name: Reconstruct latest IPTV build source including workflow-only fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-iptv
+          unzip -q NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip
+          python3 scripts/apply_vod_layout_fix.py
+          python3 scripts/apply_favorites_update.py
+          cp patches/favorites/FavoritesActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/FavoritesActivity.java
+          cp patches/favorites/FavoritesManagementTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/FavoritesManagementTest.java
+          python3 scripts/apply_multi_playlist_update.py
+          cp patches/multi-playlists/MultiPlaylistTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java
+          python3 scripts/apply_v014_release.py
+          python3 scripts/apply_v015_playback_layout.py
+          python3 scripts/apply_v016_live_and_themes.py
+          mkdir -p NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui
+          cp patches/v016/ThemeIdentityTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
+          cp patches/v016/LiveCatalogRecoveryTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java')
+          s=p.read_text()
+          old='.setMessage("16 designs in four families: Cinema, Frosted Glass, Editorial and TV Dashboard. Layout, cards, wallpaper, typography and controls all change.")'
+          assert s.count(old)==1
+          s=s.replace(old,'',1)
+          old='        root.setBackground(ThemeSurface.wallpaper(style,design));'
+          assert s.count(old)==1
+          s=s.replace(old,old+"""
+                  final int originalBottom=root.getPaddingBottom();
+                  root.setOnApplyWindowInsetsListener((view,insets)->{
+                      view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),
+                          view.getPaddingRight(),originalBottom+insets.getSystemWindowInsetBottom());
+                      return insets;
+                  });
+                  root.requestApplyInsets();""",1)
+          p.write_text(s)
+          PY
+          cp patches/v015/PlayerActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          sed -i 's/KEYCODE_HEADSETPHOOK/KEYCODE_HEADSETHOOK/g' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          mkdir -p /tmp/iptv-v016
+          cp -a NovaIPTV-Pro /tmp/iptv-v016/
+      - name: Unpack and compare v0.1.6 to integrated Nova module
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p alignment-report
+          sha256sum upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip > alignment-report/upstream-sha256.txt
+          find /tmp/iptv-v016 -type f | sort > alignment-report/upstream-inventory.txt
+          find source/novaiptv/src -type f | sort > alignment-report/integrated-inventory.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import difflib
+          root=Path('/tmp/iptv-v016')
+          upstream=list(root.rglob('app/src/main/java/com/novastream/iptv'))
+          assert len(upstream)==1, f'Expected one upstream Java source root, found {len(upstream)}'
+          old=Path('source/novaiptv/src/main/java/com/novastream/iptv')
+          assert old.is_dir()
+          a={str(p.relative_to(upstream[0])):p for p in upstream[0].rglob('*.java')}
+          b={str(p.relative_to(old)):p for p in old.rglob('*.java')}
+          lines=['# Nova IPTV v0.1.6 alignment audit', '', 'No source is overwritten by this audit.', '', '## Added upstream files']
+          lines+=['- '+p for p in sorted(a.keys()-b.keys())] or ['- None']
+          lines+=['','## Removed upstream files']
+          lines+=['- '+p for p in sorted(b.keys()-a.keys())] or ['- None']
+          lines+=['','## Modified files']
+          changed=[]
+          for name in sorted(a.keys() & b.keys()):
+              if a[name].read_bytes()!=b[name].read_bytes(): changed.append(name)
+          lines+=['- '+p for p in changed] or ['- None']
+          Path('alignment-report/diff-summary.md').write_text('\n'.join(lines)+'\n')
+          with Path('alignment-report/java-changes.patch').open('w') as f:
+              for name in changed:
+                  f.writelines(difflib.unified_diff(b[name].read_text(errors='replace').splitlines(True),a[name].read_text(errors='replace').splitlines(True),fromfile='integrated/'+name,tofile='upstream-v016/'+name))
+          PY
+          cat alignment-report/diff-summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iptv-v016-alignment-audit
+          path: alignment-report/
+          if-no-files-found: error

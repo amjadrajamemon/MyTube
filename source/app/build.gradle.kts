@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 97
-        versionName = "1.9.2"
+        versionCode = 98
+        versionName = "1.9.3"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")

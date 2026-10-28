@@ -1,0 +1,25 @@
+name: Inspect Nova IPTV vendored project
+on:
+  push:
+    branches: ['feature/iptv-nova-repository-integration-20261028']
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory source and Android dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -q iptv-vendor/NovaIPTV-Pro-v0.1.3-Source-GitHub-Build.zip -d /tmp/nova-source
+          echo '=== SOURCE TREE ==='
+          find /tmp/nova-source -type f | sort
+          echo '=== APP GRADLE ==='
+          sed -n '1,200p' /tmp/nova-source/NovaIPTV-Pro/app/build.gradle
+          echo '=== ANDROID MANIFEST ==='
+          cat /tmp/nova-source/NovaIPTV-Pro/app/src/main/AndroidManifest.xml
+          echo '=== JAVA IMPORTS AND ACTIVITY DECLARATIONS ==='
+          grep -hE '^import |class .*Activity' /tmp/nova-source/NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/{ui,core,model}/*.java | sort -u | head -200
+          echo '=== XML RESOURCES ==='
+          find /tmp/nova-source/NovaIPTV-Pro/app/src/main/res -type f -maxdepth 4 -print | sort

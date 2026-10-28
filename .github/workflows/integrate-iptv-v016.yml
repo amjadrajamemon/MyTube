@@ -1,0 +1,98 @@
+name: Integrate IPTV v0.1.6 into MyTube branch
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/iptv-v016-alignment-20261028
+      - uses: actions/checkout@v4
+        with:
+          repository: amjadrajamemon/IPTV
+          ref: 6549b9d48ce5204f5ebd81b83b83f96e1b153559
+          path: upstream-iptv
+      - name: Rebuild upstream source exactly as IPTV CI does
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-iptv
+          unzip -q NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip
+          python3 scripts/apply_vod_layout_fix.py
+          python3 scripts/apply_favorites_update.py
+          cp patches/favorites/FavoritesActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/FavoritesActivity.java
+          cp patches/favorites/FavoritesManagementTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/FavoritesManagementTest.java
+          python3 scripts/apply_multi_playlist_update.py
+          cp patches/multi-playlists/MultiPlaylistTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java
+          python3 scripts/apply_v014_release.py
+          python3 scripts/apply_v015_playback_layout.py
+          python3 scripts/apply_v016_live_and_themes.py
+          mkdir -p NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui
+          cp patches/v016/ThemeIdentityTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
+          cp patches/v016/LiveCatalogRecoveryTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java')
+          s=p.read_text()
+          old='.setMessage("16 designs in four families: Cinema, Frosted Glass, Editorial and TV Dashboard. Layout, cards, wallpaper, typography and controls all change.")'
+          assert s.count(old)==1
+          s=s.replace(old,'',1)
+          old='        root.setBackground(ThemeSurface.wallpaper(style,design));'
+          assert s.count(old)==1
+          s=s.replace(old,old+"""
+                  final int originalBottom=root.getPaddingBottom();
+                  root.setOnApplyWindowInsetsListener((view,insets)->{
+                      view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),
+                          view.getPaddingRight(),originalBottom+insets.getSystemWindowInsetBottom());
+                      return insets;
+                  });
+                  root.requestApplyInsets();""",1)
+          p.write_text(s)
+          PY
+          cp patches/v015/PlayerActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          sed -i 's/KEYCODE_HEADSETPHOOK/KEYCODE_HEADSETHOOK/g' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+      - name: Import latest Java, resources and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream=upstream-iptv/NovaIPTV-Pro/app/src
+          target=source/novaiptv/src
+          cp -a "$upstream/main/java/." "$target/main/java/"
+          cp -a "$upstream/main/res/." "$target/main/res/"
+          mkdir -p "$target/test/java"
+          cp -a "$upstream/test/java/." "$target/test/java/"
+          python3 iptv-vendor/patch-nova-playback.py
+          grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
+          sha256sum upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip > iptv-vendor/NOVA-V016-UPSTREAM-SHA256.txt
+          git add source/novaiptv/src iptv-vendor/NOVA-V016-UPSTREAM-SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(iptv): import latest Nova v0.1.6 live, themes, safe-area and TV keys'
+            git push origin HEAD:feature/iptv-v016-alignment-20261028
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Compile IPTV library and unit tests
+        working-directory: source
+        run: gradle --no-daemon --console=plain :novaiptv:testDebugUnitTest :novaiptv:assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mytube-iptv-v016-integration-diagnostics
+          path: source/novaiptv/build/reports/tests/
+          if-no-files-found: ignore

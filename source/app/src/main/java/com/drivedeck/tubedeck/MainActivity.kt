@@ -488,6 +488,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
+                    com.novastream.iptv.core.NovaPlaybackBridge.stop()
                     val playbackHost = if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
                         else PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
                     // Preserve the complete watch URL, including list=/mix context. The resolver
@@ -1049,6 +1050,19 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     },
+                                    onOpenIptv = {
+                                        // The add-on uses its own lifecycle and a single media session.
+                                        pauseBrowserMediaForSwitch()
+                                        PlaybackSessionRegistry.stopForWeb()
+                                        BackgroundAudioController.stop(applicationContext)
+                                        startActivity(Intent(this@MainActivity, com.drivedeck.tubedeck.iptv.IptvActivity::class.java))
+                                    },
+                                    onOpenNovaIptv = {
+                                        pauseBrowserMediaForSwitch()
+                                        PlaybackSessionRegistry.stopForWeb()
+                                        BackgroundAudioController.stop(applicationContext)
+                                        startActivity(Intent(this@MainActivity, com.novastream.iptv.ui.MainActivity::class.java))
+                                    },
                                     onOpenDownloads = {
                                         downloadsInitialTab = 1
                                         navigateTo(ActiveScreen.DOWNLOADS)
@@ -1437,6 +1451,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchNativePlayer(media: OfflineMedia) {
+        com.novastream.iptv.core.NovaPlaybackBridge.stop()
         if (
             PlaybackHostRouter.choose(
                 repository.settings.value.playerMode,

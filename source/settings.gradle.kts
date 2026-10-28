@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MyTube"
-include(":app")
+include(":app", ":novaiptv")

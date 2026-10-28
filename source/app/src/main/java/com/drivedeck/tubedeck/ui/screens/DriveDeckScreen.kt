@@ -43,6 +43,8 @@ fun DriveDeckScreen(
     onSearchQueryChange: (String) -> Unit,
     onExecuteSearch: (String) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenIptv: () -> Unit = {},
+    onOpenNovaIptv: () -> Unit = {},
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     recentSearches: List<String> = emptyList(),
@@ -101,6 +103,29 @@ fun DriveDeckScreen(
             searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube",
             autoFocus = tvNavigation
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = onOpenIptv,
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.LiveTv, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("IPTV Extreme")
+            }
+            Button(
+                onClick = onOpenNovaIptv,
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("IPTV Pro")
+            }
+        }
 
         ContentViewModeBar(
             listView = listView,

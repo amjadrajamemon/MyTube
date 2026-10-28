@@ -38,9 +38,10 @@ public final class Xtream {
     public List<Channel> loadAll() throws Exception {
         ArrayList<Channel> result=new ArrayList<>();
         warnings.clear();
-        collect(result,"get_live_streams","live","get_live_categories","Live TV");
+        // Load VOD and Series first to prevent them being crowded out by massive live lists.
         collect(result,"get_vod_streams","movie","get_vod_categories","Movies/VOD");
         collect(result,"get_series","series","get_series_categories","Series");
+        collect(result,"get_live_streams","live","get_live_categories","Live TV");
         boolean hasVod=false,hasSeries=false;
         for(Channel item:result){
             if("movie".equals(item.kind))hasVod=true;
@@ -54,14 +55,43 @@ public final class Xtream {
         return result;
     }
     private void collect(List<Channel> output,String action,String kind,String categoryAction,String name){
-        try{add(output,array(action),kind,categories(categoryAction));}
-        catch(Exception e){
-            String detail=e.getClass().getSimpleName();
-            if(e instanceof java.io.FileNotFoundException)detail="HTTP 404";
-            else if(e instanceof java.net.SocketTimeoutException)detail="timeout";
-            else if(e instanceof java.net.UnknownHostException)detail="provider hostname unavailable";
-            warnings.add(name+" unavailable ("+detail+"); verify provider access and playlist permissions");
+        Map<String,String> groups=categories(categoryAction);
+        try{
+            JSONArray full=array(action);
+            if(full.length()==0 && !kind.equals("live")){
+                if(!recoverByCategory(output,action,kind,groups,name))warnings.add(name+" returned zero entries");
+                return;
+            }
+            add(output,full,kind,groups);
+        }catch(Exception ex){
+            if(!kind.equals("live") && recoverByCategory(output,action,kind,groups,name))return;
+            String reason=ex instanceof java.io.FileNotFoundException?"HTTP 404":
+                ex instanceof java.net.SocketTimeoutException?"timeout":
+                ex instanceof java.net.UnknownHostException?"hostname unavailable":ex.getClass().getSimpleName();
+            warnings.add(name+" unavailable ("+reason+"); check subscription and portal access");
         }
+    }
+    private boolean recoverByCategory(List<Channel> output,String action,String kind,
+                                      Map<String,String> groups,String name){
+        if(groups.isEmpty())return false;
+        int recovered=0,attempted=0;
+        HashSet<String> known=new HashSet<>();
+        for(Channel item:output)known.add(item.url);
+        for(String categoryId:groups.keySet()){
+            if(attempted++>=120){warnings.add(name+" recovery limited to 120 groups");break;}
+            try{
+                JSONArray group=array(action+"&category_id="+enc(categoryId));
+                ArrayList<Channel> partial=new ArrayList<>();
+                add(partial,group,kind,groups);
+                for(Channel item:partial){
+                    if(output.size()>=72000)break;
+                    if(known.add(item.url)){output.add(item);recovered++;}
+                }
+            }catch(Exception ignored){ /* Try other groups without exposing credentials. */ }
+            if(output.size()>=72000)break;
+        }
+        if(recovered>0)warnings.add(name+": recovered "+recovered+" items by category");
+        return recovered>0;
     }
     private void recoverFromM3u(List<Channel> result,boolean needMovies,boolean needSeries){
         try {
@@ -94,14 +124,15 @@ public final class Xtream {
     }
     private void add(List<Channel> output, JSONArray arr, String kind,Map<String,String> categories) throws IOException {
         for(int i=0;i<arr.length();i++) {
-            if(output.size()>=75000) throw new IOException("Portal exceeded 75000 item limit");
+            if(i>=24000){warnings.add(kind+" limited to 24000 items per response");break;}
+            if(output.size()>=72000)break;
             JSONObject j=arr.optJSONObject(i); if(j==null) continue;
             String sid=j.optString(kind.equals("series")?"series_id":"stream_id");
             if(sid.isEmpty()) continue;
             String ext=j.optString("container_extension", "mp4");
             if(!ext.matches("[A-Za-z0-9]{1,6}")) ext="mp4";
             String url=kind.equals("series") ? api("get_series_info")+"&series_id="+enc(sid) :
-                server+(kind.equals("live")?"/live/":"/movie/")+pathPart(user)+"/"+pathPart(password)+"/"+enc(sid)+"."+(kind.equals("live")?"m3u8":ext);
+                server+(kind.equals("live")?"/live/":"/movie/")+pathPart(user)+"/"+pathPart(password)+"/"+enc(sid)+"."+(kind.equals("live")?"ts":ext);
             String direct=j.optString("direct_source","").trim();
             if(!kind.equals("series")&&M3uParser.validStream(direct))url=direct;
             String name=j.optString("name", "Untitled");

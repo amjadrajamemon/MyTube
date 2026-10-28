@@ -23,7 +23,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Catalog catalog; private Style style; private final LogoLoader logos=new LogoLoader();
     private LinearLayout root,header,tabs; private ListView list; private GridView grid;
-    private TextView emptyState; private boolean gridMode=false;
+    private TextView emptyState; private boolean gridMode=false; private int viewMode=-1;
     private TextView status; private EditText searchBox;
     private String tab="Live",group="",search="",selectedSource="";
     private List<Channel> shown=new ArrayList<>();
@@ -31,7 +31,7 @@ public final class MainActivity extends Activity {
     private static final int PICK_PLAYLIST=61;
     @Override public void onCreate(Bundle b){super.onCreate(b);
         tv=getPackageManager().hasSystemFeature("android.software.leanback") || getPackageManager().hasSystemFeature("android.hardware.type.television");
-        gridMode=getSharedPreferences("nova_appearance",MODE_PRIVATE).getBoolean("grid_view",false);
+        viewMode=getSharedPreferences("nova_appearance",MODE_PRIVATE).getInt("view_mode",-1);
         try{catalog=Catalog.load(this);ready();}
         catch(Exception e){new AlertDialog.Builder(this).setTitle("Encrypted library unavailable")
             .setMessage("Your saved playlist cannot be unlocked (e.g. device restore or Keystore reset). You can start a fresh local library; this does not affect your provider.")
@@ -50,10 +50,12 @@ public final class MainActivity extends Activity {
     }
     private LinearLayout horizontal(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private void extraMenu(){new AlertDialog.Builder(this).setTitle("Nova IPTV")
-        .setItems(new String[]{"★ Manage Favorites","Add / manage sources","Manage playlists","Themes","Settings","Groups","Program guide"},(d,w)->{
-            if(w==0)manageFavorites();else if(w==1)sourceChooser();else if(w==2)manageSources();else if(w==3)themes();
-            else if(w==4)settings();else if(w==5)groups();
-            else if(w==6){if(catalog.epgUrl.isEmpty())promptEpg();else refreshEpg(true);}
+        .setItems(new String[]{"★ Manage Favorites","Add / manage sources","Manage playlists",
+            "Grid / List display","Themes","Settings","Groups","Program guide"},(d,w)->{
+            if(w==0)manageFavorites();else if(w==1)sourceChooser();else if(w==2)manageSources();
+            else if(w==3)toggleGrid();else if(w==4)themes();else if(w==5)settings();
+            else if(w==6)groups();
+            else if(w==7){if(catalog.epgUrl.isEmpty())promptEpg();else refreshEpg(true);}
         }).show();}
     private void build(){
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(Style.dp(this,12),Style.dp(this,10),Style.dp(this,12),Style.dp(this,8));
@@ -62,9 +64,9 @@ public final class MainActivity extends Activity {
         header=horizontal();TextView title=style.label(this,"◈ NOVA IPTV",tv?22:18,true);
         title.setTextColor(style.accent);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(title,new LinearLayout.LayoutParams(0,Style.dp(this,50),1));
-        header.addView(button("☰ Menu",this::extraMenu),new LinearLayout.LayoutParams(-2,Style.dp(this,48)));
-        // Always visible on smaller phones where the optional quick-action row is hidden.
-        header.addView(button(gridMode?"☷ List":"▦ Grid",this::toggleGrid),new LinearLayout.LayoutParams(-2,Style.dp(this,48)));
+        header.addView(button("☰",this::extraMenu),
+            new LinearLayout.LayoutParams(Style.dp(this,56),Style.dp(this,48)));
+        // The view switch lives in the scrollable actions and menu, not the title bar.
         root.addView(header);
         if(getResources().getConfiguration().screenHeightDp>=420){
             HorizontalScrollView quick=new HorizontalScrollView(this);quick.setHorizontalScrollBarEnabled(false);
@@ -88,8 +90,9 @@ public final class MainActivity extends Activity {
         searchBox.setText(search);searchBox.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){search=s.toString();refilter();}public void afterTextChanged(Editable e){}});
         HorizontalScrollView sc=new HorizontalScrollView(this);sc.setHorizontalScrollBarEnabled(false);tabs=horizontal();
         for(String t:new String[]{"Live","Movies","Series","Favorites","Recent","All"}){
-            Button b=button(t,()->{tab=t;rebuildTabs();refilter();});
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(Style.dp(this,tv?120:94),Style.dp(this,48));p.setMargins(Style.dp(this,3),Style.dp(this,5),Style.dp(this,3),Style.dp(this,5));tabs.addView(b,p);
+            Button b=button(t,()->{tab=t;group="";rebuildTabs();refilter();});
+            b.setMinWidth(Style.dp(this,88));
+            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,Style.dp(this,Math.max(51,(int)(46*style.scale))));p.setMargins(Style.dp(this,3),Style.dp(this,5),Style.dp(this,3),Style.dp(this,5));tabs.addView(b,p);
         }sc.addView(tabs);root.addView(sc);rebuildTabs();
         list=new ListView(this);list.setDividerHeight(Style.dp(this,5));list.setDivider(null);list.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         list.setClipToPadding(false);list.setPadding(0,Style.dp(this,8),0,Style.dp(this,8));
@@ -97,7 +100,8 @@ public final class MainActivity extends Activity {
         list.setOnItemLongClickListener((a,v,pos,id)->{if(pos<shown.size())actions(shown.get(pos));return true;});
         grid=new GridView(this);
         int widthDp=getResources().getConfiguration().screenWidthDp;
-        grid.setNumColumns(tv?Math.max(3,Math.min(6,widthDp/210)):widthDp>=750?4:widthDp>=510?3:2);
+        int minimumWidth=(int)(tv?225*style.scale:155*style.scale);
+        grid.setNumColumns(Math.min(6,Math.max(1,(widthDp-24)/Math.max(135,minimumWidth))));
         grid.setHorizontalSpacing(Style.dp(this,9));grid.setVerticalSpacing(Style.dp(this,9));
         grid.setPadding(Style.dp(this,4),Style.dp(this,8),Style.dp(this,4),Style.dp(this,12));
         grid.setClipToPadding(false);grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
@@ -115,12 +119,13 @@ public final class MainActivity extends Activity {
         root.addView(library,new LinearLayout.LayoutParams(-1,0,1));
         status=style.label(this,"",11,false);status.setTextColor(style.accent);
         status.setSingleLine(true);status.setEllipsize(TextUtils.TruncateAt.END);
-        if(getResources().getConfiguration().screenHeightDp>=420)root.addView(status);
+        root.addView(status,new LinearLayout.LayoutParams(-1,Style.dp(this,30)));
         refilter();
     }
+    private boolean useGrid(){return viewMode<0?(tab.equals("Movies")||tab.equals("Series")):viewMode==1;}
     private void toggleGrid(){
-        gridMode=!gridMode;
-        getSharedPreferences("nova_appearance",MODE_PRIVATE).edit().putBoolean("grid_view",gridMode).apply();
+        viewMode=useGrid()?0:1;
+        getSharedPreferences("nova_appearance",MODE_PRIVATE).edit().putInt("view_mode",viewMode).apply();
         applyTheme();
     }
     private void rebuildTabs(){for(int i=0;i<tabs.getChildCount();i++){
@@ -128,6 +133,7 @@ public final class MainActivity extends Activity {
         b.setTextColor(selected?style.bg:style.text);b.setBackground(style.panel(selected?style.accent:style.surface,13,selected));
     }}
     private void refilter(){if(list==null||catalog==null)return;
+        gridMode=useGrid();
         shown=new ArrayList<>(catalog.filtered(tab,search,group));
         if(!selectedSource.isEmpty())shown.removeIf(c->!c.source.equals(selectedSource));
         list.setAdapter(new ChannelAdapter(shown));
@@ -193,13 +199,15 @@ public final class MainActivity extends Activity {
             String kind=StreamKind.detect(c.kind,c.group,c.url);
             ImageView art=new ImageView(MainActivity.this);
             art.setBackgroundColor(0x30151F3B);
-            art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            art.setScaleType(kind.equals("movie")||kind.equals("series")?
+                ImageView.ScaleType.CENTER_CROP:ImageView.ScaleType.FIT_CENTER);
             int imageHeight=Style.dp(MainActivity.this,kind.equals("movie")||kind.equals("series")?tv?190:168:tv?128:102);
             tile.addView(art,new LinearLayout.LayoutParams(-1,imageHeight));
             logos.load(art,c.logo);
             TextView title=style.label(MainActivity.this,(catalog.favorites.contains(c.id)?"★ ":"")+c.name,tv?16:14,true);
             title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
-            tile.addView(title,new LinearLayout.LayoutParams(-1,Style.dp(MainActivity.this,58)));
+            title.setMinHeight(Style.dp(MainActivity.this,(int)(65*style.scale)));
+            tile.addView(title,new LinearLayout.LayoutParams(-1,-2));
             TextView description=style.label(MainActivity.this,kind.toUpperCase(Locale.ROOT)+"  •  "+c.group,10,false);
             description.setTextColor(style.accent);
             description.setSingleLine(true);description.setEllipsize(TextUtils.TruncateAt.END);
@@ -208,7 +216,7 @@ public final class MainActivity extends Activity {
             tile.setOnFocusChangeListener((v,focused)->{
                 tile.setBackground(style.panel(focused?style.accent:style.surface,14,focused));
                 title.setTextColor(focused?style.bg:style.text);
-                tile.setScaleX(focused?1.025f:1f);tile.setScaleY(focused?1.025f:1f);
+                tile.setScaleX(1f);tile.setScaleY(1f);
             });
             tile.setOnClickListener(v->open(c));
             tile.setOnLongClickListener(v->{actions(c);return true;});
@@ -275,7 +283,8 @@ public final class MainActivity extends Activity {
                         catalog.replaceSource(key,mapped);
                         catalog.sourceHosts.put(key,host);
                         catalog.xtreamCredentials.put(key,u+"\n"+p);
-                        if(catalog.epgUrl.isEmpty())catalog.epgUrl=x.epg();save();refilter();toast("Loaded "+items.size()+" portal items");
+                        if(catalog.epgUrl.isEmpty())catalog.epgUrl=x.epg();selectedSource="";group="";save();refilter();
+                        toast("Loaded "+items.size()+" portal items");
                         if(!warnings.isEmpty())new AlertDialog.Builder(this).setTitle("Portal categories unavailable")
                             .setMessage(warnings+". Recheck your subscription, portal URL or provider.")
                             .setPositiveButton("OK",null).show();

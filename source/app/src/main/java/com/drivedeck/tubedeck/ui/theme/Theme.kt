@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
@@ -22,7 +24,10 @@ fun TubeDeckTheme(
     textArgb: Long = 0xFFFFFFFFL,
     content: @Composable () -> Unit
 ) {
-    val boundedFontScale = fontScale.coerceIn(0.80f, 1.35f)
+    // Living-room displays need readable text at a distance; leave phones/cars alone.
+    val tvInputMode = isTvLikeNavigationDevice(LocalContext.current)
+    val boundedFontScale = (fontScale.coerceIn(0.80f, 1.35f) * if (tvInputMode) 1.18f else 1f)
+        .coerceAtMost(1.60f)
     TubeDeckRuntimeStyle.apply(
         backgroundArgb = backgroundArgb,
         accentArgb = accentArgb,

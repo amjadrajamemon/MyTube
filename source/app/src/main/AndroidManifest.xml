@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Optional TV/remote support; keep regular phone/car installations available. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -15,11 +19,16 @@
         android:fullBackupContent="@xml/backup_rules"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/mytube_tv_banner"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
+
+        <!-- Native pointer/air-mouse interaction on capable Android TV devices. -->
+        <meta-data android:name="android.software.leanback.supports_touch" android:value="true" />
+        <property android:name="android.software.leanback.supports_touch" android:value="true" />
 
         <activity
             android:name=".MainActivity"
@@ -31,6 +40,10 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />

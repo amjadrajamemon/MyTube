@@ -13,6 +13,8 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import kotlinx.coroutines.withTimeout
 import android.content.Context
 import android.content.Intent
+import android.view.KeyEvent
+import kotlinx.coroutines.withTimeoutOrNull
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -97,6 +99,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var recovering = false
     private var recoveryAttempts = 0
     private var resolveJob: kotlinx.coroutines.Job? = null
+    private var nextAudioLookupInProgress = false
 
     override fun onCreate() {
         super.onCreate()
@@ -169,6 +172,27 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         }
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(returnToVideoPendingIntent())
+            .setCallback(object : MediaSession.Callback {
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    intent: Intent
+                ): Boolean {
+                    @Suppress("DEPRECATION")
+                    val event: KeyEvent? = if (Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    } else intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    if (event?.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
+                    return when (event.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_NEXT -> skipBackgroundAudioNext()
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            player.seekTo(0L)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            })
             .build()
         serviceScope.launch {
             while (isActive) {
@@ -176,6 +200,78 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 delay(500L)
             }
         }
+    }
+
+    /**
+     * Unlike an ExoPlayer playlist, background audio uses a single short-lived
+     * signed CDN URL. Media3's default seekToNext() is therefore a no-op.
+     * Resolve the next YouTube suggestion before touching the current stream.
+     */
+    private fun skipBackgroundAudioNext(): Boolean {
+        val original = sourceUrl
+        if (YoutubeUrls.videoId(original) == null) return false
+        if (nextAudioLookupInProgress) return true
+        nextAudioLookupInProgress = true
+        val searchHint = currentTitle
+        serviceScope.launch {
+            try {
+                val cached = YoutubeStreamResolver.peekForHandoff(original)
+                val suggested = cached?.relatedVideos?.firstOrNull {
+                    it.videoId.isNotBlank() && it.videoId != YoutubeUrls.videoId(original)
+                }
+                val currentVideoId = YoutubeUrls.videoId(original).orEmpty()
+                val watchNext = if (suggested == null) {
+                    runCatching {
+                        withTimeoutOrNull(8_000L) {
+                            YoutubeWatchNextClient.resolve(original, currentVideoId)
+                                .relatedVideos.firstOrNull {
+                                    it.videoId.isNotBlank() && it.videoId != currentVideoId
+                                }
+                        }
+                    }.getOrNull()
+                } else null
+                val searchNext = if (suggested == null && watchNext == null &&
+                    searchHint.isNotBlank() && searchHint != "Now Playing"
+                ) {
+                    withTimeoutOrNull(8_000L) {
+                        YoutubeStreamResolver.searchVideos(searchHint, 12).firstOrNull {
+                            it.videoId.isNotBlank() && it.videoId != currentVideoId
+                        }
+                    }
+                } else null
+                val nextUrl = suggested?.url
+                    ?: watchNext?.videoId?.let { "https://www.youtube.com/watch?v=$it" }
+                    ?: searchNext?.url
+                val nextTitle = suggested?.title ?: watchNext?.title ?: searchNext?.title
+                val nextArtwork = suggested?.thumbnailUrl ?: watchNext?.thumbnailUrl ?: searchNext?.thumbnailUrl
+                if (nextUrl.isNullOrBlank() || sourceUrl != original) return@launch
+
+                val nextPlayable = withContext(Dispatchers.IO) {
+                    val resolved = YoutubeStreamResolver.resolve(applicationContext, nextUrl)
+                    YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
+                }
+                if (nextPlayable.isNullOrBlank() || sourceUrl != original) return@launch
+
+                player.pause()
+                BackgroundAudioController.markStopped(original)
+                sourceUrl = nextUrl
+                currentTitle = nextTitle.orEmpty().ifBlank { "YouTube audio" }
+                currentArtwork = nextArtwork
+                // The existing foreground session and audio focus remain active.
+                // onIsPlayingChanged updates the controller snapshot for Return to Video.
+                startupPending = true
+                loadPlayableUrl(nextPlayable, 0L)
+                promoteToForeground()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                PlaybackDiagnostics.record(this@BackgroundAudioPlaybackService,
+                    "background_audio_next_error", error.javaClass.simpleName)
+            } finally {
+                nextAudioLookupInProgress = false
+            }
+        }
+        return true
     }
 
     override fun onGetSession(

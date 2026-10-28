@@ -39,6 +39,7 @@ import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
@@ -102,6 +103,7 @@ fun SettingsScreen(
     var autoRotatePlayback by remember { mutableStateOf(currentSettings.autoRotatePlayback) }
     var playerMode by remember { mutableStateOf(currentSettings.playerMode) }
     var xyAutoCompatibilityMode by remember { mutableStateOf(currentSettings.xyAutoCompatibilityMode) }
+    var forceTvNavigation by remember { mutableStateOf(currentSettings.forceTvNavigation) }
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
@@ -238,6 +240,7 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .height(54.dp)
                                     .clip(RoundedCornerShape(10.dp))
+                                    .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
                                         appearancePreset = preset.name
                                         fontScale = preset.fontScale
@@ -348,6 +351,14 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "App interface") {
+                ToggleRow("Force Android TV remote / air-mouse mode", forceTvNavigation) {
+                    forceTvNavigation = it
+                }
+                Text(
+                    "Enable on generic TV boxes if MyTube does not recognize the remote, air mouse, or physical keyboard. Supports native TV search and focus navigation without changing phone/car defaults.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
                 ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
                 Text(
                     "Use YouTube's desktop Home, search and watch pages with Standard and Theater views. Downloads and MyTube settings remain accessible. YouTube may restrict Google sign-in inside WebView.",
@@ -363,6 +374,7 @@ fun SettingsScreen(
                         val isSelected = playerMode == mode
                         Surface(
                             modifier = Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp))
+                                .tvInputHighlight(RoundedCornerShape(10.dp))
                                 .clickable { playerMode = mode }
                                 .border(1.2.dp, if (isSelected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(10.dp)),
                             color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.15f) else Color.Transparent
@@ -678,6 +690,7 @@ fun SettingsScreen(
                             playlistQuality = playlistQuality,
                             playerMode = playerMode,
                             xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+                            forceTvNavigation = forceTvNavigation,
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,
@@ -750,6 +763,7 @@ private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) ->
             val isSelected = selectedMode == mode
             Surface(
                 modifier = Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(8.dp))
+                    .tvInputHighlight(RoundedCornerShape(8.dp))
                     .clickable { onSelect(mode) }
                     .border(1.dp, if (isSelected) TubeDeckAccentCyan else TubeDeckBorder, RoundedCornerShape(8.dp)),
                 color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.1f) else Color.Transparent
@@ -774,6 +788,7 @@ private fun QualityGrid(selectedQuality: String, onSelect: (String) -> Unit, qua
                             .weight(1f)
                             .height(36.dp)
                             .clip(RoundedCornerShape(8.dp))
+                            .tvInputHighlight(RoundedCornerShape(8.dp))
                             .clickable { onSelect(q) }
                             .border(1.dp, if (isSelected) TubeDeckAccentCyan else Color.DarkGray, RoundedCornerShape(8.dp)),
                         color = if (isSelected) TubeDeckAccentCyan.copy(alpha = 0.15f) else Color.Transparent

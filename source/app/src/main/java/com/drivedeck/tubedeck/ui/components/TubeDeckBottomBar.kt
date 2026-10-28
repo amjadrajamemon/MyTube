@@ -109,6 +109,7 @@ private fun CenterDownloadsButton(
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
+            .tvInputHighlight(RoundedCornerShape(16.dp))
             .clickable { onClick() }
             .padding(horizontal = 4.dp, vertical = 2.dp)
             .testTag("nav_downloads_center_btn")
@@ -182,6 +183,7 @@ private fun DeckNavItem(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(vertical = 4.dp)
             .testTag(testTag),

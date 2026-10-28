@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
@@ -31,6 +32,8 @@ import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.components.SearchAssistField
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 
@@ -53,6 +56,9 @@ fun DriveDeckScreen(
     liveSearchResults: List<HomeVideo> = emptyList(),
     liveSearchQuery: String = "",
     liveSearchStatus: String = "",
+    videoSearchResults: List<HomeVideo> = emptyList(),
+    videoSearchQuery: String = "",
+    videoSearchStatus: String = "",
     playlistMode: Boolean = false,
     playlistResults: List<PlaylistCandidate> = emptyList(),
     playlistSearchQuery: String = "",
@@ -66,11 +72,15 @@ fun DriveDeckScreen(
     viewStateKey: String = "home",
     onRefreshFeed: () -> Unit = {},
     onClearLiveSearch: () -> Unit = {},
+    onClearVideoSearch: () -> Unit = {},
+    onOpenWebSearch: (String) -> Unit = {},
     onOpenVideo: (HomeVideo) -> Unit = {},
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
+    val context = LocalContext.current
+    val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
 
     Column(
         modifier = modifier
@@ -88,7 +98,8 @@ fun DriveDeckScreen(
             onOpenDownloads = onOpenDownloads,
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
-            searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube"
+            searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube",
+            autoFocus = tvNavigation
         )
 
         ContentViewModeBar(
@@ -125,6 +136,26 @@ fun DriveDeckScreen(
                         action = "Clear",
                         onAction = onClearLiveSearch
                     )
+                }
+            } else if (tvNavigation && videoSearchQuery.isNotBlank()) {
+                item(key = "tv-native-search-results") {
+                    HomeShelf(
+                        "TV results · $videoSearchQuery",
+                        videoSearchResults,
+                        onOpenVideo,
+                        listView = listView,
+                        loading = videoSearchStatus == "Loading",
+                        emptyLabel = videoSearchStatus.takeIf { it.isNotBlank() && it != "Loading" },
+                        action = "Clear",
+                        onAction = onClearVideoSearch
+                    )
+                }
+                item(key = "tv-web-search-fallback") {
+                    TextButton(
+                        onClick = { onOpenWebSearch(videoSearchQuery) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+                            .tvInputHighlight(RoundedCornerShape(10.dp))
+                    ) { Text("Open web search instead") }
                 }
             }
             if (!playlistMode) {
@@ -285,6 +316,7 @@ private fun PlaylistListRow(playlist: PlaylistCandidate, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(4.dp),
         verticalAlignment = Alignment.Top
@@ -323,7 +355,7 @@ private fun PlaylistTileCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(modifier = modifier.tvInputHighlight().clickable(onClick = onClick)) {
         PlaylistThumbnail(playlist, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
         Spacer(Modifier.height(7.dp))
         Text(
@@ -454,6 +486,7 @@ private fun HomeFeedColumn(
                     Column(
                         modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(9.dp))
+                            .tvInputHighlight(RoundedCornerShape(9.dp))
                             .clickable { onOpenVideo(video) }
                     ) {
                         VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
@@ -462,8 +495,8 @@ private fun HomeFeedColumn(
                             video.title,
                             color = TubeDeckTextPrimary,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = if (listView) 10.5.sp else 11.sp,
-                            lineHeight = 13.sp,
+                            fontSize = if (isTvLikeNavigationDevice(LocalContext.current)) 14.sp else if (listView) 10.5.sp else 11.sp,
+                            lineHeight = if (isTvLikeNavigationDevice(LocalContext.current)) 17.sp else 13.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -581,6 +614,7 @@ private fun VideoListRow(video: HomeVideo, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .tvInputHighlight(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(4.dp),
         verticalAlignment = Alignment.Top
@@ -615,7 +649,7 @@ private fun VideoTileCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(modifier = modifier.tvInputHighlight().clickable(onClick = onClick)) {
         VideoThumbnail(
             video = video,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
@@ -689,14 +723,17 @@ fun DriveDeckTopHeader(
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     searchPlaceholder: String = "Search YouTube",
+    autoFocus: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     // First composition should focus the Home feed rather than opening the IME.
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
-        focusManager.clearFocus(force = true)
-        keyboardController?.hide()
+        if (!autoFocus) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
     }
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -729,6 +766,7 @@ fun DriveDeckTopHeader(
                 onClearRecentSearches = onClearRecentSearches,
                 placeholder = searchPlaceholder,
                 showRecentChips = true,
+                autoFocus = autoFocus,
                 modifier = Modifier.fillMaxWidth()
             )
         }

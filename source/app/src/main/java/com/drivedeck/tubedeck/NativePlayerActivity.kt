@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -121,6 +122,16 @@ class NativePlayerActivity : ComponentActivity() {
         )
     )
     private val playbackBackCoordinator = PlaybackBackCoordinator()
+
+    // ComponentActivity implements the public Android key dispatch hook through
+    // androidx.core. OEM head units sometimes send media keys only to this hook.
+    @android.annotation.SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (playerActive && !closingPlayer &&
+            com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
+        ) return true
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -702,10 +713,26 @@ class NativePlayerActivity : ComponentActivity() {
                 automaticAudioHandoff = false
                 explicitAudioHandoff = false
                 val audio = BackgroundAudioController.takeSnapshotAndStop(applicationContext)
-                if (audio != null && (audio.sourceUrl == currentMedia.mediaUri ||
-                    YoutubeUrls.videoId(audio.sourceUrl)?.let {
-                        it == YoutubeUrls.videoId(currentMedia.mediaUri)
-                    } == true)) {
+                if (audio != null) {
+                    val sameVideo = audio.sourceUrl == currentMedia.mediaUri ||
+                        YoutubeUrls.videoId(audio.sourceUrl)?.let {
+                            it == YoutubeUrls.videoId(currentMedia.mediaUri)
+                        } == true
+                    if (!sameVideo && audio.sourceUrl.isNotBlank()) {
+                        // Background hardware Next can change the audio source while this
+                        // native Activity is suspended. Restore the *new* video, not the
+                        // original one held in the old Activity's saved state.
+                        replaceMedia(
+                            OfflineMedia(
+                                id = UUID.randomUUID().toString(),
+                                title = audio.title,
+                                videoId = YoutubeUrls.videoId(audio.sourceUrl).orEmpty(),
+                                thumbnailUrl = audio.artworkUrl,
+                                mediaUri = audio.sourceUrl
+                            ),
+                            recordWatch = true
+                        )
+                    }
                     initialPlaybackPositionMs = audio.positionMs.coerceAtLeast(0L)
                     currentPlaybackPositionMs = initialPlaybackPositionMs
                 }

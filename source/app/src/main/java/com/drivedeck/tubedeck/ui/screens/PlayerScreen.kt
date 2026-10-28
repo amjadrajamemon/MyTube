@@ -42,6 +42,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.content.Intent
+import android.os.SystemClock
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -75,6 +78,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -92,6 +102,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import com.drivedeck.tubedeck.R
+import com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
 import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
@@ -134,9 +145,12 @@ import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
 import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
+import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -567,6 +581,12 @@ fun NativeExoPlayer(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(1L) }
     var controlsVisible by remember { mutableStateOf(true) }
+    val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
+    val tvSurfaceFocus = remember { FocusRequester() }
+    val tvPlayPauseFocus = remember { FocusRequester() }
+    var tvSurfaceFocused by remember { mutableStateOf(false) }
+    var tvControlsFocused by remember { mutableStateOf(false) }
+    var tvPendingControlFocus by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -747,8 +767,170 @@ fun NativeExoPlayer(
         }
     }
 
+    // The source player contains only one resolved CDN stream, not a Media3 playlist.
+    // Consequently Media3's default seekToNext() silently does nothing for remote
+    // Next/Previous buttons. Send both remote and pointer actions through one queue
+    // selection path rather than seeking within that single source.
+    val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val episodeList = continuationEpisodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
+    val episodeIndex = episodeList.indexOfFirst { it.videoId == sourceVideoId }
+    val nextEpisode = if (episodeIndex in 0 until episodeList.lastIndex) {
+        episodeList[episodeIndex + 1]
+    } else null
+    val relatedNext = resolved?.relatedVideos?.firstOrNull {
+        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+    }
+    var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
+    val sharedNextAction: (() -> Unit)? = when {
+        onNextItem != null -> onNextItem
+        playbackContinuationMode == PlaybackContinuationMode.EPISODES &&
+            nextEpisode != null && onPlayRelated != null -> {
+            {
+                onPlayRelated(
+                    OfflineMedia(
+                        id = "episode-next-${nextEpisode.videoId}-${System.nanoTime()}",
+                        title = nextEpisode.title,
+                        videoId = nextEpisode.videoId,
+                        thumbnailUrl = nextEpisode.thumbnailUrl,
+                        mediaUri = "https://www.youtube.com/watch?v=${nextEpisode.videoId}"
+                    )
+                )
+            }
+        }
+        relatedNext != null && onPlayRelated != null -> {
+            {
+                onPlayRelated(
+                    OfflineMedia(
+                        id = "remote-next-${relatedNext.videoId}-${System.nanoTime()}",
+                        title = relatedNext.title,
+                        videoId = relatedNext.videoId,
+                        thumbnailUrl = relatedNext.thumbnailUrl,
+                        mediaUri = relatedNext.url
+                    )
+                )
+            }
+        }
+        // A single direct ExoPlayer item has no media-session next entry. The
+        // native resolver may also finish after the Next button is pressed.
+        // Provide a bounded on-demand fallback instead of a disabled button.
+        onPlayRelated != null && sourceVideoId.isNotBlank() -> {
+            {
+                if (!nextLookupInProgress) {
+                    val title = resolved?.title?.takeIf { it.isNotBlank() && it != "Now Playing" }
+                        ?: media.title.takeIf { it.isNotBlank() && it != "Now Playing" }
+                    if (title == null) {
+                        Toast.makeText(context, "Next video is still loading", Toast.LENGTH_SHORT).show()
+                    } else {
+                        nextLookupInProgress = true
+                        playbackScope.launch {
+                            try {
+                                // First use the current video's actual Watch-Next
+                                // recommendations. Only fall back to title search when the
+                                // watch endpoint returns nothing or is unavailable.
+                                val directNext = runCatching {
+                                    withTimeoutOrNull(8_000L) {
+                                        YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId)
+                                            .relatedVideos.firstOrNull {
+                                                it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                            }
+                                    }
+                                }.getOrNull()
+                                val nextMedia = if (directNext != null) {
+                                    OfflineMedia(
+                                        id = "watch-next-${directNext.videoId}-${System.nanoTime()}",
+                                        title = directNext.title,
+                                        videoId = directNext.videoId,
+                                        thumbnailUrl = directNext.thumbnailUrl,
+                                        mediaUri = "https://www.youtube.com/watch?v=${directNext.videoId}"
+                                    )
+                                } else {
+                                    val candidates = withTimeoutOrNull(8_000L) {
+                                        YoutubeStreamResolver.searchVideos(title, 16)
+                                    }.orEmpty()
+                                    candidates.firstOrNull {
+                                        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                    }?.let { next ->
+                                        OfflineMedia(
+                                            id = "search-next-${next.videoId}-${System.nanoTime()}",
+                                            title = next.title,
+                                            videoId = next.videoId,
+                                            thumbnailUrl = next.thumbnailUrl,
+                                            mediaUri = next.url
+                                        )
+                                    }
+                                }
+                                if (nextMedia == null) {
+                                    Toast.makeText(context, "No next video available", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onPlayRelated(nextMedia)
+                                }
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Unable to find next video", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                nextLookupInProgress = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else -> null
+    }
+    val currentNextAction by rememberUpdatedState(sharedNextAction)
+    val currentPreviousAction by rememberUpdatedState(onPreviousItem)
+    var lastNextKeyTime by remember(media.id) { mutableLongStateOf(0L) }
+    var lastPreviousKeyTime by remember(media.id) { mutableLongStateOf(0L) }
+
+    fun dispatchNextKey(): Boolean {
+        val action = currentNextAction ?: return false
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNextKeyTime >= 350L) {
+            lastNextKeyTime = now
+            action()
+        }
+        return true
+    }
+
+    fun dispatchPreviousKey(): Boolean {
+        val action = currentPreviousAction ?: return false
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPreviousKeyTime >= 450L) {
+            lastPreviousKeyTime = now
+            action()
+        }
+        return true
+    }
+
+    val currentDispatchNext by rememberUpdatedState(::dispatchNextKey)
+    val currentDispatchPrevious by rememberUpdatedState(::dispatchPreviousKey)
     val mediaSession = remember(exoPlayer) {
-        MediaSession.Builder(context, exoPlayer).setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}").build()
+        MediaSession.Builder(context, exoPlayer)
+            .setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}")
+            .setCallback(object : MediaSession.Callback {
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    intent: Intent
+                ): Boolean {
+                    @Suppress("DEPRECATION")
+                    val event: AndroidKeyEvent? = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, AndroidKeyEvent::class.java)
+                    } else {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (event?.action != AndroidKeyEvent.ACTION_DOWN || event.repeatCount != 0) {
+                        return false
+                    }
+                    return when (event.keyCode) {
+                        AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> currentDispatchNext()
+                        AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> currentDispatchPrevious()
+                        else -> false // Media3 retains play/pause, headset and seek handling.
+                    }
+                }
+            })
+            .build()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
@@ -1182,8 +1364,10 @@ fun NativeExoPlayer(
         PlaybackDiagnostics.record(context, "player_created", "compat=$carHeadUnit")
         exoPlayer.addAnalyticsListener(analytics)
         exoPlayer.addListener(listener)
+        PlaybackHardwareButtonBridge.register(exoPlayer, { currentDispatchNext() }, { currentDispatchPrevious() })
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
+            PlaybackHardwareButtonBridge.unregister(exoPlayer)
             exoPlayer.removeListener(listener)
             exoPlayer.removeAnalyticsListener(analytics)
             equalizerController.release()
@@ -1483,10 +1667,11 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(controlsVisible, autoHideControls) {
-        if (controlsVisible && autoHideControls) {
+    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused) {
+        // Do not hide TV controls while a remote or keyboard has focus inside them.
+        if (controlsVisible && autoHideControls && !tvControlsFocused) {
             delay(4200)
-            controlsVisible = false
+            if (!tvControlsFocused) controlsVisible = false
         }
     }
 
@@ -1529,7 +1714,81 @@ fun NativeExoPlayer(
         activity?.let { setFullscreen(it, isFullscreen) }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    LaunchedEffect(media.id, tvNavigation) {
+        if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
+    }
+
+    LaunchedEffect(controlsVisible, tvPendingControlFocus) {
+        // The overlay can be absent after auto-hide. Wait until Compose has mounted
+        // the control before invoking FocusRequester, avoiding TV-only crashes.
+        if (controlsVisible && tvPendingControlFocus) {
+            tvPlayPauseFocus.requestFocus()
+            tvPendingControlFocus = false
+        }
+    }
+
+    val tvRemoteKeys = if (tvNavigation) Modifier
+        .focusRequester(tvSurfaceFocus)
+        .onFocusChanged { tvSurfaceFocused = it.isFocused }
+        .onPreviewKeyEvent { key ->
+            if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
+                false
+            } else {
+                when (key.nativeKeyEvent.keyCode) {
+                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> dispatchNextKey()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> dispatchPreviousKey()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        controlsVisible = true
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { exoPlayer.play(); controlsVisible = true; true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
+                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> { exoPlayer.pause(); controlsVisible = true; true }
+                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
+                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD) 1 else -1
+                        exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
+                            .coerceIn(0L, duration.coerceAtLeast(0L)))
+                        controlsVisible = true
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                    AndroidKeyEvent.KEYCODE_ENTER,
+                    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
+                    AndroidKeyEvent.KEYCODE_BUTTON_A,
+                    AndroidKeyEvent.KEYCODE_SPACE -> {
+                        if (!tvSurfaceFocused) false else {
+                            controlsVisible = true
+                            tvPendingControlFocus = true
+                            true
+                        }
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT,
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (!tvSurfaceFocused) false else {
+                            val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+                            exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
+                                .coerceIn(0L, duration.coerceAtLeast(0L)))
+                            controlsVisible = true
+                            true
+                        }
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN,
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                        if (!tvSurfaceFocused) false else {
+                            controlsVisible = true
+                            tvPendingControlFocus = true
+                            true
+                        }
+                    }
+                    else -> false
+                }
+            }
+        }
+        .focusable() else Modifier
+
+    Column(modifier = modifier.fillMaxSize().background(Color.Black).then(tvRemoteKeys)) {
         Box(
             modifier = if (compactPortrait) {
                 Modifier.fillMaxWidth().aspectRatio(16f / 13f).background(Color.Black)
@@ -1898,6 +2157,7 @@ fun NativeExoPlayer(
             FadeVisibility(visible = controlsVisible && !inPictureInPicture) {
                 Box(
                     Modifier.fillMaxSize()
+                        .onFocusChanged { tvControlsFocused = it.hasFocus }
                         .background(Color.Black.copy(alpha = .35f))
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
@@ -1967,7 +2227,7 @@ fun NativeExoPlayer(
                             IconButton(
                                 onClick = { onPreviousItem?.invoke() },
                                 enabled = onPreviousItem != null,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipPrevious,
@@ -1981,7 +2241,7 @@ fun NativeExoPlayer(
                                 onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                                 shape = CircleShape,
                                 color = TubeDeckAccentCyan,
-                                modifier = Modifier.size(centerControlDiameter)
+                                modifier = Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter).tvInputHighlight(CircleShape)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -1993,26 +2253,11 @@ fun NativeExoPlayer(
                                 }
                             }
 
-                            val nextEnabled = onNextItem != null || (suggestedNext != null && onPlayRelated != null)
+                            val nextEnabled = sharedNextAction != null
                             IconButton(
-                                onClick = {
-                                    when {
-                                        onNextItem != null -> onNextItem.invoke()
-                                        suggestedNext != null && onPlayRelated != null -> {
-                                            onPlayRelated.invoke(
-                                                OfflineMedia(
-                                                    id = "next-${suggestedNext.videoId}-${System.nanoTime()}",
-                                                    title = suggestedNext.title,
-                                                    videoId = suggestedNext.videoId,
-                                                    thumbnailUrl = suggestedNext.thumbnailUrl,
-                                                    mediaUri = suggestedNext.url
-                                                )
-                                            )
-                                        }
-                                    }
-                                },
+                                onClick = { sharedNextAction?.invoke() },
                                 enabled = nextEnabled,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipNext,
@@ -4172,6 +4417,7 @@ private fun EpisodeVideoCard(
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -4240,6 +4486,7 @@ private fun RelatedVideoCard(
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

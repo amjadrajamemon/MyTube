@@ -59,6 +59,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var homeTrendingJob: Job? = null
     private var homeLiveJob: Job? = null
     private var liveSearchJob: Job? = null
+    private var videoSearchJob: Job? = null
     private var playlistSearchJob: Job? = null
     private val playlistCache = LinkedHashMap<String, Pair<Long, List<PlaylistItem>>>(8, 0.75f, true)
     @Volatile private var schedulingSuspendedBySystem = false
@@ -87,6 +88,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val homeLive: StateFlow<List<HomeVideo>> = _homeLive.asStateFlow()
     private val _homeLiveStatus = MutableStateFlow("")
     val homeLiveStatus: StateFlow<String> = _homeLiveStatus.asStateFlow()
+    private val _videoSearchResults = MutableStateFlow<List<HomeVideo>>(emptyList())
+    val videoSearchResults: StateFlow<List<HomeVideo>> = _videoSearchResults.asStateFlow()
+    private val _videoSearchQuery = MutableStateFlow("")
+    val videoSearchQuery: StateFlow<String> = _videoSearchQuery.asStateFlow()
+    private val _videoSearchStatus = MutableStateFlow("")
+    val videoSearchStatus: StateFlow<String> = _videoSearchStatus.asStateFlow()
+
     private val _liveSearchResults = MutableStateFlow<List<HomeVideo>>(emptyList())
     val liveSearchResults: StateFlow<List<HomeVideo>> = _liveSearchResults.asStateFlow()
     private val _liveSearchQuery = MutableStateFlow("")
@@ -129,6 +137,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("playlistMode", next.playlistMode.name); putString("playlistQuality", next.playlistQuality)
             putString("playerMode", next.playerMode.name)
             putBoolean("xyAutoCompatibilityMode", next.xyAutoCompatibilityMode)
+            putBoolean("forceTvNavigation", next.forceTvNavigation)
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
@@ -183,6 +192,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         playlistQuality = prefs.getString("playlistQuality", "Best") ?: "Best",
         playerMode = enumValue(prefs.getString("playerMode", null), PlayerMode.NATIVE),
         xyAutoCompatibilityMode = prefs.getBoolean("xyAutoCompatibilityMode", com.drivedeck.tubedeck.player.CarHeadUnitPolicy.isCarHeadUnit(context)),
+        forceTvNavigation = prefs.getBoolean("forceTvNavigation", false),
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
         preferredPlaybackSpeed = loadPreferredPlaybackSpeed(),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
@@ -306,6 +316,55 @@ class TubeDeckRepository private constructor(private val context: Context) {
             YoutubeStreamResolver.searchLiveVideos(context, "$countryName live", limit)
         }
         return items.map { relatedToHome(it, live = true) }
+    }
+
+    /**
+     * TV search stays native rather than injecting remote key events into a
+     * constantly changing YouTube WebView. The user can still open web results
+     * explicitly if the extractor becomes unavailable.
+     */
+    fun searchVideos(query: String) {
+        val clean = query.trim().replace(Regex("\\s+"), " ").take(120)
+        if (clean.isBlank()) return
+        videoSearchJob?.cancel()
+        _videoSearchQuery.value = clean
+        _videoSearchResults.value = emptyList()
+        _videoSearchStatus.value = "Loading"
+        videoSearchJob = scope.launch {
+            try {
+                val items = YoutubeStreamResolver.searchVideos(clean, 30)
+                    .map { found ->
+                        HomeVideo(
+                            videoId = found.videoId,
+                            title = found.title,
+                            url = found.url,
+                            thumbnailUrl = found.thumbnailUrl,
+                            channelTitle = found.channelTitle,
+                            viewCount = found.viewCount,
+                            durationText = if (found.durationSeconds > 0L) {
+                                val mins = found.durationSeconds / 60
+                                val secs = found.durationSeconds % 60
+                                "%d:%02d".format(mins, secs)
+                            } else ""
+                        )
+                    }
+                ensureActive()
+                _videoSearchResults.value = items
+                _videoSearchStatus.value =
+                    if (items.isEmpty()) "No native results · try web search" else ""
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _videoSearchStatus.value = "Native search unavailable · try web search"
+            }
+        }
+    }
+
+    fun clearVideoSearch() {
+        videoSearchJob?.cancel()
+        _videoSearchResults.value = emptyList()
+        _videoSearchQuery.value = ""
+        _videoSearchStatus.value = ""
     }
 
     fun searchLive(query: String, accessToken: String? = null) {

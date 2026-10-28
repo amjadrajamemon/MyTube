@@ -25,6 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.data.model.PlayerMode
+import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.theme.*
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import java.io.ByteArrayInputStream
@@ -208,6 +209,10 @@ fun BrowserScreen(
     val persistentWebView = remember(rendererGeneration, desktopSiteEnabled) {
         val generationAtCreation = rendererGeneration
         WebView(context).apply {
+            // Physical remotes must be able to focus and scroll the embedded browser,
+            // while mouse clicks continue to target DOM links normally.
+            isFocusable = true
+            isFocusableInTouchMode = true
             setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) nativeNavigation.onUserGesture()
                 false
@@ -443,6 +448,10 @@ fun BrowserScreen(
                 onCanGoForwardChanged(false)
             }
         }
+    }
+
+    LaunchedEffect(isActive, persistentWebView) {
+        if (isActive && isTvLikeNavigationDevice(context)) persistentWebView.requestFocus()
     }
 
     LaunchedEffect(navigationGeneration, persistentWebView) {

@@ -1,0 +1,2 @@
+Nova IPTV Pro v0.1.4 original source at amjadrajamemon/IPTV, vendored as an internal library module. Source ZIP SHA-256:
+474aa9a64761a9c95ca13eef8e88e04286f3102a84cf86e6746c4b36a03b6163  iptv-vendor/NovaIPTV-Pro-v0.1.4-Source-GitHub-Build.zip

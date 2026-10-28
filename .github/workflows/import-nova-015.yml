@@ -1,0 +1,66 @@
+name: Import Nova IPTV v0.1.5 to MyTube
+on:
+  push:
+    branches: ['feature/iptv-nova-015-integration-20261028']
+    paths:
+      - 'iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip'
+      - '.github/workflows/import-nova-015.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and validate verified v0.1.5 source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nova-import
+          unzip -q iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip -d /tmp/nova-import
+          src=/tmp/nova-import/NovaIPTV-Pro
+          grep -q "versionName '0.1.5'" "$src/app/build.gradle"
+          test -s "$src/app/src/main/java/com/novastream/iptv/core/Xtream.java"
+          grep -q 'recoverFromM3u' "$src/app/src/main/java/com/novastream/iptv/core/Xtream.java"
+          grep -q 'GridView grid' "$src/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
+          grep -q 'setMimeType' "$src/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          test -s "$src/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          test -s "$src/LICENSE"
+          echo 'Source content and VOD/grid/player invariants passed'
+      - name: Install Nova v0.1.5 Java sources, tests and resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          from=/tmp/nova-import/NovaIPTV-Pro
+          to=source/novaiptv/src
+          cp -a "$from/app/src/main/java/." "$to/main/java/"
+          cp -a "$from/app/src/test/java/." "$to/test/java/"
+          cp "$from/app/src/main/res/drawable/ic_nova.xml" "$to/main/res/drawable/"
+          cp "$from/app/src/main/res/mipmap-nodpi/tv_banner.png" "$to/main/res/mipmap-nodpi/"
+          cp "$from/LICENSE" iptv-vendor/LICENSE.NovaIPTV
+          cp "$from/docs/AUDIT.md" iptv-vendor/NOVA-AUDIT.md
+          # Reestablish MyTube's shared player ownership; never allow two apps to play audio.
+          python3 iptv-vendor/patch-nova-playback.py
+          grep -q 'NovaPlaybackBridge.claim(player)' "$to/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          grep -q 'NovaPlaybackBridge.release(player)' "$to/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          grep -q 'recoverFromM3u' "$to/main/java/com/novastream/iptv/core/Xtream.java"
+          grep -q 'GridView grid' "$to/main/java/com/novastream/iptv/ui/MainActivity.java"
+          {
+            echo "Source: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.1.5-debug-preview"
+            echo "Vendored Nova IPTV Pro v0.1.5 source ZIP SHA-256:"
+            sha256sum iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip
+          } > iptv-vendor/IMPORT_PROVENANCE.txt
+      - name: Commit source import
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add source/novaiptv/src iptv-vendor/IMPORT_PROVENANCE.txt iptv-vendor/LICENSE.NovaIPTV iptv-vendor/NOVA-AUDIT.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Sync Nova IPTV Pro v0.1.5 VOD, Grid/List and stream retry [skip ci]"
+            git push origin HEAD:feature/iptv-nova-015-integration-20261028
+          fi

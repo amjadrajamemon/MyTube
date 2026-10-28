@@ -14,8 +14,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: bf17ea888ab2ab66c164b2b8274b07023cb50ff8
+          ref: f8b6b424f9171ee66babfe9563de237508a8e15c
           path: upstream-iptv
+      - name: Verify latest theme and safe-area build patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Fix interactive theme selector and Android bottom safe area' upstream-iptv/.github/workflows/build-apk.yml
+          grep -Fq 'setOnApplyWindowInsetsListener' upstream-iptv/.github/workflows/build-apk.yml
       - name: Unpack and compare v0.1.6 to integrated Nova module
         shell: bash
         run: |

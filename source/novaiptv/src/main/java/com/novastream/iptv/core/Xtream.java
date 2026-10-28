@@ -42,15 +42,25 @@ public final class Xtream {
         collect(result,"get_vod_streams","movie","get_vod_categories","Movies/VOD");
         collect(result,"get_series","series","get_series_categories","Series");
         collect(result,"get_live_streams","live","get_live_categories","Live TV");
-        boolean hasVod=false,hasSeries=false;
+        boolean hasLive=false,hasVod=false,hasSeries=false;
         for(Channel item:result){
-            if("movie".equals(item.kind))hasVod=true;
-            if("series".equals(item.kind))hasSeries=true;
+            if("live".equals(item.kind))hasLive=true;
+            else if("movie".equals(item.kind))hasVod=true;
+            else if("series".equals(item.kind))hasSeries=true;
         }
-        // A number of Xtream portals populate get.php playlists but block VOD
-        // JSON endpoints. Recover titles and stream URLs from that same
-        // account's M3U instead of reporting an empty Movies/Series tab.
-        if(!hasVod || !hasSeries)recoverFromM3u(result,!hasVod,!hasSeries);
+        // A provider can expose movies while its global live endpoint is empty,
+        // over-limit, or category-only. Recover Live as well as VOD from M3U.
+        if(!hasLive||!hasVod||!hasSeries)
+            recoverFromM3u(result,!hasLive,!hasVod,!hasSeries);
+        int liveCount=0,movieCount=0,seriesCount=0;
+        for(Channel c:result){
+            String type=StreamKind.detect(c.kind,c.group,c.url);
+            if(type.equals("live"))liveCount++;
+            else if(type.equals("movie"))movieCount++;
+            else if(type.equals("series"))seriesCount++;
+        }
+        if(liveCount==0)warnings.add("LIVE TV EMPTY: global live API, category lists and M3U recovery yielded no live channels. Confirm Live TV entitlement and server URL.");
+        if(movieCount==0)warnings.add("Movies/VOD empty: verify your provider's VOD entitlement.");
         if(result.isEmpty())throw new IOException("Provider returned no Live, Movies or Series items. "+warnings());
         return result;
     }
@@ -58,13 +68,14 @@ public final class Xtream {
         Map<String,String> groups=categories(categoryAction);
         try{
             JSONArray full=array(action);
-            if(full.length()==0 && !kind.equals("live")){
-                if(!recoverByCategory(output,action,kind,groups,name))warnings.add(name+" returned zero entries");
+            if(full.length()==0){
+                if(!recoverByCategory(output,action,kind,groups,name))
+                    warnings.add(name+" returned zero entries (including category retrieval)");
                 return;
             }
             add(output,full,kind,groups);
         }catch(Exception ex){
-            if(!kind.equals("live") && recoverByCategory(output,action,kind,groups,name))return;
+            if(recoverByCategory(output,action,kind,groups,name))return;
             String reason=ex instanceof java.io.FileNotFoundException?"HTTP 404":
                 ex instanceof java.net.SocketTimeoutException?"timeout":
                 ex instanceof java.net.UnknownHostException?"hostname unavailable":ex.getClass().getSimpleName();
@@ -78,7 +89,7 @@ public final class Xtream {
         HashSet<String> known=new HashSet<>();
         for(Channel item:output)known.add(item.url);
         for(String categoryId:groups.keySet()){
-            if(attempted++>=120){warnings.add(name+" recovery limited to 120 groups");break;}
+            if(attempted++>=80){warnings.add(name+" recovery limited to 80 groups");break;}
             try{
                 JSONArray group=array(action+"&category_id="+enc(categoryId));
                 ArrayList<Channel> partial=new ArrayList<>();
@@ -93,7 +104,7 @@ public final class Xtream {
         if(recovered>0)warnings.add(name+": recovered "+recovered+" items by category");
         return recovered>0;
     }
-    private void recoverFromM3u(List<Channel> result,boolean needMovies,boolean needSeries){
+    private void recoverFromM3u(List<Channel> result,boolean needLive,boolean needMovies,boolean needSeries){
         try {
             String endpoint=server+"/get.php?username="+enc(user)+"&password="+enc(password)+"&type=m3u_plus&output=ts";
             M3uParser.Result imported;
@@ -105,14 +116,14 @@ public final class Xtream {
             int recovered=0;
             for(Channel item:imported.channels){
                 String kind=StreamKind.detect(item.kind,item.group,item.url);
-                if(("movie".equals(kind)&&needMovies)||("series".equals(kind)&&needSeries)){
+                if(("live".equals(kind)&&needLive)||("movie".equals(kind)&&needMovies)||("series".equals(kind)&&needSeries)){
                     if(seen.add(item.url) && result.size()<75000){result.add(item);recovered++;}
                 }
             }
-            if(recovered>0)warnings.add("Recovered "+recovered+" VOD/series items from provider playlist");
-            else warnings.add("Provider M3U fallback has no classified movies/series");
+            if(recovered>0)warnings.add("Recovered "+recovered+" Live/VOD/Series items from provider playlist");
+            else warnings.add("Provider M3U fallback has no additional classified Live/VOD/Series streams");
         }catch(Exception ignored){
-            warnings.add("Provider M3U VOD fallback unavailable; verify movies/series subscription");
+            warnings.add("Provider M3U fallback unavailable; check playlist endpoint and subscription access");
         }
     }
     private String pathPart(String s) { try { return new URI(null, null, "/"+s, null).getRawPath().substring(1); } catch(Exception e){ return enc(s); } }

@@ -21,7 +21,7 @@ import java.util.concurrent.*;
 /** Responsive Views UI: native D-pad navigation on TV, touch on phones/tablets. */
 public final class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
-    private Catalog catalog; private Style style; private final LogoLoader logos=new LogoLoader();
+    private Catalog catalog; private Style style; private ThemeIdentity design; private final LogoLoader logos=new LogoLoader();
     private LinearLayout root,header,tabs; private ListView list; private GridView grid;
     private TextView emptyState; private boolean gridMode=false; private int viewMode=-1;
     private TextView status; private EditText searchBox;
@@ -41,38 +41,54 @@ public final class MainActivity extends Activity {
     }
     private void ready(){applyTheme();if(catalog.channels.isEmpty())getWindow().getDecorView().postDelayed(this::sourceChooser,600);
         if(!catalog.epgUrl.isEmpty())refreshEpg(false);}
-    private void applyTheme(){style=new Style(catalog.theme,catalog.textSize,catalog.customBg,catalog.customAccent,catalog.customText);getWindow().setStatusBarColor(style.bg);getWindow().setNavigationBarColor(style.bg);build();}
+    private void applyTheme(){design=ThemeIdentity.of(catalog.theme);
+        style=new Style(catalog.theme,catalog.textSize,catalog.customBg,catalog.customAccent,catalog.customText);
+        getWindow().setStatusBarColor(style.bg);getWindow().setNavigationBarColor(style.bg);build();}
     private Button button(String title,Runnable action){
         Button b=new Button(this);b.setText(title);b.setTextSize(13*style.scale);b.setTextColor(style.text);b.setAllCaps(false);
         b.setPadding(Style.dp(this,9),Style.dp(this,6),Style.dp(this,9),Style.dp(this,6));b.setMinHeight(Style.dp(this,46));
-        b.setBackground(style.panel(style.surface,14,false));b.setOnClickListener(v->action.run());
-        b.setOnFocusChangeListener((v,focus)->{b.setBackground(style.panel(style.surface,14,focus));b.setScaleX(focus?1.03f:1f);b.setScaleY(focus?1.03f:1f);});return b;
+        ThemeSurface.button(b,style,design,false);b.setOnClickListener(v->action.run());
+        b.setOnFocusChangeListener((v,focus)->ThemeSurface.button(b,style,design,focus));return b;
     }
     private LinearLayout horizontal(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private void extraMenu(){new AlertDialog.Builder(this).setTitle("Nova IPTV")
         .setItems(new String[]{"★ Manage Favorites","Add / manage sources","Manage playlists",
-            "Grid / List display","Themes","Settings","Groups","Program guide"},(d,w)->{
+             "Grid / List display","Repair Live TV","Themes","Settings","Groups","Program guide"},(d,w)->{
             if(w==0)manageFavorites();else if(w==1)sourceChooser();else if(w==2)manageSources();
-            else if(w==3)toggleGrid();else if(w==4)themes();else if(w==5)settings();
-            else if(w==6)groups();
-            else if(w==7){if(catalog.epgUrl.isEmpty())promptEpg();else refreshEpg(true);}
+            else if(w==3)toggleGrid();else if(w==4)repairLive();else if(w==5)themes();
+            else if(w==6)settings();else if(w==7)groups();
+            else if(w==8){if(catalog.epgUrl.isEmpty())promptEpg();else refreshEpg(true);}
         }).show();}
     private void build(){
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(Style.dp(this,12),Style.dp(this,10),Style.dp(this,12),Style.dp(this,8));
-        GradientDrawable background=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{style.bg,style.surface,style.bg});root.setBackground(background);
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(Style.dp(this,design.gutter),Style.dp(this,design.family==0?13:5),
+                Style.dp(this,design.gutter),Style.dp(this,design.family==3?4:10));
+        root.setBackground(ThemeSurface.wallpaper(style,design));
+        final int originalBottom=root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),
+                view.getPaddingRight(),originalBottom+insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+        root.requestApplyInsets();
         setContentView(root);
-        header=horizontal();TextView title=style.label(this,"◈ NOVA IPTV",tv?22:18,true);
-        title.setTextColor(style.accent);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
+        header=horizontal();
+        String mark=new String[]{"◈  NOVA CINEMA","◈  NOVA GLASS","NOVA  /  JOURNAL","▣  NOVA LIVE"}[design.family];
+        TextView title=style.label(this,mark,(int)((tv?22:18)*design.titleMultiplier),true);
+        ThemeSurface.heading(title,style,design);
+        title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(title,new LinearLayout.LayoutParams(0,Style.dp(this,50),1));
         header.addView(button("☰",this::extraMenu),
             new LinearLayout.LayoutParams(Style.dp(this,56),Style.dp(this,48)));
         // The view switch lives in the scrollable actions and menu, not the title bar.
         root.addView(header);
+        if(getResources().getConfiguration().screenHeightDp>=410)buildThemeMasthead();
         if(getResources().getConfiguration().screenHeightDp>=420){
             HorizontalScrollView quick=new HorizontalScrollView(this);quick.setHorizontalScrollBarEnabled(false);
             LinearLayout actions=horizontal();
             actions.addView(button("★ Favorites",this::manageFavorites));
             actions.addView(button("≡ Playlists",this::manageSources));
+            actions.addView(button("↻ Live",this::repairLive));
             actions.addView(button("▦ Grid / ☷ List",this::toggleGrid));
             actions.addView(button("＋ Source",this::sourceChooser));
             actions.addView(button("◉ Themes",this::themes));
@@ -93,16 +109,19 @@ public final class MainActivity extends Activity {
             Button b=button(t,()->{tab=t;group="";rebuildTabs();refilter();});
             b.setMinWidth(Style.dp(this,88));
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,Style.dp(this,Math.max(51,(int)(46*style.scale))));p.setMargins(Style.dp(this,3),Style.dp(this,5),Style.dp(this,3),Style.dp(this,5));tabs.addView(b,p);
-        }sc.addView(tabs);root.addView(sc);rebuildTabs();
+        }sc.addView(tabs);
+        if(!design.navigationAtBottom)root.addView(sc);
+        rebuildTabs();
         list=new ListView(this);list.setDividerHeight(Style.dp(this,5));list.setDivider(null);list.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         list.setClipToPadding(false);list.setPadding(0,Style.dp(this,8),0,Style.dp(this,8));
         list.setOnItemClickListener((a,v,pos,id)->{if(pos<shown.size())open(shown.get(pos));});
         list.setOnItemLongClickListener((a,v,pos,id)->{if(pos<shown.size())actions(shown.get(pos));return true;});
         grid=new GridView(this);
         int widthDp=getResources().getConfiguration().screenWidthDp;
-        int minimumWidth=(int)(tv?225*style.scale:155*style.scale);
-        grid.setNumColumns(Math.min(6,Math.max(1,(widthDp-24)/Math.max(135,minimumWidth))));
-        grid.setHorizontalSpacing(Style.dp(this,9));grid.setVerticalSpacing(Style.dp(this,9));
+        int minimumWidth=(int)((tv?210:155)*style.scale*design.cardMultiplier);
+        grid.setNumColumns(Math.min(7,Math.max(1,(widthDp-2*design.gutter)/Math.max(132,minimumWidth))));
+        grid.setHorizontalSpacing(Style.dp(this,design.gutter));
+        grid.setVerticalSpacing(Style.dp(this,design.gutter));
         grid.setPadding(Style.dp(this,4),Style.dp(this,8),Style.dp(this,4),Style.dp(this,12));
         grid.setClipToPadding(false);grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -117,12 +136,29 @@ public final class MainActivity extends Activity {
         emptyState.setPadding(Style.dp(this,23),Style.dp(this,30),Style.dp(this,23),Style.dp(this,25));
         library.addView(emptyState,new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER));
         root.addView(library,new LinearLayout.LayoutParams(-1,0,1));
+        if(design.navigationAtBottom)root.addView(sc);
         status=style.label(this,"",11,false);status.setTextColor(style.accent);
         status.setSingleLine(true);status.setEllipsize(TextUtils.TruncateAt.END);
         root.addView(status,new LinearLayout.LayoutParams(-1,Style.dp(this,30)));
         refilter();
     }
     private boolean useGrid(){return viewMode<0?(tab.equals("Movies")||tab.equals("Series")):viewMode==1;}
+    private void buildThemeMasthead(){
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+        int inner=Style.dp(this,design.family==3?8:14);
+        panel.setPadding(inner,Style.dp(this,8),inner,Style.dp(this,8));
+        panel.setBackground(ThemeSurface.panel(style,design,false,true));
+        TextView lead=style.label(this,design.heading(),(int)((tv?18:15)*design.titleMultiplier),true);
+        ThemeSurface.heading(lead,style,design);
+        lead.setSingleLine(true);lead.setEllipsize(TextUtils.TruncateAt.END);
+        panel.addView(lead,new LinearLayout.LayoutParams(-1,-2));
+        TextView sub=style.label(this,design.subheading(),(int)(12*style.scale),false);
+        sub.setSingleLine(true);sub.setEllipsize(TextUtils.TruncateAt.END);
+        sub.setTextColor(style.text);panel.addView(sub);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,Style.dp(this,design.heroHeight));
+        lp.setMargins(0,Style.dp(this,3),0,Style.dp(this,design.gutter/2));
+        root.addView(panel,lp);
+    }
     private void toggleGrid(){
         viewMode=useGrid()?0:1;
         getSharedPreferences("nova_appearance",MODE_PRIVATE).edit().putInt("view_mode",viewMode).apply();
@@ -130,7 +166,7 @@ public final class MainActivity extends Activity {
     }
     private void rebuildTabs(){for(int i=0;i<tabs.getChildCount();i++){
         Button b=(Button)tabs.getChildAt(i);boolean selected=b.getText().toString().equals(tab);
-        b.setTextColor(selected?style.bg:style.text);b.setBackground(style.panel(selected?style.accent:style.surface,13,selected));
+        ThemeSurface.button(b,style,design,selected);
     }}
     private void refilter(){if(list==null||catalog==null)return;
         gridMode=useGrid();
@@ -164,7 +200,7 @@ public final class MainActivity extends Activity {
             Channel c=entries.get(p);
             LinearLayout card=new LinearLayout(MainActivity.this);card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(Style.dp(MainActivity.this,14),Style.dp(MainActivity.this,3+catalog.rowDensity*3),Style.dp(MainActivity.this,14),Style.dp(MainActivity.this,3+catalog.rowDensity*3));
-            card.setBackground(style.panel(style.surface,14,false));card.setFocusable(false);
+            ThemeSurface.decorateCard(card,style,design,false);card.setFocusable(false);
             
             TextView name=style.label(MainActivity.this,(catalog.favorites.contains(c.id)?"★  ":"▷  ")+c.name,tv?19:16,true);
             name.setSingleLine(true);name.setEllipsize(TextUtils.TruncateAt.END);card.addView(name);
@@ -172,14 +208,14 @@ public final class MainActivity extends Activity {
             String meta=c.group+"   •   "+StreamKind.detect(c.kind,c.group,c.url).toUpperCase(Locale.ROOT)+(current.isEmpty()?"":"   •   Now: "+current);
             TextView sub=style.label(MainActivity.this,meta,12,false);sub.setSingleLine(true);sub.setEllipsize(TextUtils.TruncateAt.END);
             sub.setTextColor(style.accent);card.addView(sub);
-            LinearLayout row=horizontal();row.setBackground(style.panel(style.surface,14,false));row.setFocusable(true);
+            LinearLayout row=horizontal();ThemeSurface.decorateCard(row,style,design,false);row.setFocusable(true);
             int thumb=Style.dp(MainActivity.this,tv?74:56);
             ImageView image=new ImageView(MainActivity.this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
             LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(thumb,thumb);ip.setMargins(Style.dp(MainActivity.this,5),Style.dp(MainActivity.this,4),0,Style.dp(MainActivity.this,4));
             row.addView(image,ip);logos.load(image,c.logo);
             row.addView(card,new LinearLayout.LayoutParams(0,-2,1));
             row.setOnClickListener(v->open(c));row.setOnLongClickListener(v->{actions(c);return true;});
-            row.setOnFocusChangeListener((v,focus)->row.setBackground(style.panel(style.surface,14,focus)));
+            row.setOnFocusChangeListener((v,focus)->ThemeSurface.decorateCard(row,style,design,focus));
             return row;
         }
     }
@@ -193,15 +229,19 @@ public final class MainActivity extends Activity {
             Channel c=entries.get(position);
             LinearLayout tile=new LinearLayout(MainActivity.this);
             tile.setOrientation(LinearLayout.VERTICAL);
-            tile.setPadding(Style.dp(MainActivity.this,7),Style.dp(MainActivity.this,8),
-                Style.dp(MainActivity.this,7),Style.dp(MainActivity.this,10));
-            tile.setBackground(style.panel(style.surface,14,false));
+            tile.setPadding(Style.dp(MainActivity.this,design.family==3?4:design.variant+8),
+                Style.dp(MainActivity.this,design.family==0?12:6),
+                Style.dp(MainActivity.this,design.family==3?4:design.variant+8),
+                Style.dp(MainActivity.this,design.family==2?14:8));
+            ThemeSurface.decorateCard(tile,style,design,false);
             String kind=StreamKind.detect(c.kind,c.group,c.url);
             ImageView art=new ImageView(MainActivity.this);
             art.setBackgroundColor(0x30151F3B);
             art.setScaleType(kind.equals("movie")||kind.equals("series")?
                 ImageView.ScaleType.CENTER_CROP:ImageView.ScaleType.FIT_CENTER);
-            int imageHeight=Style.dp(MainActivity.this,kind.equals("movie")||kind.equals("series")?tv?190:168:tv?128:102);
+            int imageHeight=Style.dp(MainActivity.this,
+                (int)((kind.equals("movie")||kind.equals("series")?design.imageHeight:
+                  design.imageHeight*.65f)*style.scale));
             tile.addView(art,new LinearLayout.LayoutParams(-1,imageHeight));
             logos.load(art,c.logo);
             TextView title=style.label(MainActivity.this,(catalog.favorites.contains(c.id)?"★ ":"")+c.name,tv?16:14,true);
@@ -214,8 +254,8 @@ public final class MainActivity extends Activity {
             tile.addView(description);
             tile.setFocusable(true);tile.setClickable(true);
             tile.setOnFocusChangeListener((v,focused)->{
-                tile.setBackground(style.panel(focused?style.accent:style.surface,14,focused));
-                title.setTextColor(focused?style.bg:style.text);
+                ThemeSurface.decorateCard(tile,style,design,focused);
+                title.setTextColor(focused?style.accent:style.text);
                 tile.setScaleX(1f);tile.setScaleY(1f);
             });
             tile.setOnClickListener(v->open(c));
@@ -280,7 +320,7 @@ public final class MainActivity extends Activity {
                     runOnUiThread(()->{
                         String key=sourceKey(host,u,p);
                         List<Channel> mapped=remapXtream(items,key);
-                        catalog.replaceSource(key,mapped);
+                        catalog.replaceSource(key,preserveMissingTypes(key,mapped));
                         catalog.sourceHosts.put(key,host);
                         catalog.xtreamCredentials.put(key,u+"\n"+p);
                         if(catalog.epgUrl.isEmpty())catalog.epgUrl=x.epg();selectedSource="";group="";save();refilter();
@@ -349,6 +389,40 @@ public final class MainActivity extends Activity {
                 sourceActions(sources.get(w-1));
             }).setNeutralButton("+ Add", (d,w)->sourceChooser()).setNegativeButton("Close",null).show();
     }
+    private void repairLive(){
+        ArrayList<String> sources=new ArrayList<>();
+        ArrayList<String> labels=new ArrayList<>();
+        for(String key:catalog.sources()){
+            if(catalog.xtreamCredentials.containsKey(key)){
+                sources.add(key);
+                labels.add(catalog.sourceName(key)+" ("+catalog.sourceSize(key)+" saved)");
+            }
+        }
+        if(sources.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("Repair Live TV")
+                .setMessage("No Xtream accounts were found. For M3U sources use Menu → Manage playlists → Refresh playlist.")
+                .setPositiveButton("Manage playlists",(d,w)->manageSources()).setNegativeButton("Close",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Refresh Live TV from account")
+            .setItems(labels.toArray(new String[0]),(d,w)->refreshPlaylist(sources.get(w)))
+            .setNegativeButton("Cancel",null).show();
+    }
+    private List<Channel> preserveMissingTypes(String source,List<Channel> incoming){
+        HashSet<String> incomingTypes=new HashSet<>();
+        HashSet<String> urls=new HashSet<>();
+        for(Channel c:incoming){
+            incomingTypes.add(StreamKind.detect(c.kind,c.group,c.url));
+            urls.add(c.url);
+        }
+        ArrayList<Channel> safe=new ArrayList<>(incoming);
+        for(Channel old:catalog.channels){
+            if(!old.source.equals(source))continue;
+            String type=StreamKind.detect(old.kind,old.group,old.url);
+            if(!incomingTypes.contains(type)&&urls.add(old.url))safe.add(old);
+        }
+        return safe;
+    }
     private void sourceActions(String key){
         final boolean on=catalog.isSourceEnabled(key);
         String title=catalog.sourceName(key)+" ("+catalog.sourceSize(key)+" items)";
@@ -393,7 +467,7 @@ public final class MainActivity extends Activity {
                 List<Channel> items=portal.loadAll();
                 if(items.isEmpty())throw new IOException("Provider returned no items; existing playlist kept.");
                 runOnUiThread(()->{
-                    catalog.replaceSource(key,remapXtream(items,key));save();refilter();
+                    catalog.replaceSource(key,preserveMissingTypes(key,remapXtream(items,key)));save();refilter();
                     toast("Refreshed "+catalog.sourceSize(key)+" items");
                 });
             });return;
@@ -417,9 +491,12 @@ public final class MainActivity extends Activity {
             });
         });
     }
-    private void themes(){new AlertDialog.Builder(this).setTitle("16 high-definition theme palettes")
-        .setSingleChoiceItems(Style.NAMES,catalog.theme,(d,w)->{catalog.theme=w;save();applyTheme();d.dismiss();})
-        .setNegativeButton("Close",null).show();}
+    private void themes(){new AlertDialog.Builder(this)
+        .setTitle("Choose a complete interface design")
+        
+        .setSingleChoiceItems(ThemeIdentity.labels(Style.NAMES),catalog.theme,(d,w)->{
+            catalog.theme=w;save();applyTheme();d.dismiss();
+        }).setNegativeButton("Close",null).show();}
     private void settings(){new AlertDialog.Builder(this).setTitle("Customize Nova IPTV")
         .setItems(new String[]{"Themes (16 presets)","Custom background, accent and text colors","Text / accessibility scale","Row spacing / density","Picture-in-Picture: "+(catalog.pip?"ON":"OFF"),"Refresh EPG","Clear viewing history"},(d,w)->{
             if(w==0)themes();if(w==1)customColors();if(w==2)fontSize();if(w==3)density();

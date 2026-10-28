@@ -245,7 +245,14 @@ public final class PlayerActivity extends Activity {
         switch(key){
             case KeyEvent.KEYCODE_CHANNEL_UP:case KeyEvent.KEYCODE_MEDIA_NEXT:next(1);return true;
             case KeyEvent.KEYCODE_CHANNEL_DOWN:case KeyEvent.KEYCODE_MEDIA_PREVIOUS:next(-1);return true;
-            case KeyEvent.KEYCODE_MENU:options();return true;
+            case KeyEvent.KEYCODE_MENU:case KeyEvent.KEYCODE_F1:options();return true;
+            case KeyEvent.KEYCODE_ESCAPE:case KeyEvent.KEYCODE_BACK:finish();return true;
+            case KeyEvent.KEYCODE_SPACE:case KeyEvent.KEYCODE_K:
+                if(player!=null){if(player.isPlaying())player.pause();else player.play();}return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:case KeyEvent.KEYCODE_J:
+                if(player!=null&&player.isCurrentMediaItemSeekable())player.seekTo(Math.max(0,player.getCurrentPosition()-10000));return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:case KeyEvent.KEYCODE_L:
+                if(player!=null&&player.isCurrentMediaItemSeekable())player.seekTo(player.getCurrentPosition()+10000);return true;
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:case KeyEvent.KEYCODE_HEADSETHOOK:
                 if(player!=null){if(player.isPlaying())player.pause();else player.play();}return true;
             default:return super.onKeyDown(key,event);

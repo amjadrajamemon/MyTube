@@ -22,7 +22,8 @@ import java.util.concurrent.*;
 public final class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Catalog catalog; private Style style; private final LogoLoader logos=new LogoLoader();
-    private LinearLayout root,header,tabs; private ListView list;
+    private LinearLayout root,header,tabs; private ListView list; private GridView grid;
+    private TextView emptyState; private boolean gridMode=false;
     private TextView status; private EditText searchBox;
     private String tab="Live",group="",search="",selectedSource="";
     private List<Channel> shown=new ArrayList<>();
@@ -30,6 +31,7 @@ public final class MainActivity extends Activity {
     private static final int PICK_PLAYLIST=61;
     @Override public void onCreate(Bundle b){super.onCreate(b);
         tv=getPackageManager().hasSystemFeature("android.software.leanback") || getPackageManager().hasSystemFeature("android.hardware.type.television");
+        gridMode=getSharedPreferences("nova_appearance",MODE_PRIVATE).getBoolean("grid_view",false);
         try{catalog=Catalog.load(this);ready();}
         catch(Exception e){new AlertDialog.Builder(this).setTitle("Encrypted library unavailable")
             .setMessage("Your saved playlist cannot be unlocked (e.g. device restore or Keystore reset). You can start a fresh local library; this does not affect your provider.")
@@ -61,12 +63,15 @@ public final class MainActivity extends Activity {
         title.setTextColor(style.accent);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(title,new LinearLayout.LayoutParams(0,Style.dp(this,50),1));
         header.addView(button("☰ Menu",this::extraMenu),new LinearLayout.LayoutParams(-2,Style.dp(this,48)));
+        // Always visible on smaller phones where the optional quick-action row is hidden.
+        header.addView(button(gridMode?"☷ List":"▦ Grid",this::toggleGrid),new LinearLayout.LayoutParams(-2,Style.dp(this,48)));
         root.addView(header);
         if(getResources().getConfiguration().screenHeightDp>=420){
             HorizontalScrollView quick=new HorizontalScrollView(this);quick.setHorizontalScrollBarEnabled(false);
             LinearLayout actions=horizontal();
             actions.addView(button("★ Favorites",this::manageFavorites));
             actions.addView(button("≡ Playlists",this::manageSources));
+            actions.addView(button("▦ Grid / ☷ List",this::toggleGrid));
             actions.addView(button("＋ Source",this::sourceChooser));
             actions.addView(button("◉ Themes",this::themes));
             actions.addView(button("⚙ Settings",this::settings));
@@ -88,13 +93,35 @@ public final class MainActivity extends Activity {
         }sc.addView(tabs);root.addView(sc);rebuildTabs();
         list=new ListView(this);list.setDividerHeight(Style.dp(this,5));list.setDivider(null);list.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         list.setClipToPadding(false);list.setPadding(0,Style.dp(this,8),0,Style.dp(this,8));
-        list.setOnItemClickListener((a,v,pos,id)->open(shown.get(pos)));
-        list.setOnItemLongClickListener((a,v,pos,id)->{actions(shown.get(pos));return true;});
-        root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+        list.setOnItemClickListener((a,v,pos,id)->{if(pos<shown.size())open(shown.get(pos));});
+        list.setOnItemLongClickListener((a,v,pos,id)->{if(pos<shown.size())actions(shown.get(pos));return true;});
+        grid=new GridView(this);
+        int widthDp=getResources().getConfiguration().screenWidthDp;
+        grid.setNumColumns(tv?Math.max(3,Math.min(6,widthDp/210)):widthDp>=750?4:widthDp>=510?3:2);
+        grid.setHorizontalSpacing(Style.dp(this,9));grid.setVerticalSpacing(Style.dp(this,9));
+        grid.setPadding(Style.dp(this,4),Style.dp(this,8),Style.dp(this,4),Style.dp(this,12));
+        grid.setClipToPadding(false);grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        grid.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        grid.setOnItemClickListener((a,v,pos,id)->{if(pos<shown.size())open(shown.get(pos));});
+        grid.setOnItemLongClickListener((a,v,pos,id)->{if(pos<shown.size())actions(shown.get(pos));return true;});
+        FrameLayout library=new FrameLayout(this);
+        library.addView(list,new FrameLayout.LayoutParams(-1,-1));
+        library.addView(grid,new FrameLayout.LayoutParams(-1,-1));
+        emptyState=style.label(this,"",tv?18:15,false);
+        emptyState.setTextColor(style.text);
+        emptyState.setGravity(Gravity.CENTER);
+        emptyState.setPadding(Style.dp(this,23),Style.dp(this,30),Style.dp(this,23),Style.dp(this,25));
+        library.addView(emptyState,new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER));
+        root.addView(library,new LinearLayout.LayoutParams(-1,0,1));
         status=style.label(this,"",11,false);status.setTextColor(style.accent);
         status.setSingleLine(true);status.setEllipsize(TextUtils.TruncateAt.END);
         if(getResources().getConfiguration().screenHeightDp>=420)root.addView(status);
         refilter();
+    }
+    private void toggleGrid(){
+        gridMode=!gridMode;
+        getSharedPreferences("nova_appearance",MODE_PRIVATE).edit().putBoolean("grid_view",gridMode).apply();
+        applyTheme();
     }
     private void rebuildTabs(){for(int i=0;i<tabs.getChildCount();i++){
         Button b=(Button)tabs.getChildAt(i);boolean selected=b.getText().toString().equals(tab);
@@ -104,8 +131,25 @@ public final class MainActivity extends Activity {
         shown=new ArrayList<>(catalog.filtered(tab,search,group));
         if(!selectedSource.isEmpty())shown.removeIf(c->!c.source.equals(selectedSource));
         list.setAdapter(new ChannelAdapter(shown));
-        status.setText(shown.size()+" items  •  "+catalog.sources().size()+" playlists  •  "+catalog.channels.size()+" saved"+(group.isEmpty()?"":"  •  "+group)+
-            "  •  "+Style.NAMES[Math.floorMod(catalog.theme,Style.NAMES.length)]+(tv?"  •  TV remote ready":""));
+        grid.setAdapter(new PosterAdapter(shown));
+        list.setVisibility(shown.isEmpty()||gridMode?View.GONE:View.VISIBLE);
+        grid.setVisibility(shown.isEmpty()||!gridMode?View.GONE:View.VISIBLE);
+        emptyState.setVisibility(shown.isEmpty()?View.VISIBLE:View.GONE);
+        if(shown.isEmpty()){
+            if(tab.equals("Movies")||tab.equals("Series"))
+                emptyState.setText("No "+tab.toLowerCase(Locale.ROOT)+" found for this selection.\n\nCheck that your provider includes VOD access, then use Playlists → Refresh.\n\nTry All if a playlist uses unusual categories.");
+            else emptyState.setText(catalog.channels.isEmpty()?"Your library is empty.\n\nUse + Source to add an authorized IPTV playlist.":"No matching items. Change your search, category or playlist filter.");
+        }
+        int liveCount=0,movieCount=0,seriesCount=0;
+        for(Channel entry:catalog.channels){
+            if(!catalog.isSourceEnabled(entry.source))continue;
+            String k=StreamKind.detect(entry.kind,entry.group,entry.url);
+            if(k.equals("live"))liveCount++;
+            else if(k.equals("movie"))movieCount++;
+            else if(k.equals("series")||k.equals("episode"))seriesCount++;
+        }
+        status.setText("Live "+liveCount+"  •  Movies "+movieCount+"  •  Series "+seriesCount+
+            "  •  "+shown.size()+" shown  •  "+catalog.sources().size()+" playlists  •  "+(gridMode?"Grid":"List"));
     }
     private class ChannelAdapter extends BaseAdapter {
         private final List<Channel> entries;ChannelAdapter(List<Channel> entries){this.entries=entries;}
@@ -131,6 +175,44 @@ public final class MainActivity extends Activity {
             row.setOnClickListener(v->open(c));row.setOnLongClickListener(v->{actions(c);return true;});
             row.setOnFocusChangeListener((v,focus)->row.setBackground(style.panel(style.surface,14,focus)));
             return row;
+        }
+    }
+    private class PosterAdapter extends BaseAdapter {
+        private final List<Channel> entries;
+        PosterAdapter(List<Channel> items){entries=items;}
+        public int getCount(){return entries.size();}
+        public Object getItem(int position){return entries.get(position);}
+        public long getItemId(int position){return position;}
+        public View getView(int position,View old,ViewGroup parent){
+            Channel c=entries.get(position);
+            LinearLayout tile=new LinearLayout(MainActivity.this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setPadding(Style.dp(MainActivity.this,7),Style.dp(MainActivity.this,8),
+                Style.dp(MainActivity.this,7),Style.dp(MainActivity.this,10));
+            tile.setBackground(style.panel(style.surface,14,false));
+            String kind=StreamKind.detect(c.kind,c.group,c.url);
+            ImageView art=new ImageView(MainActivity.this);
+            art.setBackgroundColor(0x30151F3B);
+            art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int imageHeight=Style.dp(MainActivity.this,kind.equals("movie")||kind.equals("series")?tv?190:168:tv?128:102);
+            tile.addView(art,new LinearLayout.LayoutParams(-1,imageHeight));
+            logos.load(art,c.logo);
+            TextView title=style.label(MainActivity.this,(catalog.favorites.contains(c.id)?"★ ":"")+c.name,tv?16:14,true);
+            title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
+            tile.addView(title,new LinearLayout.LayoutParams(-1,Style.dp(MainActivity.this,58)));
+            TextView description=style.label(MainActivity.this,kind.toUpperCase(Locale.ROOT)+"  •  "+c.group,10,false);
+            description.setTextColor(style.accent);
+            description.setSingleLine(true);description.setEllipsize(TextUtils.TruncateAt.END);
+            tile.addView(description);
+            tile.setFocusable(true);tile.setClickable(true);
+            tile.setOnFocusChangeListener((v,focused)->{
+                tile.setBackground(style.panel(focused?style.accent:style.surface,14,focused));
+                title.setTextColor(focused?style.bg:style.text);
+                tile.setScaleX(focused?1.025f:1f);tile.setScaleY(focused?1.025f:1f);
+            });
+            tile.setOnClickListener(v->open(c));
+            tile.setOnLongClickListener(v->{actions(c);return true;});
+            return tile;
         }
     }
     private void open(Channel c){

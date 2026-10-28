@@ -21,10 +21,19 @@ public final class Xtream {
     private String enc(String x) { try {return URLEncoder.encode(x,"UTF-8");} catch(Exception e){throw new IllegalStateException(e);} }
     private String api(String action) { return server+"/player_api.php?username="+enc(user)+"&password="+enc(password)+"&action="+action; }
     private JSONArray array(String action) throws Exception {
-        byte[] body=Net.bytes(api(action),16*1024*1024);
-        String json=new String(body, StandardCharsets.UTF_8);
-        if (json.trim().startsWith("{")) throw new IOException("Portal returned an object instead of a channel list (check credentials)");
-        return new JSONArray(json);
+        String json=new String(Net.bytes(api(action),16*1024*1024), StandardCharsets.UTF_8).trim();
+        if(json.startsWith("[")) return new JSONArray(json);
+        if(json.startsWith("{")) {
+            JSONObject response=new JSONObject(json);
+            for(String key:new String[]{"data","streams","results","items","vod_streams","series","channels"}) {
+                JSONArray payload=response.optJSONArray(key);
+                if(payload!=null)return payload;
+            }
+            String error=response.optString("message",response.optString("error",""));
+            if(response.has("user_info"))throw new IOException("Provider returned account details instead of "+action+"; verify VOD permissions");
+            throw new IOException(error.isEmpty() ? "Provider did not supply a list for "+action : "Provider rejected "+action);
+        }
+        throw new IOException("Provider sent an unexpected response for "+action);
     }
     public List<Channel> loadAll() throws Exception {
         ArrayList<Channel> result=new ArrayList<>();
@@ -32,12 +41,49 @@ public final class Xtream {
         collect(result,"get_live_streams","live","get_live_categories","Live TV");
         collect(result,"get_vod_streams","movie","get_vod_categories","Movies/VOD");
         collect(result,"get_series","series","get_series_categories","Series");
-        if(result.isEmpty())throw new IOException("No playable items returned. Check account access and portal status. "+warnings());
+        boolean hasVod=false,hasSeries=false;
+        for(Channel item:result){
+            if("movie".equals(item.kind))hasVod=true;
+            if("series".equals(item.kind))hasSeries=true;
+        }
+        // A number of Xtream portals populate get.php playlists but block VOD
+        // JSON endpoints. Recover titles and stream URLs from that same
+        // account's M3U instead of reporting an empty Movies/Series tab.
+        if(!hasVod || !hasSeries)recoverFromM3u(result,!hasVod,!hasSeries);
+        if(result.isEmpty())throw new IOException("Provider returned no Live, Movies or Series items. "+warnings());
         return result;
     }
     private void collect(List<Channel> output,String action,String kind,String categoryAction,String name){
         try{add(output,array(action),kind,categories(categoryAction));}
-        catch(Exception e){warnings.add(name+" cannot be loaded from this portal");}
+        catch(Exception e){
+            String detail=e.getClass().getSimpleName();
+            if(e instanceof java.io.FileNotFoundException)detail="HTTP 404";
+            else if(e instanceof java.net.SocketTimeoutException)detail="timeout";
+            else if(e instanceof java.net.UnknownHostException)detail="provider hostname unavailable";
+            warnings.add(name+" unavailable ("+detail+"); verify provider access and playlist permissions");
+        }
+    }
+    private void recoverFromM3u(List<Channel> result,boolean needMovies,boolean needSeries){
+        try {
+            String endpoint=server+"/get.php?username="+enc(user)+"&password="+enc(password)+"&type=m3u_plus&output=ts";
+            M3uParser.Result imported;
+            try(java.io.InputStream input=Net.open(endpoint,20*1024*1024)){
+                imported=M3uParser.parse(input,endpoint,endpoint);
+            }
+            HashSet<String> seen=new HashSet<>();
+            for(Channel item:result)seen.add(item.url);
+            int recovered=0;
+            for(Channel item:imported.channels){
+                String kind=StreamKind.detect(item.kind,item.group,item.url);
+                if(("movie".equals(kind)&&needMovies)||("series".equals(kind)&&needSeries)){
+                    if(seen.add(item.url) && result.size()<75000){result.add(item);recovered++;}
+                }
+            }
+            if(recovered>0)warnings.add("Recovered "+recovered+" VOD/series items from provider playlist");
+            else warnings.add("Provider M3U fallback has no classified movies/series");
+        }catch(Exception ignored){
+            warnings.add("Provider M3U VOD fallback unavailable; verify movies/series subscription");
+        }
     }
     private String pathPart(String s) { try { return new URI(null, null, "/"+s, null).getRawPath().substring(1); } catch(Exception e){ return enc(s); } }
     private Map<String,String> categories(String action) {
@@ -48,7 +94,7 @@ public final class Xtream {
     }
     private void add(List<Channel> output, JSONArray arr, String kind,Map<String,String> categories) throws IOException {
         for(int i=0;i<arr.length();i++) {
-            if(output.size()>=M3uParser.MAX_CHANNELS) throw new IOException("Portal exceeded item limit");
+            if(output.size()>=75000) throw new IOException("Portal exceeded 75000 item limit");
             JSONObject j=arr.optJSONObject(i); if(j==null) continue;
             String sid=j.optString(kind.equals("series")?"series_id":"stream_id");
             if(sid.isEmpty()) continue;

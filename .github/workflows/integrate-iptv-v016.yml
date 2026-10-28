@@ -1,5 +1,10 @@
 name: Integrate IPTV v0.1.6 into MyTube branch
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/integrate-iptv-v016.yml'
   workflow_dispatch:
 permissions:
   contents: write

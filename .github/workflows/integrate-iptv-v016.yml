@@ -39,11 +39,12 @@ jobs:
           p=Path('NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java')
           s=p.read_text()
           old='.setMessage("16 designs in four families: Cinema, Frosted Glass, Editorial and TV Dashboard. Layout, cards, wallpaper, typography and controls all change.")'
-          assert s.count(old)==1
-          s=s.replace(old,'',1)
+          if old in s:
+              s=s.replace(old,'',1)
           old='        root.setBackground(ThemeSurface.wallpaper(style,design));'
-          assert s.count(old)==1
-          s=s.replace(old,old+"""
+          if 'setOnApplyWindowInsetsListener' not in s:
+              assert old in s, 'Missing theme wallpaper anchor'
+              s=s.replace(old,old+"""
                   final int originalBottom=root.getPaddingBottom();
                   root.setOnApplyWindowInsetsListener((view,insets)->{
                       view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),

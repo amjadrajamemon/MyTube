@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import com.novastream.iptv.core.Net;
 import androidx.media3.ui.PlayerView;
 import com.novastream.iptv.core.Catalog;
+import com.novastream.iptv.core.NovaPlaybackBridge;
 import com.novastream.iptv.model.Channel;
 import java.util.*;
 
@@ -47,7 +48,7 @@ public final class PlayerActivity extends Activity {
     @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(Color.BLACK);getWindow().setNavigationBarColor(Color.BLACK);
         catalog=Catalog.get();current=catalog.find(getIntent().getStringExtra("id"));if(current==null){finish();return;}
-        build();player=new ExoPlayer.Builder(this).build();player.addListener(listener);view.setPlayer(player);play(current);
+        build();player=new ExoPlayer.Builder(this).build();player.addListener(listener);NovaPlaybackBridge.claim(player);view.setPlayer(player);play(current);
     }
     private Button button(String label,Runnable run){Button b=new Button(this);b.setAllCaps(false);
         b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(13);
@@ -129,5 +130,5 @@ public final class PlayerActivity extends Activity {
         default:return super.onKeyDown(key,e);
     }}
     @Override protected void onStop(){super.onStop();if(player!=null && !(android.os.Build.VERSION.SDK_INT>=26 && isInPictureInPictureMode()))player.pause();}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(player!=null){player.removeListener(listener);view.setPlayer(null);player.release();player=null;}super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(player!=null){player.removeListener(listener);NovaPlaybackBridge.release(player);view.setPlayer(null);player.release();player=null;}super.onDestroy();}
 }

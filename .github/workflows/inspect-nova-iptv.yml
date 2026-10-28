@@ -39,6 +39,7 @@ jobs:
           cp "$from/app/src/main/res/mipmap-nodpi/tv_banner.png" "$to/main/res/mipmap-nodpi/"
           cp "$from/LICENSE" iptv-vendor/LICENSE.NovaIPTV
           cp "$from/docs/AUDIT.md" iptv-vendor/NOVA-AUDIT.md
+          python3 iptv-vendor/patch-nova-playback.py
           printf '%s\n' 'Nova IPTV Pro v0.1.4 original source at amjadrajamemon/IPTV, vendored as an internal library module. Source ZIP SHA-256:' > iptv-vendor/IMPORT_PROVENANCE.txt
           sha256sum iptv-vendor/NovaIPTV-Pro-v0.1.4-Source-GitHub-Build.zip >> iptv-vendor/IMPORT_PROVENANCE.txt
           grep -q 'sourceNames' "$to/main/java/com/novastream/iptv/core/Catalog.java"

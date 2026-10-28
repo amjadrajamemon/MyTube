@@ -44,6 +44,7 @@ fun DriveDeckScreen(
     onExecuteSearch: (String) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenIptv: () -> Unit = {},
+    onOpenNovaIptv: () -> Unit = {},
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     recentSearches: List<String> = emptyList(),
@@ -116,8 +117,14 @@ fun DriveDeckScreen(
                 Spacer(Modifier.width(7.dp))
                 Text("IPTV Extreme")
             }
-            Text("Live TV · M3U · Xtream · 10 themes", color = TubeDeckTextSecondary, fontSize = 11.sp,
-                maxLines = 2, modifier = Modifier.weight(1f))
+            Button(
+                onClick = onOpenNovaIptv,
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("IPTV Pro")
+            }
         }
 
         ContentViewModeBar(

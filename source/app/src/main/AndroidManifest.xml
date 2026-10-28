@@ -24,7 +24,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
 
         <!-- Native pointer/air-mouse interaction on capable Android TV devices. -->
         <meta-data android:name="android.software.leanback.supports_touch" android:value="true" />
@@ -73,6 +73,14 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Explicit opt-in IPTV player. HTTP is needed only for legacy user-supplied playlists;
+             prefer HTTPS to avoid exposing provider tokens or programme streams in transit. -->
+        <activity
+            android:name=".iptv.IptvActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale" />
 
         <activity
             android:name=".NativePlayerActivity"

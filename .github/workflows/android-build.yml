@@ -900,7 +900,7 @@ jobs:
       # repository's Actions storage quota.
 
       - name: Publish v1.9.3 dual APK release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/iptv-nova-015-integration-20261028'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/iptv-v016-alignment-20261028'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

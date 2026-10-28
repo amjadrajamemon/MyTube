@@ -525,7 +525,14 @@ jobs:
 
       - name: Build ARM64 and Universal debug APKs
         if: steps.apk-cache.outputs.cache-hit != 'true'
-        run: gradle -p source assembleArm64Debug assembleUniversalDebug --stacktrace
+        run: |
+          set -euo pipefail
+          # Release archive contains the on-device Whisper model. Android ZipFlinger
+          # can exhaust a 2 GB daemon when packaging both variants in one process.
+          # Build editions sequentially and recycle the daemon between editions.
+          gradle -p source assembleArm64Debug --no-parallel --max-workers=2 --stacktrace
+          gradle --stop
+          gradle -p source assembleUniversalDebug --no-parallel --max-workers=2 --stacktrace
 
       - name: Build blackout regression instrumentation
         run: |

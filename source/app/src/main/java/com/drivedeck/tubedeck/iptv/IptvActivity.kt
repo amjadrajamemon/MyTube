@@ -1,5 +1,3 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package com.drivedeck.tubedeck.iptv
 
 import android.app.PictureInPictureParams
@@ -286,6 +284,7 @@ private fun IptvStudio(onClose: () -> Unit, onChannelActive: (Boolean) -> Unit) 
     }
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun IptvVideo(channel: IptvChannel?, palette: IptvPalette, onChannelActive: (Boolean) -> Unit) {
     val context = LocalContext.current

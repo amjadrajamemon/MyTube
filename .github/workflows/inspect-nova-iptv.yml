@@ -1,7 +1,7 @@
 name: Inspect Nova IPTV vendored project
 on:
   push:
-    branches: ['feature/iptv-nova-repository-integration-20261028']
+    branches: ['feature/iptv-nova-015-integration-20261028']
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,7 +14,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          unzip -q iptv-vendor/NovaIPTV-Pro-v0.1.4-Source-GitHub-Build.zip -d /tmp/nova-source
+          unzip -q iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip -d /tmp/nova-source
           echo '=== SOURCE TREE ==='
           find /tmp/nova-source -type f | sort
           echo '=== APP GRADLE ==='
@@ -40,14 +40,16 @@ jobs:
           cp "$from/LICENSE" iptv-vendor/LICENSE.NovaIPTV
           cp "$from/docs/AUDIT.md" iptv-vendor/NOVA-AUDIT.md
           python3 iptv-vendor/patch-nova-playback.py
-          printf '%s\n' 'Nova IPTV Pro v0.1.4 original source at amjadrajamemon/IPTV, vendored as an internal library module. Source ZIP SHA-256:' > iptv-vendor/IMPORT_PROVENANCE.txt
-          sha256sum iptv-vendor/NovaIPTV-Pro-v0.1.4-Source-GitHub-Build.zip >> iptv-vendor/IMPORT_PROVENANCE.txt
+          printf '%s\n' 'Nova IPTV Pro v0.1.5 original source at amjadrajamemon/IPTV, vendored as an internal library module. Source ZIP SHA-256:' > iptv-vendor/IMPORT_PROVENANCE.txt
+          sha256sum iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip >> iptv-vendor/IMPORT_PROVENANCE.txt
           grep -q 'sourceNames' "$to/main/java/com/novastream/iptv/core/Catalog.java"
           grep -q 'favoriteFolders' "$to/main/java/com/novastream/iptv/core/Catalog.java"
+          grep -q 'GridView grid' "$to/main/java/com/novastream/iptv/ui/MainActivity.java"
+          grep -q 'NovaPlaybackBridge.claim(player)' "$to/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           git add source/novaiptv/src iptv-vendor/LICENSE.NovaIPTV iptv-vendor/NOVA-AUDIT.md iptv-vendor/IMPORT_PROVENANCE.txt
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m "Import full Nova IPTV source and Java regression tests [skip ci]"
-            git push origin HEAD:feature/iptv-nova-repository-integration-20261028
+            git push origin HEAD:feature/iptv-nova-015-integration-20261028
           fi

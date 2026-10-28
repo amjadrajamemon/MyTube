@@ -880,6 +880,13 @@ class MainActivity : ComponentActivity() {
                                         navigateTo(ActiveScreen.BROWSER, destination)
                                     },
                                     onOpenShield = { showAdBlockSheet = true },
+                                    onOpenIptv = {
+                                        // The add-on uses its own lifecycle and a single media session.
+                                        pauseBrowserMediaForSwitch()
+                                        PlaybackSessionRegistry.stopForWeb()
+                                        BackgroundAudioController.stop(applicationContext)
+                                        startActivity(Intent(this@MainActivity, com.drivedeck.tubedeck.iptv.IptvActivity::class.java))
+                                    },
                                     onOpenDownloads = {
                                         downloadsInitialTab = 1
                                         navigateTo(ActiveScreen.DOWNLOADS)

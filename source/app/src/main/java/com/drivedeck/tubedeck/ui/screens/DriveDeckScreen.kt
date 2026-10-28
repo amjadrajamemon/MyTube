@@ -43,6 +43,7 @@ fun DriveDeckScreen(
     onSearchQueryChange: (String) -> Unit,
     onExecuteSearch: (String) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenIptv: () -> Unit = {},
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     recentSearches: List<String> = emptyList(),
@@ -101,6 +102,23 @@ fun DriveDeckScreen(
             searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube",
             autoFocus = tvNavigation
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = onOpenIptv,
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.LiveTv, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("IPTV Extreme")
+            }
+            Text("Live TV · M3U · Xtream · 10 themes", color = TubeDeckTextSecondary, fontSize = 11.sp,
+                maxLines = 2, modifier = Modifier.weight(1f))
+        }
 
         ContentViewModeBar(
             listView = listView,

@@ -1,4 +1,4 @@
-name: Audit Nova IPTV v0.1.8 source pin
+name: Audit Nova IPTV v0.2.0 source pin
 on:
   push:
     branches: ['feature/iptv-v016-alignment-20261028']
@@ -12,12 +12,12 @@ jobs:
     steps:
       - name: Checkout MyTube integration source
         uses: actions/checkout@v4
-      - name: Verify immutable Nova v0.1.8 source pin
+      - name: Verify immutable Nova v0.2.0 source pin
         shell: bash
         run: |
           set -euo pipefail
-          PIN=aba592d868ddd615f4be67af5002d6f01f6751fb
-          test "$(cat iptv-vendor/NOVA-V018-PIN.txt)" = "$PIN"
+          PIN=dfd4df2cb9aab9909491712674a894f57556fa26
+          test "$(cat iptv-vendor/NOVA-V020-PIN.txt)" = "$PIN"
           grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
@@ -25,18 +25,18 @@ jobs:
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
           ! grep -R -n "versionName '0.1.9'" source/novaiptv/src
-          echo "MyTube source pin and v0.1.8 feature invariants passed."
+          echo "MyTube source pin and v0.2.0 feature invariants passed."
       - name: Checkout pinned Nova IPTV repository commit
         uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: aba592d868ddd615f4be67af5002d6f01f6751fb
+          ref: dfd4df2cb9aab9909491712674a894f57556fa26
           path: upstream-iptv
-      - name: Verify immutable upstream source commit and v0.1.8 migration inputs
+      - name: Verify immutable upstream source commit and v0.2.0 migration inputs
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C upstream-iptv rev-parse HEAD)" = "aba592d868ddd615f4be67af5002d6f01f6751fb"
+          test "$(git -C upstream-iptv rev-parse HEAD)" = "dfd4df2cb9aab9909491712674a894f57556fa26"
           test -s upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip
           test -s upstream-iptv/scripts/apply_v017_color_picker.py
           test -s upstream-iptv/scripts/apply_v017x_upgrade.py
@@ -46,7 +46,7 @@ jobs:
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
-          echo 'Immutable upstream commit and integrated v0.1.8 migration markers verified.'
+          echo 'Immutable upstream commit and integrated v0.2.0 migration markers verified.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

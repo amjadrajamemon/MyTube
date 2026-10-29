@@ -127,9 +127,12 @@ jobs:
           cp app/build/outputs/apk/arm64/debug/*.apk ../dist/
           cp app/build/outputs/apk/universal/debug/*.apk ../dist/
           test "$(find ../dist -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 2
+          BUILD_TOOLS="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          test -x "$BUILD_TOOLS/aapt"
+          test -x "$BUILD_TOOLS/apksigner"
           for apk in ../dist/*.apk; do
-            aapt dump badging "$apk" >/dev/null
-            apksigner verify "$apk"
+            "$BUILD_TOOLS/aapt" dump badging "$apk" >/dev/null
+            "$BUILD_TOOLS/apksigner" verify "$apk"
           done
       - uses: actions/upload-artifact@v4
         if: success()

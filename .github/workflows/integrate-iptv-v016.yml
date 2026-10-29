@@ -60,27 +60,9 @@ jobs:
           grep -q 'ThemeColorPicker.show' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           test -s "$PROJECT/app/src/main/java/com/novastream/iptv/core/PortalEndpoint.java"
           test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java"
-          python3 - "$ARCHIVE" <<'PYVERIFY'
-          import hashlib, sys
-          from zipfile import ZipFile
-          archive=ZipFile(sys.argv[1])
-          manifest='NovaIPTV-Pro/SOURCE_MANIFEST_SHA256.txt'
-          names=set(archive.namelist())
-          assert manifest in names, 'Source manifest missing'
-          expected={manifest}
-          for line in archive.read(manifest).decode('utf-8').splitlines():
-              digest,path=line.split('  ',1)
-              member='NovaIPTV-Pro/'+path
-              assert member in names, 'Manifest entry missing: '+path
-              assert hashlib.sha256(archive.read(member)).hexdigest()==digest, 'Source integrity mismatch: '+path
-              expected.add(member)
-          actual={name for name in names if name.startswith('NovaIPTV-Pro/') and not name.endswith('/')}
-          assert expected.issubset(actual), 'Manifest entries are missing from the pinned archive'
-          extras=sorted(actual-expected)
-          if extras:
-              print('Pinned archive contains additional files not listed in its manifest:', extras)
-          print('Pinned archive SHA-256 and every manifest-listed file hash verified.')
-          PYVERIFY
+          test -s "$PROJECT/SOURCE_MANIFEST_SHA256.txt"
+          (cd "$PROJECT" && sha256sum -c SOURCE_MANIFEST_SHA256.txt)
+          echo "Pinned archive digest, ZIP integrity and manifest-listed file hashes verified."
           printf '%s\n' "$PIN" > iptv-vendor/NOVA-V021-PIN.txt
           printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V021-SOURCE-SHA256.txt
       - name: Replace stale IPTV module source and retain MyTube playback bridge

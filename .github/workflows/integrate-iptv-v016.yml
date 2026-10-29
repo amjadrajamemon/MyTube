@@ -1,4 +1,4 @@
-name: Integrate pinned Nova IPTV v0.1.8 into MyTube branch
+name: Integrate pinned Nova IPTV v0.2.0 into MyTube branch
 on:
   push:
     branches: ['feature/iptv-v016-alignment-20261028']
@@ -17,24 +17,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: aba592d868ddd615f4be67af5002d6f01f6751fb
+          ref: dfd4df2cb9aab9909491712674a894f57556fa26
           path: upstream-iptv
-      - name: Download and validate pinned Nova IPTV v0.1.8 release source
+      - name: Download and validate pinned Nova IPTV v0.2.0 release source
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C upstream-iptv rev-parse HEAD)" = "aba592d868ddd615f4be67af5002d6f01f6751fb"
-          ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip"
-          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.1.8-preview/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip" -o "$ARCHIVE"
+          test "$(git -C upstream-iptv rev-parse HEAD)" = "dfd4df2cb9aab9909491712674a894f57556fa26"
+          ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
+          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.2.0-preview/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip" -o "$ARCHIVE"
           ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
-          echo "Downloaded v0.1.8 source archive SHA-256: $ACTUAL"
+          echo "Downloaded v0.2.0 source archive SHA-256: $ACTUAL"
           unzip -tq "$ARCHIVE"
           mkdir -p upstream-v018
           unzip -q "$ARCHIVE" -d upstream-v018
           PROJECT=upstream-v018/NovaIPTV-Pro
           test -f "$PROJECT/app/build.gradle"
-          grep -Fq "versionName '0.1.8'" "$PROJECT/app/build.gradle"
-          ! grep -Fq "versionName '0.1.9'" "$PROJECT/app/build.gradle"
+          grep -Fq "versionName '0.2.0'" "$PROJECT/app/build.gradle"
+          ! grep -Fq "versionName '0.1.8'" "$PROJECT/app/build.gradle"
           grep -q 'MAX_PLAYLIST_BYTES=96' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
           grep -q 'buildEnigmaHome' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           grep -q 'ThemeColorPicker.show' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
@@ -47,7 +47,7 @@ jobs:
           archive=ZipFile(sys.argv[1])
           manifest='NovaIPTV-Pro/SOURCE_MANIFEST_SHA256.txt'
           names=set(archive.namelist())
-          assert manifest in names, 'v0.1.8 source manifest missing'
+          assert manifest in names, 'v0.2.0 source manifest missing'
           expected={manifest}
           for line in archive.read(manifest).decode('utf-8').splitlines():
               digest,path=line.split('  ',1)
@@ -58,11 +58,11 @@ jobs:
           actual={name for name in names if name.startswith('NovaIPTV-Pro/') and not name.endswith('/')}
           assert actual==expected, 'Unexpected or unmanifested source files: '+repr(sorted(actual ^ expected))
           assert all(name.startswith('NovaIPTV-Pro/') or name.endswith('/') for name in names), 'Unexpected file outside project root'
-          print('Pinned Nova v0.1.8 source manifest and complete file inventory verified.')
+          print('Pinned Nova v0.2.0 source manifest and complete file inventory verified.')
           PY
-          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > iptv-vendor/NOVA-V018-PIN.txt
-          printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V018-SOURCE-SHA256.txt
-          rm -f iptv-vendor/NOVA-V018-BASE-SHA256.txt
+          printf '%s\n' 'dfd4df2cb9aab9909491712674a894f57556fa26' > iptv-vendor/NOVA-V020-PIN.txt
+          printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V020-SOURCE-SHA256.txt
+          rm -f iptv-vendor/NOVA-V020-BASE-SHA256.txt
       - name: Import latest Java, resources and regression tests
         shell: bash
         run: |
@@ -77,7 +77,7 @@ jobs:
           grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
-          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > iptv-vendor/NOVA-V018-PIN.txt
+          printf '%s\n' 'dfd4df2cb9aab9909491712674a894f57556fa26' > iptv-vendor/NOVA-V020-PIN.txt
           grep -q 'verifyReachability' "$target/main/java/com/novastream/iptv/core/Xtream.java"
           grep -q 'buildEnigmaHome' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
           test -s "$target/main/java/com/novastream/iptv/core/PortalEndpoint.java"
@@ -85,7 +85,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --cached --quiet; then
-            git commit -m 'feat(iptv): import pinned Nova v0.1.8 portal recovery, XStreamity, themes and TV controls'
+            git commit -m 'feat(iptv): import pinned Nova v0.2.0 portal recovery, XStreamity, themes and TV controls'
             git push origin HEAD:feature/iptv-v016-alignment-20261028
           fi
       - uses: actions/setup-java@v4

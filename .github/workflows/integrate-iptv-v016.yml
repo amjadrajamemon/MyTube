@@ -89,7 +89,7 @@ jobs:
           s=p.read_text()
           dependency='    implementation("com.squareup.okhttp3:okhttp:4.12.0")'
           if dependency not in s:
-              s=s.replace("dependencies {", "dependencies {\\n"+dependency, 1)
+              s=s.replace("dependencies {", "dependencies {\n"+dependency, 1)
           p.write_text(s)
           assert dependency in p.read_text()
           PYDEP

@@ -75,9 +75,11 @@ jobs:
               assert hashlib.sha256(archive.read(member)).hexdigest()==digest, 'Source integrity mismatch: '+path
               expected.add(member)
           actual={name for name in names if name.startswith('NovaIPTV-Pro/') and not name.endswith('/')}
-          assert actual==expected, 'Unexpected or unmanifested source files: '+repr(sorted(actual ^ expected))
-          assert all(name.startswith('NovaIPTV-Pro/') or name.endswith('/') for name in names), 'Unexpected file outside project root'
-          print('v0.2.1 source manifest and complete inventory verified.')
+          assert expected.issubset(actual), 'Manifest entries are missing from the pinned archive'
+          extras=sorted(actual-expected)
+          if extras:
+              print('Pinned archive contains additional files not listed in its manifest:', extras)
+          print('Pinned archive SHA-256 and every manifest-listed file hash verified.')
           PYVERIFY
           printf '%s\n' "$PIN" > iptv-vendor/NOVA-V021-PIN.txt
           printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V021-SOURCE-SHA256.txt

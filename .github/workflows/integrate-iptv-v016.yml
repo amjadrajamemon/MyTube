@@ -83,6 +83,16 @@ jobs:
           mkdir -p "$target/test/java"
           cp -a "$upstream/test/java/." "$target/test/java/"
           python3 iptv-vendor/patch-nova-playback.py
+          python3 - <<'PYDEP'
+          from pathlib import Path
+          p=Path("source/novaiptv/build.gradle.kts")
+          s=p.read_text()
+          dependency='    implementation("com.squareup.okhttp3:okhttp:4.12.0")'
+          if dependency not in s:
+              s=s.replace("dependencies {", "dependencies {\\n"+dependency, 1)
+          p.write_text(s)
+          assert dependency in p.read_text()
+          PYDEP
           grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"

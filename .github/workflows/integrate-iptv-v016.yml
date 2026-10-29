@@ -110,12 +110,39 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Compile IPTV library and unit tests
+      - name: Compile integrated MyTube variants and run regression tests
         working-directory: source
-        run: gradle --no-daemon --console=plain :novaiptv:testDebugUnitTest :novaiptv:assembleDebug
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --console=plain \
+            :novaiptv:testDebugUnitTest \
+            :novaiptv:assembleDebug \
+            :app:testArm64DebugUnitTest \
+            :app:testUniversalDebugUnitTest \
+            :app:assembleArm64Debug \
+            :app:assembleUniversalDebug
+          mkdir -p ../dist
+          cp app/build/outputs/apk/arm64/debug/*.apk ../dist/
+          cp app/build/outputs/apk/universal/debug/*.apk ../dist/
+          test "$(find ../dist -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 2
+          for apk in ../dist/*.apk; do
+            aapt dump badging "$apk" >/dev/null
+            apksigner verify "$apk"
+          done
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: mytube-nova-v018-arm64-universal-apks
+          path: dist/*.apk
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mytube-iptv-v018-integration-diagnostics
-          path: source/novaiptv/build/reports/tests/
+          path: |
+            source/novaiptv/build/reports/tests/
+            source/app/build/reports/tests/
+            source/app/build/test-results/
           if-no-files-found: ignore

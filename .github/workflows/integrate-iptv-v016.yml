@@ -1,4 +1,4 @@
-name: Integrate pinned Nova IPTV v0.1.8 into MyTube branch
+name: Integrate pinned Nova IPTV v0.2.1 into MyTube branch
 on:
   push:
     branches: ['feature/iptv-v016-alignment-20261028']
@@ -7,8 +7,6 @@ on:
 permissions:
   contents: write
 concurrency:
-  # Keep the same group as the superseded v0.2.1 workflow so this correction
-  # cancels queued/in-progress v0.2.1 import runs instead of racing them.
   group: mytube-nova-v021-integration
   cancel-in-progress: true
 jobs:
@@ -16,47 +14,59 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout triggering MyTube revision
+      - name: Checkout MyTube integration branch
         uses: actions/checkout@v4
-      - name: Checkout immutable Nova IPTV v0.1.8 source commit
+        with:
+          ref: feature/iptv-v016-alignment-20261028
+      - name: Checkout exact IPTV source-pipeline revision
         uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: aba592d868ddd615f4be67af5002d6f01f6751fb
+          ref: ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
           path: upstream-iptv
-      - name: Download and validate exact Nova IPTV v0.1.8 release source
+      - name: Download and validate the latest corrected v0.2.1 source snapshot
         shell: bash
         run: |
           set -euo pipefail
-          PIN=aba592d868ddd615f4be67af5002d6f01f6751fb
-          EXPECTED_SHA=50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843
+          PIN=ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
           test "$(git -C upstream-iptv rev-parse HEAD)" = "$PIN"
-          ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip"
-          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.1.8-preview/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip" -o "$ARCHIVE"
-          echo "$EXPECTED_SHA  $ARCHIVE" | sha256sum -c -
+          ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
+          URL="https://github.com/amjadrajamemon/IPTV/releases/download/v0.2.1-debug-preview/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
+          curl -fLsS --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"
+          curl -fLsS --retry 3 --retry-delay 2 "$URL.sha256" -o "$ARCHIVE.sha256"
+          EXPECTED_SHA=acdd3daee19205236655bd895240123c377e1f365fd7908694ee74c4914e3bde
+          EXPECTED="$(awk '{print $1}' "$ARCHIVE.sha256")"
+          test "$EXPECTED" = "$EXPECTED_SHA"
+          ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED_SHA"
           unzip -tq "$ARCHIVE"
-          mkdir -p upstream-v018
-          unzip -q "$ARCHIVE" -d upstream-v018
-          PROJECT=upstream-v018/NovaIPTV-Pro
+          mkdir -p upstream-v021
+          unzip -q "$ARCHIVE" -d upstream-v021
+          PROJECT=upstream-v021/NovaIPTV-Pro
           test -s "$PROJECT/settings.gradle"
           test -s "$PROJECT/app/build.gradle"
-          grep -Eq "versionName ['\"]0\.1\.8(-preview)?['\"]" "$PROJECT/app/build.gradle"
-          ! grep -Eq "versionName ['\"]0\.1\.9" "$PROJECT/app/build.gradle"
-          grep -Eq 'MAX_PLAYLIST_BYTES[[:space:]]*=[[:space:]]*96' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq "versionName '0.2.1'" "$PROJECT/app/build.gradle"
+          grep -Fq 'MAX_CHANNELS = 250000;' "$PROJECT/app/src/main/java/com/novastream/iptv/core/M3uParser.java"
+          grep -Fq 'lines > 1000000' "$PROJECT/app/src/main/java/com/novastream/iptv/core/M3uParser.java"
+          grep -Fq 'CONNECT_TIMEOUT_MS = 20000' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'READ_TIMEOUT_MS = 180000' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/NetTransportTest.java"
+          test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java"
+          grep -Fq 'retryOnConnectionFailure(true)' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'normalizeHttpUrl(url)' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
+          if grep -R -n '75000' "$PROJECT/app/src/main"; then echo 'Legacy 75000 ceiling remains in v0.2.1 source'; exit 1; fi
+          grep -q 'verifyReachability' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Xtream.java"
           grep -q 'buildEnigmaHome' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           grep -q 'ThemeColorPicker.show' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
-          grep -q 'verifyReachability' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Xtream.java"
-          grep -q 'normalizedHost=x.baseAddress()' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           test -s "$PROJECT/app/src/main/java/com/novastream/iptv/core/PortalEndpoint.java"
           test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java"
-          test -s "$PROJECT/app/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java"
           python3 - "$ARCHIVE" <<'PYVERIFY'
           import hashlib, sys
           from zipfile import ZipFile
           archive=ZipFile(sys.argv[1])
           manifest='NovaIPTV-Pro/SOURCE_MANIFEST_SHA256.txt'
           names=set(archive.namelist())
-          assert manifest in names, 'v0.1.8 source manifest missing'
+          assert manifest in names, 'Source manifest missing'
           expected={manifest}
           for line in archive.read(manifest).decode('utf-8').splitlines():
               digest,path=line.split('  ',1)
@@ -67,43 +77,55 @@ jobs:
           actual={name for name in names if name.startswith('NovaIPTV-Pro/') and not name.endswith('/')}
           assert actual==expected, 'Unexpected or unmanifested source files: '+repr(sorted(actual ^ expected))
           assert all(name.startswith('NovaIPTV-Pro/') or name.endswith('/') for name in names), 'Unexpected file outside project root'
-          print('Exact v0.1.8 source manifest and full file inventory verified.')
+          print('v0.2.1 source manifest and complete inventory verified.')
           PYVERIFY
-      - name: Replace stale module source with the clean v0.1.8 source tree
+          printf '%s\n' "$PIN" > iptv-vendor/NOVA-V021-PIN.txt
+          printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V021-SOURCE-SHA256.txt
+      - name: Replace stale IPTV module source and retain MyTube playback bridge
         shell: bash
         run: |
           set -euo pipefail
-          upstream=upstream-v018/NovaIPTV-Pro/app/src
+          upstream=upstream-v021/NovaIPTV-Pro/app/src
           target=source/novaiptv/src
           rm -rf "$target/main/java/com/novastream/iptv" "$target/main/res" "$target/test/java/com/novastream/iptv"
           mkdir -p "$target/main/java/com/novastream" "$target/test/java/com/novastream"
           cp -a "$upstream/main/java/com/novastream/iptv" "$target/main/java/com/novastream/"
           cp -a "$upstream/main/res" "$target/main/"
           cp -a "$upstream/test/java/com/novastream/iptv" "$target/test/java/com/novastream/"
-          cp iptv-vendor/NovaPlaybackBridge.java "$target/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java"
           python3 iptv-vendor/patch-nova-playback.py
+          python3 - <<'PYDEP'
+          from pathlib import Path
+          p=Path("source/novaiptv/build.gradle.kts")
+          s=p.read_text()
+          dependency='    implementation("com.squareup.okhttp3:okhttp:4.12.0")'
+          if dependency not in s:
+              s=s.replace("dependencies {", "dependencies {\n"+dependency, 1)
+          p.write_text(s)
+          assert dependency in p.read_text()
+          PYDEP
           grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
-          test -s "$target/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java"
+          grep -q 'NovaPlaybackBridge.release(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
-          grep -q 'verifyReachability' "$target/main/java/com/novastream/iptv/core/Xtream.java"
-          grep -q 'buildEnigmaHome' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
-          grep -q 'ThemeColorPicker.show' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
-          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > iptv-vendor/NOVA-V018-PIN.txt
-          printf '%s  %s\n' '50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843' 'NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V018-SOURCE-SHA256.txt
+          grep -Fq 'MAX_CHANNELS = 250000;' "$target/main/java/com/novastream/iptv/core/M3uParser.java"
+          grep -Fq 'CONNECT_TIMEOUT_MS = 20000' "$target/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'READ_TIMEOUT_MS = 180000' "$target/main/java/com/novastream/iptv/core/Net.java"
+          test -s "$target/test/java/com/novastream/iptv/core/NetTransportTest.java"
+          if grep -R -n '75000' "$target/main"; then echo 'Legacy 75000 ceiling remains'; exit 1; fi
+          rm -f iptv-vendor/NOVA-V018-PIN.txt iptv-vendor/NOVA-V018-SOURCE-SHA256.txt iptv-vendor/NOVA-V021-BASE-SHA256.txt
           cat > iptv-vendor/IMPORT_PROVENANCE.txt <<'EOF'
-          Nova IPTV Pro v0.1.8-preview source from amjadrajamemon/IPTV, imported as an internal library module.
-          Upstream commit: aba592d868ddd615f4be67af5002d6f01f6751fb
-          Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.1.8-preview
-          Source archive SHA-256: 50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843
-          The integration workflow verifies the archive digest, source manifest and complete file inventory before import. Nova v0.1.9 and later versions are explicitly excluded.
+          Nova IPTV Pro v0.2.1 corrected debug-preview source snapshot from amjadrajamemon/IPTV.
+          Upstream source-pipeline commit: ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
+          Source archive SHA-256: acdd3daee19205236655bd895240123c377e1f365fd7908694ee74c4914e3bde
+          Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.2.1-debug-preview
+          Source archive asset: NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip (the v0.2.1 release's generated final source archive)
+          The integration workflow verifies the release SHA-256 sidecar, complete source manifest and playlist transport/capacity invariants before import.
           EOF
-          rm -f iptv-vendor/NOVA-V021-PIN.txt iptv-vendor/NOVA-V021-SOURCE-SHA256.txt iptv-vendor/NOVA-V021-BASE-SHA256.txt
-          git add -A source/novaiptv/src iptv-vendor
+          git add -A source/novaiptv/src source/novaiptv/build.gradle.kts iptv-vendor
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --cached --quiet; then
-            git commit -m 'feat(iptv): import exact Nova v0.1.8 source with playback bridge'
+            git commit -m 'feat(iptv): align MyTube with corrected Nova v0.2.1 transport and capacity fixes'
             git push origin HEAD:feature/iptv-v016-alignment-20261028
           fi
       - uses: actions/setup-java@v4
@@ -116,13 +138,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Compile and unit test integrated Nova IPTV v0.1.8 module
+      - name: Compile IPTV library and unit tests
         working-directory: source
         run: gradle --no-daemon --console=plain :novaiptv:testDebugUnitTest :novaiptv:assembleDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mytube-iptv-v018-integration-diagnostics
+          name: mytube-iptv-v021-integration-diagnostics
           path: source/novaiptv/build/reports/tests/
           if-no-files-found: ignore
-          retention-days: 14

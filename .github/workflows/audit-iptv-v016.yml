@@ -49,7 +49,7 @@ jobs:
           mkdir -p upstream-v018
           unzip -q "$ARCHIVE" -d upstream-v018
           PROJECT=upstream-v018/NovaIPTV-Pro
-          grep -Fq "versionName '0.1.8-preview'" "$PROJECT/app/build.gradle"
+          grep -Fq "versionName '0.1.8'" "$PROJECT/app/build.gradle"
           ! grep -Fq "versionName '0.1.9'" "$PROJECT/app/build.gradle"
           grep -q 'MAX_PLAYLIST_BYTES=96' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
           grep -q 'buildEnigmaHome' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"

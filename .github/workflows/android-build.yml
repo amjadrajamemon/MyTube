@@ -1,7 +1,6 @@
 name: Build MyTube Android APKs
 
 # 2026-10-19: XY AUTO native playback compatibility and navigation correction.
-# 2026-10-29: rebuild after importing the verified Nova IPTV v0.2.1 source archive.
 
 on:
   push:
@@ -58,19 +57,12 @@ jobs:
           test -f source/novaiptv/src/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
-          test "$(cat iptv-vendor/NOVA-V021-PIN.txt)" = "ab0cadf834b8e5b9071b2b552c0ae96e2fb48928"
-          test "$(awk '{print $1}' iptv-vendor/NOVA-V021-SOURCE-SHA256.txt)" = "acdd3daee19205236655bd895240123c377e1f365fd7908694ee74c4914e3bde"
-          test ! -e iptv-vendor/NOVA-V018-PIN.txt
-          test ! -e iptv-vendor/NOVA-V018-SOURCE-SHA256.txt
+          test "$(cat iptv-vendor/NOVA-V018-PIN.txt)" = "aba592d868ddd615f4be67af5002d6f01f6751fb"
+          test "$(awk '{print $1}' iptv-vendor/NOVA-V018-SOURCE-SHA256.txt)" = "50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843"
+          test ! -e iptv-vendor/NOVA-V021-PIN.txt
+          test ! -e iptv-vendor/NOVA-V021-SOURCE-SHA256.txt
           test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
-          test -s source/novaiptv/src/test/java/com/novastream/iptv/core/NetTransportTest.java
-          test -s source/novaiptv/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java
-          grep -Fq 'MAX_CHANNELS = 250000;' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
-          grep -Fq 'lines > 1000000' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
-          grep -Fq 'CONNECT_TIMEOUT_MS = 20000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
-          grep -Fq 'READ_TIMEOUT_MS = 180000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
-          grep -Fq 'retryOnConnectionFailure(true)' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
           grep -Eq 'MAX_PLAYLIST_BYTES[[:space:]]*=[[:space:]]*96' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
@@ -930,9 +922,9 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.9.3-iptv-nova-021-integrated"
+          TAG="v1.9.3-iptv-nova-018-integrated"
           NOTES="$(cat <<'NOTES'
-          MyTube v1.9.3 adds pinned Nova IPTV Pro v0.2.1 (OkHttp resilient playlist transport, safe redirects and URL normalization, 20s connect / 180s read timeouts, 250,000-stream and 1,000,000-line bounded playlist parsing, XStreamity-style TV navigation, interactive HSV color editor, 17 structural themes, Live, Movies, Series, TS/HLS recovery, VOD grid, multiple playlists, favorites and EPG) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
+          MyTube v1.9.3 adds pinned Nova IPTV Pro v0.1.8 (Xtream URL/DNS diagnostics, non-destructive empty playlist import, 96 MB playlist limit, XStreamity-style TV navigation, interactive HSV color editor, 17 structural themes, Live, Movies, Series, TS/HLS recovery, VOD grid, multiple playlists, favorites and EPG) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
 
           MyTube v1.9.3 keeps the display blank across automatic next-video playback, manual video selection, player replacement, and Web/native changes. Only a deliberate double-tap on the blank screen restores the picture; single taps and long presses are consumed. Blackout is stored independently of any video ID and survives process recreation. Audio playback is retained.
 
@@ -976,7 +968,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.9.3 Nova IPTV v0.2.1 ARM64 + Universal" \
+              --title "MyTube v1.9.3 Nova IPTV v0.1.8 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

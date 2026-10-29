@@ -38,7 +38,7 @@ jobs:
           test -f "$PROJECT/app/build.gradle"
           grep -Fq "versionName '0.2.1'" "$PROJECT/app/build.gradle"
           ! grep -Fq "versionName '0.1.8'" "$PROJECT/app/build.gradle"
-          grep -q 'MAX_PLAYLIST_BYTES = 96 * 1024 * 1024' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'MAX_PLAYLIST_BYTES = 96 * 1024 * 1024' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
           grep -Fq 'MAX_CHANNELS = 250000;' "$PROJECT/app/src/main/java/com/novastream/iptv/core/M3uParser.java"
           grep -Fq 'lines > 1000000' "$PROJECT/app/src/main/java/com/novastream/iptv/core/M3uParser.java"
           grep -Fq 'CONNECT_TIMEOUT_MS = 20000' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"

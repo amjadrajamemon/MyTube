@@ -25,13 +25,13 @@ jobs:
           set -euo pipefail
           test "$(git -C upstream-iptv rev-parse HEAD)" = "dfd4df2cb9aab9909491712674a894f57556fa26"
           ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
-          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.2.0-preview/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip" -o "$ARCHIVE"
+          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.2.0-debug-preview/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip" -o "$ARCHIVE"
           ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
           echo "Downloaded v0.2.0 source archive SHA-256: $ACTUAL"
           unzip -tq "$ARCHIVE"
-          mkdir -p upstream-v018
-          unzip -q "$ARCHIVE" -d upstream-v018
-          PROJECT=upstream-v018/NovaIPTV-Pro
+          mkdir -p upstream-v020
+          unzip -q "$ARCHIVE" -d upstream-v020
+          PROJECT=upstream-v020/NovaIPTV-Pro
           test -f "$PROJECT/app/build.gradle"
           grep -Fq "versionName '0.2.0'" "$PROJECT/app/build.gradle"
           ! grep -Fq "versionName '0.1.8'" "$PROJECT/app/build.gradle"
@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          upstream=upstream-v018/NovaIPTV-Pro/app/src
+          upstream=upstream-v020/NovaIPTV-Pro/app/src
           target=source/novaiptv/src
           cp -a "$upstream/main/java/." "$target/main/java/"
           cp -a "$upstream/main/res/." "$target/main/res/"

@@ -1,4 +1,4 @@
-name: Audit Nova IPTV v0.2.0 source pin
+name: Audit Nova IPTV v0.2.1 source pin
 on:
   push:
     branches: ['feature/iptv-v016-alignment-20261028']
@@ -12,41 +12,48 @@ jobs:
     steps:
       - name: Checkout MyTube integration source
         uses: actions/checkout@v4
-      - name: Verify immutable Nova v0.2.0 source pin
+      - name: Verify immutable Nova v0.2.1 source pin
         shell: bash
         run: |
           set -euo pipefail
-          PIN=dfd4df2cb9aab9909491712674a894f57556fa26
-          test "$(cat iptv-vendor/NOVA-V020-PIN.txt)" = "$PIN"
+          PIN=c7550d4da9a73892fb70b35f0b53e1093bd289e3
+          test "$(cat iptv-vendor/NOVA-V021-PIN.txt)" = "$PIN"
           grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
-          ! grep -R -n "versionName '0.1.9'" source/novaiptv/src
-          echo "MyTube source pin and v0.2.0 feature invariants passed."
+          grep -R -q 'MAX_CHANNELS = 250000;' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
+          grep -R -q 'lines > 1000000' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
+          grep -R -q 'CONNECT_TIMEOUT_MS = 20000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
+          grep -R -q 'READ_TIMEOUT_MS = 180000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
+          test -s source/novaiptv/src/test/java/com/novastream/iptv/core/NetTransportTest.java
+          if grep -R -n '75000' source/novaiptv/src/main; then echo 'Legacy 75000 ceiling remains'; exit 1; fi
+          echo "MyTube source pin and v0.2.1 feature invariants passed."
       - name: Checkout pinned Nova IPTV repository commit
         uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: dfd4df2cb9aab9909491712674a894f57556fa26
+          ref: c7550d4da9a73892fb70b35f0b53e1093bd289e3
           path: upstream-iptv
-      - name: Verify immutable upstream source commit and v0.2.0 migration inputs
+      - name: Verify immutable upstream source commit and v0.2.1 migration inputs
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C upstream-iptv rev-parse HEAD)" = "dfd4df2cb9aab9909491712674a894f57556fa26"
-          test -s upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip
+          test "$(git -C upstream-iptv rev-parse HEAD)" = "c7550d4da9a73892fb70b35f0b53e1093bd289e3"
+          test -s upstream-iptv/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip
           test -s upstream-iptv/scripts/apply_v017_color_picker.py
           test -s upstream-iptv/scripts/apply_v017x_upgrade.py
           test -s upstream-iptv/scripts/apply_v018_connectivity.py
+          test -s upstream-iptv/scripts/apply_v020_playlist_transport.py
+          test -s upstream-iptv/scripts/apply_large_playlist_capacity_fix.py
           grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
-          echo 'Immutable upstream commit and integrated v0.2.0 migration markers verified.'
+          echo 'Immutable upstream commit and integrated v0.2.1 playlist transport/capacity markers verified.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

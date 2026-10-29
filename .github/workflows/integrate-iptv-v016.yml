@@ -92,6 +92,7 @@ jobs:
           cp -a "$upstream/main/java/com/novastream/iptv" "$target/main/java/com/novastream/"
           cp -a "$upstream/main/res" "$target/main/"
           cp -a "$upstream/test/java/com/novastream/iptv" "$target/test/java/com/novastream/"
+          cp iptv-vendor/NovaPlaybackBridge.java "$target/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java"
           python3 iptv-vendor/patch-nova-playback.py
           python3 - <<'PYDEP'
           from pathlib import Path

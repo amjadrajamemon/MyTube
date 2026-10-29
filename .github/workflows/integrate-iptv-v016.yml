@@ -60,9 +60,29 @@ jobs:
           grep -q 'ThemeColorPicker.show' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           test -s "$PROJECT/app/src/main/java/com/novastream/iptv/core/PortalEndpoint.java"
           test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java"
-          test -s "$PROJECT/SOURCE_MANIFEST_SHA256.txt"
-          (cd "$PROJECT" && sha256sum -c SOURCE_MANIFEST_SHA256.txt)
-          echo "Pinned archive digest, ZIP integrity and manifest-listed file hashes verified."
+          python3 - "$PROJECT" <<'PYMANIFEST'
+          import hashlib, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          manifest=root/'SOURCE_MANIFEST_SHA256.txt'
+          assert manifest.is_file() and manifest.stat().st_size > 0, 'Source manifest is missing or empty'
+          count=0
+          for line in manifest.read_text(encoding='utf-8').splitlines():
+              if not line.strip():
+                  continue
+              digest, rel=line.split('  ',1)
+              rel=rel.strip().replace('\\\\','/')
+              if rel.startswith('NovaIPTV-Pro/'):
+                  rel=rel[len('NovaIPTV-Pro/'):]
+              if rel.startswith('./'):
+                  rel=rel[2:]
+              path=(root/rel).resolve()
+              assert path.is_file() and root.resolve() in path.parents, 'Manifest file missing or unsafe path: '+rel
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==digest, 'Source hash mismatch: '+rel
+              count+=1
+          assert count > 0, 'Source manifest has no entries'
+          print(f'Verified {count} manifest-listed source files.')
+          PYMANIFEST
           printf '%s\n' "$PIN" > iptv-vendor/NOVA-V021-PIN.txt
           printf '%s  %s\n' "$ACTUAL" 'NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V021-SOURCE-SHA256.txt
       - name: Replace stale IPTV module source and retain MyTube playback bridge

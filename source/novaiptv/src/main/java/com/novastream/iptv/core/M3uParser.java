@@ -11,7 +11,7 @@ import java.util.regex.*;
 /** Android-independent, bounded, streaming M3U parser. Does not print URLs (may contain secrets). */
 public final class M3uParser {
     private static final Pattern ATTR = Pattern.compile("([A-Za-z][A-Za-z0-9_-]*)\\s*=\\s*(?:\"([^\"]*)\"|([^\\s]+))");
-    public static final int MAX_CHANNELS = 75000;
+    public static final int MAX_CHANNELS = 250000;
     public static class Result {
         public final List<Channel> channels = new ArrayList<>();
         public String epgUrl = "";
@@ -24,7 +24,7 @@ public final class M3uParser {
             boolean pending = false;
             int lines = 0;
             while ((line = br.readLine()) != null) {
-                if (++lines > 240000) throw new IOException("Playlist exceeds 240000 lines; import the provider in smaller playlists");
+                if (++lines > 1000000) throw new IOException("Playlist exceeds 1000000 lines; split unusually large playlists to protect device memory");
                 if (line.length() > 12000) { result.rejected++; continue; }
                 line = line.replace("\ufeff", "").trim();
                 if (line.startsWith("#EXTM3U")) {
@@ -55,7 +55,7 @@ public final class M3uParser {
                 } else if (!line.isEmpty() && !line.startsWith("#") && pending) {
                     String url = resolve(baseUrl, line);
                     if (validStream(url)) {
-                        if (result.channels.size() >= MAX_CHANNELS) throw new IOException("Playlist exceeds 75000 streams; split the playlist into manageable parts");
+                        if (result.channels.size() >= MAX_CHANNELS) throw new IOException("Playlist exceeds 250000 streams; split unusually large playlists to protect device memory");
                         String id = hash(source+"|"+url);
                         result.channels.add(new Channel(id, title, url, group, logo, tvg, StreamKind.detect("",group,url), source,userAgent,referrer));
                     } else { result.rejected++; }

@@ -195,7 +195,7 @@ public final class Catalog {
         channels.removeIf(x->x.source.equals(source));
         sourceNames.putIfAbsent(source,defaultSourceName(source));
         Set<String> ids=new HashSet<>();for(Channel c:channels)ids.add(c.id);
-        for(Channel x:updated)if(channels.size()<75000 && ids.add(x.id))channels.add(x);
+        for(Channel x:updated)if(channels.size()<250000 && ids.add(x.id))channels.add(x);
     }
     public Channel find(String id){for(Channel c:channels)if(c.id.equals(id))return c;return null;}
     public void viewed(String id){recent.remove(id);recent.add(0,id);while(recent.size()>50)recent.remove(recent.size()-1);}

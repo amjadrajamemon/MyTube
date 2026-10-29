@@ -100,7 +100,7 @@ jobs:
           grep -q 'verifyReachability' "$target/main/java/com/novastream/iptv/core/Xtream.java"
           grep -q 'buildEnigmaHome' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
           test -s "$target/main/java/com/novastream/iptv/core/PortalEndpoint.java"
-          git add -A source/novaiptv/src iptv-vendor
+          git add -A source/novaiptv/src source/novaiptv/build.gradle.kts iptv-vendor
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --cached --quiet; then

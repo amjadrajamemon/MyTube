@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  audit-v018:
+  audit-v021:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -48,6 +48,8 @@ jobs:
           test -s upstream-iptv/scripts/apply_v018_connectivity.py
           test -s upstream-iptv/scripts/apply_v020_playlist_transport.py
           test -s upstream-iptv/scripts/apply_large_playlist_capacity_fix.py
+          test -s upstream-iptv/scripts/apply_v020_playlist_transport.py
+          test -s upstream-iptv/scripts/apply_large_playlist_capacity_fix.py
           grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'ThemeColorPicker.show' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
@@ -70,7 +72,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mytube-nova-iptv-v018-audit
+          name: mytube-nova-iptv-v021-audit
           path: source/novaiptv/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 14

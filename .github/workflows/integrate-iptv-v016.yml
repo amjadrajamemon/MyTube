@@ -22,19 +22,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
+          ref: 209f234c2833a2a79b696b976d04e077ac92d9bb
           path: upstream-iptv
       - name: Download and validate the latest corrected v0.2.1 source snapshot
         shell: bash
         run: |
           set -euo pipefail
-          PIN=ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
+          PIN=209f234c2833a2a79b696b976d04e077ac92d9bb
           test "$(git -C upstream-iptv rev-parse HEAD)" = "$PIN"
           ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
           URL="https://github.com/amjadrajamemon/IPTV/releases/download/v0.2.1-debug-preview/NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip"
           curl -fLsS --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"
           curl -fLsS --retry 3 --retry-delay 2 "$URL.sha256" -o "$ARCHIVE.sha256"
-          EXPECTED_SHA=acdd3daee19205236655bd895240123c377e1f365fd7908694ee74c4914e3bde
+          EXPECTED_SHA=d85a8ecdb1c50319395f903ddd941361639332111e0d0cd496a6902b8241827f
           EXPECTED="$(awk '{print $1}' "$ARCHIVE.sha256")"
           test "$EXPECTED" = "$EXPECTED_SHA"
           ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
@@ -53,6 +53,8 @@ jobs:
           test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/NetTransportTest.java"
           test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java"
           grep -Fq 'retryOnConnectionFailure(true)' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'parsePlaylistWithRetry' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
+          grep -Fq 'retriesAnAbortedPlaylistTransferFromTheBeginning' "$PROJECT/app/src/test/java/com/novastream/iptv/core/NetTransportTest.java"
           grep -Fq 'normalizeHttpUrl(url)' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
           if grep -R -n '75000' "$PROJECT/app/src/main"; then echo 'Legacy 75000 ceiling remains in v0.2.1 source'; exit 1; fi
           grep -q 'verifyReachability' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Xtream.java"
@@ -98,8 +100,8 @@ jobs:
           rm -f iptv-vendor/NOVA-V018-PIN.txt iptv-vendor/NOVA-V018-SOURCE-SHA256.txt iptv-vendor/NOVA-V021-BASE-SHA256.txt
           cat > iptv-vendor/IMPORT_PROVENANCE.txt <<'EOF'
           Nova IPTV Pro v0.2.1 corrected debug-preview source snapshot from amjadrajamemon/IPTV.
-          Upstream source-pipeline commit: ab0cadf834b8e5b9071b2b552c0ae96e2fb48928
-          Source archive SHA-256: acdd3daee19205236655bd895240123c377e1f365fd7908694ee74c4914e3bde
+          Upstream source-pipeline commit: 209f234c2833a2a79b696b976d04e077ac92d9bb
+          Source archive SHA-256: d85a8ecdb1c50319395f903ddd941361639332111e0d0cd496a6902b8241827f
           Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.2.1-debug-preview
           Source archive asset: NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip (the v0.2.1 release's generated final source archive)
           The integration workflow verifies the release SHA-256 sidecar, complete source manifest and playlist transport/capacity invariants before import.

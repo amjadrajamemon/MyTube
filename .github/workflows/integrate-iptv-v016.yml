@@ -19,54 +19,65 @@ jobs:
           repository: amjadrajamemon/IPTV
           ref: aba592d868ddd615f4be67af5002d6f01f6751fb
           path: upstream-iptv
-      - name: Download and validate pinned Nova IPTV v0.1.8 release source
+      - name: Rebuild Nova IPTV v0.1.8 from the immutable pinned repository commit
         shell: bash
         run: |
           set -euo pipefail
-          ARCHIVE="$RUNNER_TEMP/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip"
-          curl -fLsS --retry 3 --retry-delay 2 "https://github.com/amjadrajamemon/IPTV/releases/download/v0.1.8-preview/NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip" -o "$ARCHIVE"
-          ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
-          echo "Downloaded v0.1.8 source archive SHA-256: $ACTUAL"
-          unzip -tq "$ARCHIVE"
-          mkdir -p upstream-v018
-          unzip -q "$ARCHIVE" -d upstream-v018
-          PROJECT=upstream-v018/NovaIPTV-Pro
-          test -f "$PROJECT/app/build.gradle"
-          grep -Fq "versionName '0.1.8-preview'" "$PROJECT/app/build.gradle"
-          ! grep -Fq "versionName '0.1.9'" "$PROJECT/app/build.gradle"
-          grep -q 'MAX_PLAYLIST_BYTES=96' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Net.java"
-          grep -q 'buildEnigmaHome' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
-          grep -q 'ThemeColorPicker.show' "$PROJECT/app/src/main/java/com/novastream/iptv/ui/MainActivity.java"
-          grep -q 'verifyReachability' "$PROJECT/app/src/main/java/com/novastream/iptv/core/Xtream.java"
-          test -s "$PROJECT/app/src/main/java/com/novastream/iptv/core/PortalEndpoint.java"
-          test -s "$PROJECT/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java"
-          python3 - "$ARCHIVE" <<'PY'
-          import hashlib, sys
-          from zipfile import ZipFile
-          archive=ZipFile(sys.argv[1])
-          manifest='NovaIPTV-Pro/SOURCE_MANIFEST_SHA256.txt'
-          assert manifest in archive.namelist(), 'v0.1.8 source manifest missing'
-          names=set(archive.namelist())
-          expected={manifest}
-          for line in archive.read(manifest).decode('utf-8').splitlines():
-              digest,path=line.split('  ',1)
-              member='NovaIPTV-Pro/'+path
-              assert member in names, 'Manifest entry missing from archive: '+path
-              assert hashlib.sha256(archive.read(member)).hexdigest()==digest, 'Source integrity mismatch: '+path
-              expected.add(member)
-          actual={name for name in names if name.startswith('NovaIPTV-Pro/') and not name.endswith('/')}
-          assert actual==expected, 'Unexpected or unmanifested source files: '+repr(sorted(actual ^ expected))
-          assert all(name.startswith('NovaIPTV-Pro/') or name.endswith('/') for name in names), 'Unexpected file outside project root'
-          print('Pinned Nova v0.1.8 source archive manifest and complete file inventory verified.')
+          cd upstream-iptv
+          unzip -q NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip
+          python3 scripts/apply_vod_layout_fix.py
+          python3 scripts/apply_favorites_update.py
+          cp patches/favorites/FavoritesActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/FavoritesActivity.java
+          cp patches/favorites/FavoritesManagementTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/FavoritesManagementTest.java
+          python3 scripts/apply_multi_playlist_update.py
+          cp patches/multi-playlists/MultiPlaylistTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/MultiPlaylistTest.java
+          python3 scripts/apply_v014_release.py
+          python3 scripts/apply_v015_playback_layout.py
+          python3 scripts/apply_v016_live_and_themes.py
+          mkdir -p NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui
+          cp patches/v016/ThemeIdentityTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
+          cp patches/v016/LiveCatalogRecoveryTest.java NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java')
+          s=p.read_text()
+          old='.setMessage("16 designs in four families: Cinema, Frosted Glass, Editorial and TV Dashboard. Layout, cards, wallpaper, typography and controls all change.")'
+          if old in s:
+              s=s.replace(old,'',1)
+          old='        root.setBackground(ThemeSurface.wallpaper(style,design));'
+          if 'setOnApplyWindowInsetsListener' not in s:
+              assert old in s, 'Missing theme wallpaper anchor'
+              s=s.replace(old,old+"""
+                  final int originalBottom=root.getPaddingBottom();
+                  root.setOnApplyWindowInsetsListener((view,insets)->{
+                      view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),
+                          view.getPaddingRight(),originalBottom+insets.getSystemWindowInsetBottom());
+                      return insets;
+                  });
+                  root.requestApplyInsets();""",1)
+          p.write_text(s)
           PY
-          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > iptv-vendor/NOVA-V018-PIN.txt
-          printf '%s  %s\n' "$EXPECTED" 'NovaIPTV-Pro-v0.1.8-Source-GitHub-Build.zip' > iptv-vendor/NOVA-V018-SOURCE-SHA256.txt
-          rm -f iptv-vendor/NOVA-V018-BASE-SHA256.txt
+          cp patches/v015/PlayerActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          sed -i 's/KEYCODE_HEADSETPHOOK/KEYCODE_HEADSETHOOK/g' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          python3 scripts/apply_v017_color_picker.py
+          python3 scripts/apply_v017x_upgrade.py
+          python3 scripts/apply_v018_connectivity.py
+          grep -Fq "versionName '0.1.8'" NovaIPTV-Pro/app/build.gradle
+          ! grep -Fq "versionName '0.1.9'" NovaIPTV-Pro/app/build.gradle
+          grep -q 'MAX_PLAYLIST_BYTES=96' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/core/Net.java
+          grep -q 'buildEnigmaHome' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java
+          grep -q 'ThemeColorPicker.show' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java
+          grep -q 'verifyReachability' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/core/Xtream.java
+          test -s NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
+          test -s NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
+          printf '%s  %s\n' "$(sha256sum NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip | cut -d' ' -f1)" 'NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip' > ../MyTube/iptv-vendor/NOVA-V018-BASE-SHA256.txt
+          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > ../MyTube/iptv-vendor/NOVA-V018-PIN.txt
+          echo 'Rebuilt v0.1.8 from the immutable commit; v0.1.9 migration excluded.'
       - name: Import latest Java, resources and regression tests
         shell: bash
         run: |
           set -euo pipefail
-          upstream=upstream-v018/NovaIPTV-Pro/app/src
+          upstream=upstream-iptv/NovaIPTV-Pro/app/src
           target=source/novaiptv/src
           cp -a "$upstream/main/java/." "$target/main/java/"
           cp -a "$upstream/main/res/." "$target/main/res/"

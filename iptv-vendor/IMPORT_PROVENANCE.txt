@@ -1,2 +1,5 @@
-Nova IPTV Pro v0.1.5 original source at amjadrajamemon/IPTV, vendored as an internal library module. Source ZIP SHA-256:
-b46d224ea843f12787fd9124c492bcaadc90463b97745dc84def7f6153ac5b53  iptv-vendor/NovaIPTV-Pro-v0.1.5-Source-GitHub-Build.zip
+Nova IPTV Pro v0.1.8-preview source from amjadrajamemon/IPTV, imported as an internal library module.
+Upstream commit: aba592d868ddd615f4be67af5002d6f01f6751fb
+Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.1.8-preview
+Source archive SHA-256: 50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843
+The integration workflow verifies the archive digest, source manifest and file inventory before import. Nova v0.1.9 and later versions are explicitly excluded.

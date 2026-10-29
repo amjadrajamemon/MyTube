@@ -143,7 +143,7 @@ public final class Xtream {
             for(Channel item:imported.channels){
                 String kind=StreamKind.detect(item.kind,item.group,item.url);
                 if(("live".equals(kind)&&needLive)||("movie".equals(kind)&&needMovies)||("series".equals(kind)&&needSeries)){
-                    if(seen.add(item.url) && result.size()<75000){result.add(item);recovered++;}
+                    if(seen.add(item.url) && result.size()<250000){result.add(item);recovered++;}
                 }
             }
             if(recovered>0)warnings.add("Recovered "+recovered+" Live/VOD/Series items from provider playlist");

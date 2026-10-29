@@ -57,6 +57,11 @@ jobs:
           test -f source/novaiptv/src/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
+          test "$(cat iptv-vendor/NOVA-V018-PIN.txt)" = "aba592d868ddd615f4be67af5002d6f01f6751fb"
+          test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
+          test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
+          grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
+          grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'setOnApplyWindowInsetsListener' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'versionName = "1.9.3"' source/app/build.gradle.kts
           grep -q 'versionCode = 98' source/app/build.gradle.kts
@@ -911,9 +916,9 @@ jobs:
             echo "::notice::Signing identity bootstrap complete; release publication is intentionally skipped until the reported SHA-1 is pinned in .github/mytube-signing-sha1.txt."
             exit 0
           fi
-          TAG="v1.9.3-iptv-nova-016-integrated"
+          TAG="v1.9.3-iptv-nova-018-integrated"
           NOTES="$(cat <<'NOTES'
-          MyTube v1.9.3 adds integrated Nova IPTV Pro v0.1.6 (Live, Movies, Series, Xtream TS/HLS live stream recovery, authorized VOD fallback, responsive list/grid poster views with automatic movie grid, multiple playlists, named favourites, EPG, 16 Nova theme palettes) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
+          MyTube v1.9.3 adds pinned Nova IPTV Pro v0.1.8 (Xtream URL/DNS diagnostics, non-destructive empty playlist import, 96 MB playlist limit, XStreamity-style TV navigation, interactive HSV color editor, 17 structural themes, Live, Movies, Series, TS/HLS recovery, VOD grid, multiple playlists, favorites and EPG) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
 
           MyTube v1.9.3 keeps the display blank across automatic next-video playback, manual video selection, player replacement, and Web/native changes. Only a deliberate double-tap on the blank screen restores the picture; single taps and long presses are consumed. Blackout is stored independently of any video ID and survives process recreation. Audio playback is retained.
 
@@ -957,7 +962,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.9.3 Nova IPTV v0.1.6 ARM64 + Universal" \
+              --title "MyTube v1.9.3 Nova IPTV v0.1.8 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

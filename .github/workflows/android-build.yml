@@ -57,9 +57,16 @@ jobs:
           test -f source/novaiptv/src/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/core/LiveCatalogRecoveryTest.java
           test -f source/novaiptv/src/test/java/com/novastream/iptv/ui/ThemeIdentityTest.java
-          test "$(cat iptv-vendor/NOVA-V018-PIN.txt)" = "aba592d868ddd615f4be67af5002d6f01f6751fb"
+          test "$(cat iptv-vendor/NOVA-V021-PIN.txt)" = "c7550d4da9a73892fb70b35f0b53e1093bd289e3"
           test -s source/novaiptv/src/main/java/com/novastream/iptv/core/PortalEndpoint.java
           test -s source/novaiptv/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
+          test -s source/novaiptv/src/test/java/com/novastream/iptv/core/NetTransportTest.java
+          grep -Fq 'com.squareup.okhttp3:okhttp:4.12.0' source/novaiptv/build.gradle.kts
+          grep -Fq 'MAX_CHANNELS = 250000;' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
+          grep -Fq 'lines > 1000000' source/novaiptv/src/main/java/com/novastream/iptv/core/M3uParser.java
+          grep -Fq 'CONNECT_TIMEOUT_MS = 20000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
+          grep -Fq 'READ_TIMEOUT_MS = 180000' source/novaiptv/src/main/java/com/novastream/iptv/core/Net.java
+          if grep -R -n '75000' source/novaiptv/src/main; then echo 'Legacy playlist ceiling remains'; exit 1; fi
           grep -q 'buildEnigmaHome' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
           grep -q 'verifyReachability' source/novaiptv/src/main/java/com/novastream/iptv/core/Xtream.java
           grep -q 'setOnApplyWindowInsetsListener' source/novaiptv/src/main/java/com/novastream/iptv/ui/MainActivity.java
@@ -918,7 +925,7 @@ jobs:
           fi
           TAG="v1.9.3-iptv-nova-018-integrated"
           NOTES="$(cat <<'NOTES'
-          MyTube v1.9.3 adds pinned Nova IPTV Pro v0.1.8 (Xtream URL/DNS diagnostics, non-destructive empty playlist import, 96 MB playlist limit, XStreamity-style TV navigation, interactive HSV color editor, 17 structural themes, Live, Movies, Series, TS/HLS recovery, VOD grid, multiple playlists, favorites and EPG) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
+          MyTube v1.9.3 adds pinned Nova IPTV Pro v0.2.1 (Xtream URL/DNS diagnostics, non-destructive empty playlist import, 96 MB playlist limit, XStreamity-style TV navigation, interactive HSV color editor, 17 structural themes, Live, Movies, Series, TS/HLS recovery, VOD grid, multiple playlists, favorites and EPG) alongside the original MyTube IPTV Extreme ten-theme customizable wallpaper editor. The two IPTV experiences are separate optional screens in the same MyTube APK. No channels are bundled. The optional MyTube IPTV Extreme wallpaper preview provides a separate live-TV activity supporting user M3U/M3U8 file and URL imports, Xtream live-channel sources, channel search, Media3 HLS/DASH/RTSP playback, 10 original HD-inspired preset themes, generated wallpaper designs and custom photo wallpapers. The separate lightweight wallpaper preview has no EPG, VOD/series or recording; these are available in Nova except recording. No channels or subscriptions are bundled. Android TV launcher visibility and pointer-remote support, keyboard/D-pad focus and hover indication on navigation, search suggestions, media cards, settings and downloads, and hardware remote controls in native playback. The original phone, car-unit, Home/PiP, blackout, audio and existing video features remain in place.
 
           MyTube v1.9.3 keeps the display blank across automatic next-video playback, manual video selection, player replacement, and Web/native changes. Only a deliberate double-tap on the blank screen restores the picture; single taps and long presses are consumed. Blackout is stored independently of any video ID and survives process recreation. Audio playback is retained.
 
@@ -962,7 +969,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$GITHUB_SHA" \
-              --title "MyTube v1.9.3 Nova IPTV v0.1.8 ARM64 + Universal" \
+              --title "MyTube v1.9.3 Nova IPTV v0.2.1 ARM64 + Universal" \
               --notes "$NOTES"
           fi
           gh release view "$TAG"

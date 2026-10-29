@@ -1,6 +1,7 @@
 name: Build MyTube Android APKs
 
 # 2026-10-19: XY AUTO native playback compatibility and navigation correction.
+# 2026-10-29: rebuild from the restored immutable Nova IPTV v0.1.8 source pin.
 
 on:
   push:

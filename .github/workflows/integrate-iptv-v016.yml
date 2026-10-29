@@ -87,6 +87,7 @@ jobs:
           cp -a "$upstream/main/java/com/novastream/iptv" "$target/main/java/com/novastream/"
           cp -a "$upstream/main/res" "$target/main/"
           cp -a "$upstream/test/java/com/novastream/iptv" "$target/test/java/com/novastream/"
+          cp iptv-vendor/NovaPlaybackBridge.java "$target/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java"
           python3 iptv-vendor/patch-nova-playback.py
           python3 - <<'PYDEP'
           from pathlib import Path
@@ -99,6 +100,7 @@ jobs:
           assert dependency in p.read_text()
           PYDEP
           grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
+          test -s "$target/main/java/com/novastream/iptv/core/NovaPlaybackBridge.java"
           grep -q 'NovaPlaybackBridge.release(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"

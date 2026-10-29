@@ -1,5 +1,5 @@
-Nova IPTV Pro v0.2.1 corrected debug-preview source snapshot from amjadrajamemon/IPTV.
-Upstream repository commit: c7550d4da9a73892fb70b35f0b53e1093bd289e3
-Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.2.1-debug-preview
-Source archive asset: NovaIPTV-Pro-v0.2.0-Source-GitHub-Build.zip (the v0.2.1 release's generated final source archive)
-The integration workflow verifies the release SHA-256 sidecar, complete source manifest and playlist transport/capacity invariants before import.
+Nova IPTV Pro v0.1.8-preview source from amjadrajamemon/IPTV, imported as an internal library module.
+Upstream commit: aba592d868ddd615f4be67af5002d6f01f6751fb
+Release: https://github.com/amjadrajamemon/IPTV/releases/tag/v0.1.8-preview
+Source archive SHA-256: 50b19792fbc28314e76956cc25ac987098d9cbb6879ad3d365841ae76a415843
+The integration workflow verifies the archive digest, source manifest and complete file inventory before import. Nova v0.1.9 and later versions are explicitly excluded.

@@ -26,8 +26,6 @@ public final class MainActivity extends Activity {
     private TextView emptyState; private boolean gridMode=false; private int viewMode=-1;
     private TextView status; private EditText searchBox;
     private String tab="Live",group="",search="",selectedSource="";
-    // In-memory only. Can contain a subscription URL and is NEVER logged or shown.
-    private volatile String lastSourceForDiagnosis="";
     private List<Channel> shown=new ArrayList<>();
     private boolean tv; private boolean xstreamityHome=true;
     private static final int PICK_PLAYLIST=61;
@@ -380,22 +378,12 @@ public final class MainActivity extends Activity {
     private void promptUrl(){EditText e=field("https://example.com/list.m3u",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         new AlertDialog.Builder(this).setTitle("Import M3U playlist").setMessage("Add a playlist supplied by a provider you are authorized to use.")
             .setView(e).setNegativeButton("Cancel",null).setPositiveButton("Import",(d,w)->importUrl(e.getText().toString().trim())).show();}
-    private void importUrl(String url){
-        final String sourceUrl;
-        try { sourceUrl=Net.normalizeHttpUrl(url); }
-        catch(IOException error){ showError("Playlist URL",error); return; }
-        lastSourceForDiagnosis=sourceUrl;
+    private void importUrl(String url){if(!(url.startsWith("https://")||url.startsWith("http://"))){toast("Enter a full HTTP(S) URL");return;}
         runTask("Importing playlist",()->{
-            M3uParser.Result r;
-            try(InputStream in=Net.open(sourceUrl,Net.MAX_PLAYLIST_BYTES)){
-                r=M3uParser.parse(in,sourceUrl,sourceUrl);
-            }
-            if(r.channels.isEmpty())throw new IOException("Playlist download completed but returned no valid stream entries. Previously saved playlists were left unchanged. Check the provider response and M3U format.");
-            runOnUiThread(()->{
-                catalog.replaceSource(sourceUrl,r.channels);
-                if(catalog.epgUrl.isEmpty()&&!r.epgUrl.isEmpty())catalog.epgUrl=r.epgUrl;
-                save();refilter();
-                toast("Imported "+r.channels.size()+" streams"+(r.rejected>0?"; skipped "+r.rejected:""));
+            M3uParser.Result r;try(InputStream in=Net.open(url,Net.MAX_PLAYLIST_BYTES)){r=M3uParser.parse(in,url,url);}
+            if(r.channels.isEmpty())throw new IOException("Playlist download returned no valid stream entries. Previously saved playlists were left unchanged. Verify the full URL and provider response.");
+            runOnUiThread(()->{catalog.replaceSource(url,r.channels);if(catalog.epgUrl.isEmpty()&&!r.epgUrl.isEmpty())catalog.epgUrl=r.epgUrl;
+                save();refilter();toast("Imported "+r.channels.size()+" streams"+(r.rejected>0?"; skipped "+r.rejected:""));
                 if(!catalog.epgUrl.isEmpty())refreshEpg(false);
             });
         });
@@ -420,7 +408,6 @@ public final class MainActivity extends Activity {
             .setMessage("Use the exact server/port from your working IPTV app. Paste a full get.php or player_api.php link if easier; the query is stripped. Enter credentials separately. HTTPS is preferred when supported.")
             .setView(fields).setNegativeButton("Cancel",null).setPositiveButton("Connect",(d,w)->{
                 String host=server.getText().toString().trim().replaceAll("/+$",""),u=username.getText().toString(),p=password.getText().toString();
-                lastSourceForDiagnosis=host;
                 runTask("Loading portal",()->{
                     Xtream x=new Xtream(host,u,p);
                     String normalizedHost=x.baseAddress();
@@ -566,7 +553,6 @@ public final class MainActivity extends Activity {
             }).show();
     }
     private void refreshPlaylist(String key){
-        lastSourceForDiagnosis=catalog.sourceHost(key);
         final String credentials=catalog.xtreamCredentials.get(key);
         if(credentials!=null&&credentials.indexOf((char)10)>=0){
             String[] pair=credentials.split(String.valueOf((char)10),2);
@@ -664,25 +650,7 @@ public final class MainActivity extends Activity {
     private void showError(String title,Exception e){String message=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();
         // Avoid showing API URLs and embedded credentials from exception chains.
         message=message.replaceAll("(?i)(password|username)=([^&\\s]+)","$1=REDACTED");
-        AlertDialog.Builder alert=new AlertDialog.Builder(this).setTitle(title+" failed")
-            .setMessage(message).setPositiveButton("OK",null);
-        if(!lastSourceForDiagnosis.isEmpty() &&
-           (title.contains("playlist")||title.contains("portal")||title.contains("Importing"))){
-            alert.setNeutralButton("Test connection",(dialog,which)->checkSourceConnectivity());
-        }
-        alert.show();}
-    private void checkSourceConnectivity(){
-        final String source=lastSourceForDiagnosis;
-        runTask("Testing DNS and server ports",()->{
-            final String report=PortalConnectivityProbe.check(
-                source.contains("://")?source:PortalEndpoint.normalize(source));
-            runOnUiThread(()->new AlertDialog.Builder(this)
-                .setTitle("Connection diagnosis (no account login)")
-                .setMessage(report)
-                .setPositiveButton("Close",null)
-                .show());
-        });
-    }
+        new AlertDialog.Builder(this).setTitle(title+" failed").setMessage(message).setPositiveButton("OK",null).show();}
     private void toast(String m){Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);applyTheme();}
     @Override public void onBackPressed(){

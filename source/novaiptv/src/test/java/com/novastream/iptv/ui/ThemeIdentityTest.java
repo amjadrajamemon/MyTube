@@ -6,7 +6,7 @@ import static org.junit.Assert.*;
 public class ThemeIdentityTest {
     @Test public void allSixteenHaveUniqueStructuralOrVariantIdentity(){
         HashSet<String> fingerprints=new HashSet<>();
-        for(int i=0;i<16;i++){
+        for(int i=0;i<17;i++){
             ThemeIdentity t=ThemeIdentity.of(i);
             assertTrue(t.radius>=2);
             assertTrue(t.gutter>=7);
@@ -26,10 +26,11 @@ public class ThemeIdentityTest {
     }
     @Test public void labelsExposeFourCompleteDesignFamilies(){
         String[] labels=ThemeIdentity.labels(null);
-        assertEquals(16,labels.length);
+        assertEquals(17,labels.length);
         assertTrue(labels[0].contains("CINEMA"));
         assertTrue(labels[4].contains("GLASS"));
         assertTrue(labels[8].contains("EDITORIAL"));
         assertTrue(labels[12].contains("TV DASHBOARD"));
+        assertTrue(labels[16].contains("XStreamity"));
     }
 }

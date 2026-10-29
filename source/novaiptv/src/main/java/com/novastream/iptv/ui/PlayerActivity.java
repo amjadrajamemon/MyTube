@@ -33,6 +33,8 @@ public final class PlayerActivity extends Activity {
     private int retries=0, fit=0;
     private String activeUrl="", lastError="";
     private boolean triedAlternate=false, dialogOpen=false;
+    // Invalidates delayed retries when the user changes channels or stream formats.
+    private long streamGeneration=0;
     private final Player.Listener listener=new Player.Listener(){
         @Override public void onPlaybackStateChanged(int state) {
             if(hint==null)return;
@@ -55,7 +57,11 @@ public final class PlayerActivity extends Activity {
                 if(next!=null) {
                     triedAlternate=true;
                     showMessage("Trying alternative live stream format…");
-                    handler.postDelayed(()->{if(!isFinishing()&&player!=null)loadStream(next);},250);
+                    final long failedGeneration=streamGeneration;
+                    handler.postDelayed(()->{
+                        if(!isFinishing()&&player!=null&&streamGeneration==failedGeneration)
+                            loadStream(next);
+                    },250);
                     return;
                 }
             }
@@ -65,7 +71,12 @@ public final class PlayerActivity extends Activity {
             if(network && retries<2) {
                 retries++;
                 showMessage("Network reconnect "+retries+"/2");
-                handler.postDelayed(()->{if(!isFinishing()&&player!=null)loadStream(activeUrl);},1200L*retries);
+                final long failedGeneration=streamGeneration;
+                final String failedUrl=activeUrl;
+                handler.postDelayed(()->{
+                    if(!isFinishing()&&player!=null&&streamGeneration==failedGeneration)
+                        loadStream(failedUrl);
+                },1200L*retries);
                 return;
             }
             showMessage("Playback error: "+lastError+" • Options → Diagnose or External");
@@ -102,10 +113,44 @@ public final class PlayerActivity extends Activity {
         b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(9),0,dp(9),0);
         b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2A3D56));
         b.setOnClickListener(v->run.run());
-        b.setFocusable(true);return b;
+        b.setFocusable(true);
+        b.setContentDescription("‹".equals(label)?"Back":"⋮".equals(label)?"Player options":label);
+        // TV D-pad and keyboard focus must remain obvious. Air-mouse hover
+        // uses the same highlight but never consumes clicks or scroll events.
+        b.setOnFocusChangeListener((v,focused)->{
+            b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                focused?0xFF3289E8:0xFF2A3D56));
+            b.setScaleX(1f);b.setScaleY(1f);
+        });
+        b.setOnHoverListener((v,event)->{
+            int action=event.getActionMasked();
+            if(action==android.view.MotionEvent.ACTION_HOVER_ENTER)
+                b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF3289E8));
+            else if(action==android.view.MotionEvent.ACTION_HOVER_EXIT)
+                b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                    b.hasFocus()?0xFF3289E8:0xFF2A3D56));
+            return false;
+        });
+        return b;
     }
     private void build(){
-        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);setContentView(frame);
+        FrameLayout frame=new FrameLayout(this);
+        frame.setBackgroundColor(Color.BLACK);
+        // On Android 15 edge-to-edge windows, Media3's bottom controls can
+        // sit behind gesture/three-button navigation. Keep the playback UI
+        // inside the system-bar safe area, including side bars in landscape.
+        // Base padding is captured once so repeated inset dispatches cannot
+        // accumulate padding or gradually shrink the player.
+        final int baseLeft=frame.getPaddingLeft(), baseRight=frame.getPaddingRight();
+        final int baseBottom=frame.getPaddingBottom();
+        frame.setOnApplyWindowInsetsListener((v,insets)->{
+            v.setPadding(baseLeft+insets.getSystemWindowInsetLeft(),
+                v.getPaddingTop(),baseRight+insets.getSystemWindowInsetRight(),
+                baseBottom+insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+        setContentView(frame);
+        frame.requestApplyInsets();
         view=new PlayerView(this);view.setUseController(true);view.setControllerShowTimeoutMs(4500);
         frame.addView(view,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.VERTICAL);
@@ -136,6 +181,7 @@ public final class PlayerActivity extends Activity {
         try{catalog.persist(this);}catch(Exception ignored){}
     }
     private void loadStream(String url){
+        streamGeneration++;
         activeUrl=url;
         MediaItem.Builder media=new MediaItem.Builder().setUri(url);
         String path=url.toLowerCase(Locale.ROOT);
@@ -243,18 +289,36 @@ public final class PlayerActivity extends Activity {
     }
     @Override public boolean onKeyDown(int key,KeyEvent event){
         switch(key){
-            case KeyEvent.KEYCODE_CHANNEL_UP:case KeyEvent.KEYCODE_MEDIA_NEXT:next(1);return true;
-            case KeyEvent.KEYCODE_CHANNEL_DOWN:case KeyEvent.KEYCODE_MEDIA_PREVIOUS:next(-1);return true;
-            case KeyEvent.KEYCODE_MENU:case KeyEvent.KEYCODE_F1:options();return true;
-            case KeyEvent.KEYCODE_ESCAPE:case KeyEvent.KEYCODE_BACK:finish();return true;
+            // Some TV remotes and Bluetooth keyboards repeat a held media key.
+            // Never turn one long press into multiple channel changes or toggles.
+            case KeyEvent.KEYCODE_CHANNEL_UP:case KeyEvent.KEYCODE_MEDIA_NEXT:
+                if(event.getRepeatCount()==0)next(1);return true;
+            case KeyEvent.KEYCODE_CHANNEL_DOWN:case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                if(event.getRepeatCount()==0)next(-1);return true;
+            case KeyEvent.KEYCODE_MENU:case KeyEvent.KEYCODE_F1:
+                if(event.getRepeatCount()==0)options();return true;
+            case KeyEvent.KEYCODE_ESCAPE:case KeyEvent.KEYCODE_BACK:
+                if(event.getRepeatCount()==0)finish();return true;
             case KeyEvent.KEYCODE_SPACE:case KeyEvent.KEYCODE_K:
-                if(player!=null){if(player.isPlaying())player.pause();else player.play();}return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:case KeyEvent.KEYCODE_J:
-                if(player!=null&&player.isCurrentMediaItemSeekable())player.seekTo(Math.max(0,player.getCurrentPosition()-10000));return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:case KeyEvent.KEYCODE_L:
-                if(player!=null&&player.isCurrentMediaItemSeekable())player.seekTo(player.getCurrentPosition()+10000);return true;
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:case KeyEvent.KEYCODE_HEADSETHOOK:
-                if(player!=null){if(player.isPlaying())player.pause();else player.play();}return true;
+                if(event.getRepeatCount()==0 && player!=null){
+                    if(player.isPlaying())player.pause();else player.play();
+                }
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                if(player!=null)player.play();return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                if(player!=null)player.pause();return true;
+            // Preserve D-pad arrows and Enter/OK for focus navigation on TV.
+            // Explicit media seek keys and J/L work only on seekable streams.
+            case KeyEvent.KEYCODE_J:case KeyEvent.KEYCODE_MEDIA_REWIND:
+                if(player!=null&&player.isCurrentMediaItemSeekable())
+                    player.seekTo(Math.max(0,player.getCurrentPosition()-10000));
+                return true;
+            case KeyEvent.KEYCODE_L:case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+                if(player!=null&&player.isCurrentMediaItemSeekable())
+                    player.seekTo(player.getCurrentPosition()+10000);
+                return true;
             default:return super.onKeyDown(key,event);
         }
     }

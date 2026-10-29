@@ -26,6 +26,7 @@ public final class ThemeSurface {
             case 0: palette=new int[]{mix(style.bg,Color.BLACK,.45f),mix(style.surface,style.accent,.12f),style.bg};break;
             case 1: palette=new int[]{mix(style.accent,style.bg,.74f),mix(style.bg,style.surface,.44f),mix(style.accent,style.bg,.92f)};break;
             case 2: palette=new int[]{mix(style.bg,style.surface,.2f),style.bg,mix(style.surface,style.bg,.73f)};break;
+            case 4:palette=new int[]{0xFF02060E,0xFF0A1829,0xFF030913};break;
             default:palette=new int[]{style.bg,mix(style.surface,style.bg,.50f),style.bg};break;
         }
         GradientDrawable.Orientation[] directions={GradientDrawable.Orientation.TL_BR,
@@ -43,6 +44,8 @@ public final class ThemeSurface {
                 bg=selected?mix(style.accent,style.surface,.48f):mix(style.surface,style.bg,.35f);break;
             case 2:
                 bg=selected?mix(style.accent,style.surface,.18f):style.surface;break;
+            case 4:
+                bg=selected?0xFF07568B:0xFF101925;break;
             default:
                 bg=selected?mix(style.accent,style.surface,.3f):mix(style.surface,style.bg,.24f);break;
         }
@@ -50,27 +53,28 @@ public final class ThemeSurface {
         int pxRadius=theme.radius;
         if(hero)pxRadius=Math.max(2,pxRadius-2);
         if(theme.family==3)pxRadius=Math.min(pxRadius,8);
+        if(theme.family==4)pxRadius=2;
         drawable.setCornerRadius(pxRadius);
-        int border=(selected||theme.family==1||theme.family==2)?(selected?2:1):0;
-        if(border>0)drawable.setStroke(border,selected?style.accent:mix(style.accent,style.surface,.48f));
+        int border=(selected||theme.family==1||theme.family==2||theme.family==4)?(selected?2:1):0;
+        if(border>0)drawable.setStroke(border,selected?(theme.family==4?0xFF78CAFA:style.accent):(theme.family==4?0xFF566D81:mix(style.accent,style.surface,.48f)));
         return drawable;
     }
     public static void button(Button button, Style style, ThemeIdentity theme, boolean selected){
-        float font=new float[]{.98f,.95f,1.07f,.99f}[theme.family];
+        float font=new float[]{.98f,.95f,1.07f,.99f,1.0f}[theme.family];
         button.setTextSize(13*style.scale*font);
         button.setTypeface(theme.family==2?Typeface.SERIF:Typeface.DEFAULT,
             theme.family==3?Typeface.BOLD:Typeface.NORMAL);
         button.setAllCaps(theme.family==2);
-        button.setTextColor(selected?style.bg:style.text);
+        button.setTextColor(theme.family==4?0xFFF3F8FC:(selected?style.bg:style.text));
         button.setBackground(panel(style,theme,selected,false));
-        button.setMinHeight(theme.family==3?42:46);
+        button.setMinHeight(theme.family==4?56:theme.family==3?42:46);
         button.setMinimumWidth(0);
     }
     public static void heading(TextView text,Style style,ThemeIdentity theme){
         text.setTypeface(theme.family==2?Typeface.create("serif",Typeface.BOLD):
             Typeface.create(theme.family==3?"sans-serif-condensed":"sans-serif",Typeface.BOLD));
-        text.setLetterSpacing(theme.family==2?.065f:theme.family==0?.035f:0f);
-        text.setTextColor(theme.family==2?style.text:style.accent);
+        text.setLetterSpacing(theme.family==2?.065f:theme.family==0?.035f:theme.family==4?.02f:0f);
+        text.setTextColor(theme.family==4?0xFFF2F8FC:(theme.family==2?style.text:style.accent));
     }
     public static void decorateCard(View card,Style style,ThemeIdentity theme,boolean focus){
         card.setBackground(panel(style,theme,focus,false));

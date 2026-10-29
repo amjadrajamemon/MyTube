@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
     private TextView status; private EditText searchBox;
     private String tab="Live",group="",search="",selectedSource="";
     private List<Channel> shown=new ArrayList<>();
-    private boolean tv;
+    private boolean tv; private boolean xstreamityHome=true;
     private static final int PICK_PLAYLIST=61;
     @Override public void onCreate(Bundle b){super.onCreate(b);
         tv=getPackageManager().hasSystemFeature("android.software.leanback") || getPackageManager().hasSystemFeature("android.hardware.type.television");
@@ -42,13 +42,21 @@ public final class MainActivity extends Activity {
     private void ready(){applyTheme();if(catalog.channels.isEmpty())getWindow().getDecorView().postDelayed(this::sourceChooser,600);
         if(!catalog.epgUrl.isEmpty())refreshEpg(false);}
     private void applyTheme(){design=ThemeIdentity.of(catalog.theme);
-        style=new Style(catalog.theme,catalog.textSize,catalog.customBg,catalog.customAccent,catalog.customText);
+        style=new Style(catalog.theme==16?1:catalog.theme,catalog.textSize,catalog.customBg,catalog.customAccent,catalog.customText);
         getWindow().setStatusBarColor(style.bg);getWindow().setNavigationBarColor(style.bg);build();}
     private Button button(String title,Runnable action){
         Button b=new Button(this);b.setText(title);b.setTextSize(13*style.scale);b.setTextColor(style.text);b.setAllCaps(false);
         b.setPadding(Style.dp(this,9),Style.dp(this,6),Style.dp(this,9),Style.dp(this,6));b.setMinHeight(Style.dp(this,46));
         ThemeSurface.button(b,style,design,false);b.setOnClickListener(v->action.run());
-        b.setOnFocusChangeListener((v,focus)->ThemeSurface.button(b,style,design,focus));return b;
+        b.setOnFocusChangeListener((v,focus)->ThemeSurface.button(b,style,design,focus));
+        b.setOnHoverListener((v,event)->{
+            int hoverAction=event.getActionMasked();
+            if(hoverAction==android.view.MotionEvent.ACTION_HOVER_ENTER)
+                ThemeSurface.button(b,style,design,true);
+            else if(hoverAction==android.view.MotionEvent.ACTION_HOVER_EXIT)
+                ThemeSurface.button(b,style,design,b.hasFocus());
+            return false;
+        });return b;
     }
     private LinearLayout horizontal(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private void extraMenu(){new AlertDialog.Builder(this).setTitle("Nova IPTV")
@@ -59,7 +67,90 @@ public final class MainActivity extends Activity {
             else if(w==6)settings();else if(w==7)groups();
             else if(w==8){if(catalog.epgUrl.isEmpty())promptEpg();else refreshEpg(true);}
         }).show();}
+    /** Original Enigma2-style, full-screen selector, without copying 3rd-party skins. */
+    private void buildEnigmaHome(){
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
+        int pad=Style.dp(this,Math.max(8,design.gutter));
+        root.setPadding(pad,Style.dp(this,6),pad,Style.dp(this,6));
+        root.setBackground(ThemeSurface.wallpaper(style,design));
+        setContentView(root);
+        TextView title=style.label(this,"◈   NOVA  /  XSTREAMITY CLASSIC",tv?20:16,true);
+        ThemeSurface.heading(title,style,design);title.setGravity(Gravity.CENTER);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setBackgroundColor(0xCC071A2F);
+        root.addView(title,new LinearLayout.LayoutParams(-1,Style.dp(this,51)));
+        ScrollView scroller=new ScrollView(this);
+        scroller.setFillViewport(true);scroller.setVerticalScrollBarEnabled(false);
+        LinearLayout centering=new LinearLayout(this);
+        centering.setOrientation(LinearLayout.VERTICAL);centering.setGravity(Gravity.CENTER);
+        LinearLayout menu=new LinearLayout(this);menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setPadding(Style.dp(this,10),Style.dp(this,10),Style.dp(this,10),Style.dp(this,10));
+        menu.setBackground(ThemeSurface.panel(style,design,false,true));
+        TextView label=style.label(this,"STREAM SELECTION",tv?22:18,true);
+        label.setTextColor(0xFFFFFFFF);label.setGravity(Gravity.CENTER);
+        label.setSingleLine(true);
+        menu.addView(label,new LinearLayout.LayoutParams(-1,Style.dp(this,48)));
+        int live=0,films=0,serials=0;
+        for(Channel ch:catalog.channels){
+            if(!catalog.isSourceEnabled(ch.source))continue;
+            String kind=StreamKind.detect(ch.kind,ch.group,ch.url);
+            if(kind.equals("live"))live++;
+            else if(kind.equals("movie"))films++;
+            else if(kind.equals("series")||kind.equals("episode"))serials++;
+        }
+        addEnigmaChoice(menu,"▣   LIVE STREAMS  ("+live+")",()->openEnigmaTab("Live"));
+        addEnigmaChoice(menu,"▷   VOD / MOVIES  ("+films+")",()->openEnigmaTab("Movies"));
+        addEnigmaChoice(menu,"▤   TV SERIES  ("+serials+")",()->openEnigmaTab("Series"));
+        addEnigmaChoice(menu,"★   FAVORITES",this::manageFavorites);
+        addEnigmaChoice(menu,"≡   PLAYLIST SETTINGS",this::manageSources);
+        addEnigmaChoice(menu,"✚   ADD PLAYLIST",this::sourceChooser);
+        addEnigmaChoice(menu,"⚙   THEMES / SETTINGS",this::themes);
+        int screen=getResources().getConfiguration().screenWidthDp;
+        int width=Math.min(700,Math.max(260,screen-2*design.gutter-8));
+        centering.addView(menu,new LinearLayout.LayoutParams(Style.dp(this,width),-2));
+        scroller.addView(centering,new ScrollView.LayoutParams(-1,-1));
+        root.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
+        HorizontalScrollView footer=new HorizontalScrollView(this);
+        footer.setHorizontalScrollBarEnabled(false);
+        LinearLayout keys=horizontal();keys.setGravity(Gravity.CENTER);
+        TextView key1=style.label(this,"● BACK",tv?13:11,true);key1.setTextColor(0xFFFF6B6B);
+        TextView key2=style.label(this,"● OK / SELECT",tv?13:11,true);key2.setTextColor(0xFF5BE3A0);
+        TextView key3=style.label(this,"● MENU / THEMES",tv?13:11,true);key3.setTextColor(0xFF70BFFF);
+        keys.addView(key1);keys.addView(key2);keys.addView(key3);
+        footer.addView(keys);root.addView(footer,new LinearLayout.LayoutParams(-1,Style.dp(this,42)));
+        // Keep content clear of Android gesture/navigation insets in landscape.
+        final int originalBottom=root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            view.setPadding(view.getPaddingLeft(),view.getPaddingTop(),view.getPaddingRight(),
+               originalBottom+insets.getSystemWindowInsetBottom());
+            return insets;
+        });root.requestApplyInsets();
+    }
+    private void addEnigmaChoice(LinearLayout menu,String caption,Runnable action){
+        Button item=new Button(this);item.setText(caption);item.setAllCaps(false);
+        item.setTextSize((tv?19:16)*style.scale);
+        item.setTextColor(0xFFF8FBFF);item.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+        item.setPadding(Style.dp(this,18),0,Style.dp(this,8),0);
+        item.setFocusable(true);item.setMinWidth(0);
+        item.setBackground(ThemeSurface.panel(style,design,false,false));
+        item.setOnFocusChangeListener((v,f)->item.setBackground(ThemeSurface.panel(style,design,f,false)));
+        item.setOnHoverListener((v,e)->{
+            if(e.getActionMasked()==MotionEvent.ACTION_HOVER_ENTER)item.setBackground(ThemeSurface.panel(style,design,true,false));
+            else if(e.getActionMasked()==MotionEvent.ACTION_HOVER_EXIT)item.setBackground(ThemeSurface.panel(style,design,item.hasFocus(),false));
+            return false;
+        });
+        item.setOnClickListener(v->action.run());
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,Style.dp(this,tv?59:55));
+        p.setMargins(0,Style.dp(this,2),0,Style.dp(this,2));
+        menu.addView(item,p);
+    }
+    private void openEnigmaTab(String choice){
+        xstreamityHome=false;tab=choice;group="";search="";selectedSource="";
+        applyTheme();
+    }
     private void build(){
+        if(design.family==4 && xstreamityHome){buildEnigmaHome();return;}
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(Style.dp(this,design.gutter),Style.dp(this,design.family==0?13:5),
                 Style.dp(this,design.gutter),Style.dp(this,design.family==3?4:10));
@@ -73,7 +164,7 @@ public final class MainActivity extends Activity {
         root.requestApplyInsets();
         setContentView(root);
         header=horizontal();
-        String mark=new String[]{"◈  NOVA CINEMA","◈  NOVA GLASS","NOVA  /  JOURNAL","▣  NOVA LIVE"}[design.family];
+        String mark=new String[]{"◈  NOVA CINEMA","◈  NOVA GLASS","NOVA  /  JOURNAL","▣  NOVA LIVE","▣  NOVA E2"}[design.family];
         TextView title=style.label(this,mark,(int)((tv?22:18)*design.titleMultiplier),true);
         ThemeSurface.heading(title,style,design);
         title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
@@ -289,7 +380,8 @@ public final class MainActivity extends Activity {
             .setView(e).setNegativeButton("Cancel",null).setPositiveButton("Import",(d,w)->importUrl(e.getText().toString().trim())).show();}
     private void importUrl(String url){if(!(url.startsWith("https://")||url.startsWith("http://"))){toast("Enter a full HTTP(S) URL");return;}
         runTask("Importing playlist",()->{
-            M3uParser.Result r;try(InputStream in=Net.open(url,12*1024*1024)){r=M3uParser.parse(in,url,url);}
+            M3uParser.Result r;try(InputStream in=Net.open(url,Net.MAX_PLAYLIST_BYTES)){r=M3uParser.parse(in,url,url);}
+            if(r.channels.isEmpty())throw new IOException("Playlist download returned no valid stream entries. Previously saved playlists were left unchanged. Verify the full URL and provider response.");
             runOnUiThread(()->{catalog.replaceSource(url,r.channels);if(catalog.epgUrl.isEmpty()&&!r.epgUrl.isEmpty())catalog.epgUrl=r.epgUrl;
                 save();refilter();toast("Imported "+r.channels.size()+" streams"+(r.rejected>0?"; skipped "+r.rejected:""));
                 if(!catalog.epgUrl.isEmpty())refreshEpg(false);
@@ -303,30 +395,33 @@ public final class MainActivity extends Activity {
         Uri uri=data.getData();try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
         runTask("Reading local playlist",()->{
             M3uParser.Result r;try(InputStream in=getContentResolver().openInputStream(uri)){
-                if(in==null)throw new IOException("Cannot read document");r=M3uParser.parse(new BoundedStream(in,12*1024*1024),uri.toString(),"");}
+                if(in==null)throw new IOException("Cannot read document");r=M3uParser.parse(new BoundedStream(in,Net.MAX_PLAYLIST_BYTES),uri.toString(),"");}
             runOnUiThread(()->{catalog.replaceSource(uri.toString(),r.channels);save();refilter();toast("Imported "+r.channels.size()+" items");});
         });
     }
     private void promptXtream(){LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);fields.setPadding(Style.dp(this,12),0,Style.dp(this,12),0);
-        EditText server=field("https://portal.example:port",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        EditText server=field("Server or complete get.php URL (include port)",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         EditText username=field("Username",android.text.InputType.TYPE_CLASS_TEXT);
         EditText password=field("Password",android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         fields.addView(server);fields.addView(username);fields.addView(password);
-        new AlertDialog.Builder(this).setTitle("Xtream-compatible portal").setMessage("Use your own authorized provider. Prefer HTTPS where supported.")
+        new AlertDialog.Builder(this).setTitle("Xtream-compatible portal")
+            .setMessage("Use the exact server/port from your working IPTV app. Paste a full get.php or player_api.php link if easier; the query is stripped. Enter credentials separately. HTTPS is preferred when supported.")
             .setView(fields).setNegativeButton("Cancel",null).setPositiveButton("Connect",(d,w)->{
                 String host=server.getText().toString().trim().replaceAll("/+$",""),u=username.getText().toString(),p=password.getText().toString();
                 runTask("Loading portal",()->{
-                    Xtream x=new Xtream(host,u,p);List<Channel> items=x.loadAll();String warnings=x.warnings();
+                    Xtream x=new Xtream(host,u,p);
+                    String normalizedHost=x.baseAddress();
+                    List<Channel> items=x.loadAll();String warnings=x.warnings();
                     runOnUiThread(()->{
-                        String key=sourceKey(host,u,p);
+                        String key=sourceKey(normalizedHost,u,p);
                         List<Channel> mapped=remapXtream(items,key);
                         catalog.replaceSource(key,preserveMissingTypes(key,mapped));
-                        catalog.sourceHosts.put(key,host);
+                        catalog.sourceHosts.put(key,normalizedHost);
                         catalog.xtreamCredentials.put(key,u+"\n"+p);
                         if(catalog.epgUrl.isEmpty())catalog.epgUrl=x.epg();selectedSource="";group="";save();refilter();
                         toast("Loaded "+items.size()+" portal items");
                         if(!warnings.isEmpty())new AlertDialog.Builder(this).setTitle("Portal categories unavailable")
-                            .setMessage(warnings+". Recheck your subscription, portal URL or provider.")
+                            .setMessage(warnings+". Check network, provider response and source settings; empty categories alone do not establish a subscription problem.")
                             .setPositiveButton("OK",null).show();
                         refreshEpg(false);});
                 });
@@ -353,7 +448,7 @@ public final class MainActivity extends Activity {
                 catalog.epgUrl=s;save();refreshEpg(true);}).show();}
     private void refreshEpg(boolean report){if(catalog.epgUrl.isEmpty())return;
         runTask("Refreshing XMLTV guide",()->{
-            Epg next;try(InputStream in=Net.open(catalog.epgUrl,32*1024*1024)){next=Epg.parse(in);}
+            Epg next;try(InputStream in=Net.open(catalog.epgUrl,48*1024*1024)){next=Epg.parse(in);}
             runOnUiThread(()->{catalog.epg=next;refilter();if(report)toast("Guide loaded for "+next.count()+" channel IDs");});
         });
     }
@@ -480,7 +575,7 @@ public final class MainActivity extends Activity {
                     parsed=M3uParser.parse(new BoundedStream(stream,12*1024*1024),key,"");
                 }
             }else if(key.startsWith("https://")||key.startsWith("http://")){
-                try(InputStream stream=Net.open(key,12*1024*1024)){
+                try(InputStream stream=Net.open(key,Net.MAX_PLAYLIST_BYTES)){
                     parsed=M3uParser.parse(stream,key,key);
                 }
             }else throw new IOException("Unknown playlist type. Import the source again.");
@@ -491,12 +586,31 @@ public final class MainActivity extends Activity {
             });
         });
     }
-    private void themes(){new AlertDialog.Builder(this)
+    private void colorOptions(){
+            final String[] choices={"Accent and button color","Background color","Text color","Reset custom colors"};
+            new AlertDialog.Builder(this).setTitle("Customize theme colors")
+                .setItems(choices,(dialog,choice)->{
+                    if(choice==3){
+                        catalog.customAccent="";catalog.customBg="";catalog.customText="";
+                        save();applyTheme();return;
+                    }
+                    int current=choice==0?style.accent:choice==1?style.bg:style.text;
+                    ThemeColorPicker.show(this,choices[choice],current,selected->{
+                        String hex=String.format(java.util.Locale.US,"#%06X",selected&0xFFFFFF);
+                        if(choice==0)catalog.customAccent=hex;
+                        else if(choice==1)catalog.customBg=hex;
+                        else catalog.customText=hex;
+                        save();applyTheme();
+                    });
+                }).setNegativeButton("Close",null).show();
+        }
+        private void themes(){new AlertDialog.Builder(this)
         .setTitle("Choose a complete interface design")
         
         .setSingleChoiceItems(ThemeIdentity.labels(Style.NAMES),catalog.theme,(d,w)->{
-            catalog.theme=w;save();applyTheme();d.dismiss();
-        }).setNegativeButton("Close",null).show();}
+            catalog.theme=w;xstreamityHome=(w==16);save();applyTheme();d.dismiss();
+        }).setNeutralButton("Customize colors",(d,w)->colorOptions())
+              .setNegativeButton("Close",null).show();}
     private void settings(){new AlertDialog.Builder(this).setTitle("Customize Nova IPTV")
         .setItems(new String[]{"Themes (16 presets)","Custom background, accent and text colors","Text / accessibility scale","Row spacing / density","Picture-in-Picture: "+(catalog.pip?"ON":"OFF"),"Refresh EPG","Clear viewing history"},(d,w)->{
             if(w==0)themes();if(w==1)customColors();if(w==2)fontSize();if(w==3)density();
@@ -539,7 +653,11 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(title+" failed").setMessage(message).setPositiveButton("OK",null).show();}
     private void toast(String m){Toast.makeText(this,m,Toast.LENGTH_LONG).show();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);applyTheme();}
-    @Override public void onBackPressed(){if(!group.isEmpty()){group="";refilter();}else if(!search.isEmpty()){search="";searchBox.setText("");}else super.onBackPressed();}
+    @Override public void onBackPressed(){
+        if(design!=null && design.family==4 && !xstreamityHome){
+            xstreamityHome=true;group="";search="";selectedSource="";
+            applyTheme();return;
+        }if(!group.isEmpty()){group="";refilter();}else if(!search.isEmpty()){search="";searchBox.setText("");}else super.onBackPressed();}
     @Override protected void onResume(){super.onResume();if(catalog!=null&&list!=null)refilter();}
     @Override protected void onDestroy(){worker.shutdownNow();logos.close();super.onDestroy();}
     private static class BoundedStream extends FilterInputStream{

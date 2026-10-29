@@ -13,11 +13,11 @@ public final class Xtream {
     private final List<String> warnings=new ArrayList<>();
     public String warnings(){return String.join("; ",warnings);}
     public Xtream(String host, String user, String pass) {
-        String s=host.trim().replaceAll("/+$", "");
-        if (!(s.startsWith("http://") || s.startsWith("https://"))) throw new IllegalArgumentException("Server must start with http:// or https://");
+        String s=PortalEndpoint.normalize(host);
         this.server=s; this.user=user; this.password=pass;
         if (user.isEmpty() || pass.isEmpty()) throw new IllegalArgumentException("Username/password required");
     }
+    public String baseAddress(){return server;}
     private String enc(String x) { try {return URLEncoder.encode(x,"UTF-8");} catch(Exception e){throw new IllegalStateException(e);} }
     private String api(String action) { return server+"/player_api.php?username="+enc(user)+"&password="+enc(password)+"&action="+action; }
     private JSONArray array(String action) throws Exception {
@@ -38,6 +38,7 @@ public final class Xtream {
     public List<Channel> loadAll() throws Exception {
         ArrayList<Channel> result=new ArrayList<>();
         warnings.clear();
+        verifyReachability();
         // Load VOD and Series first to prevent them being crowded out by massive live lists.
         collect(result,"get_vod_streams","movie","get_vod_categories","Movies/VOD");
         collect(result,"get_series","series","get_series_categories","Series");
@@ -63,6 +64,31 @@ public final class Xtream {
         if(movieCount==0)warnings.add("Movies/VOD empty: verify your provider's VOD entitlement.");
         if(result.isEmpty())throw new IOException("Provider returned no Live, Movies or Series items. "+warnings());
         return result;
+    }
+    /**
+     * A single connectivity probe detects DNS/port/TLS failures before requesting
+     * seven large lists. Unlike the old handler, it never reports a network
+     * failure as a missing Live/VOD subscription.
+     */
+    private void verifyReachability() throws IOException {
+        try{
+            Net.bytes(api(""),512*1024);
+        }catch(java.net.UnknownHostException ex){
+            throw new IOException("Portal hostname could not be resolved (DNS). Check the exact server address and port in your working IPTV app. If the same address works there, compare Wi-Fi/mobile data, VPN and Android Private DNS. No subscription entitlement test was possible.");
+        }catch(java.net.ConnectException ex){
+            throw new IOException("Could not connect to the portal. Check the server port and HTTP versus HTTPS scheme against the working IPTV app. The server connection failed before your playlist could be checked.");
+        }catch(java.net.SocketTimeoutException ex){
+            throw new IOException("Portal connection timed out. The server did not respond within the connection/read limit. Check the portal address, network, VPN or provider availability. Your subscription status was not verified.");
+        }catch(javax.net.ssl.SSLException ex){
+            throw new IOException("Portal HTTPS certificate/handshake failed. Verify the HTTPS address and certificate. Do not bypass certificate verification.");
+        }catch(java.io.FileNotFoundException ex){
+            // Some providers only support action endpoints or M3U lists.
+            warnings.add("Account probe endpoint unavailable; trying individual stream endpoints");
+        }catch(IOException ex){
+            // A provider may block the account-info request but still serve
+            // live/vod endpoints. Let them be tried normally.
+            warnings.add("Account probe returned an HTTP error; checking stream endpoints");
+        }
     }
     private void collect(List<Channel> output,String action,String kind,String categoryAction,String name){
         Map<String,String> groups=categories(categoryAction);

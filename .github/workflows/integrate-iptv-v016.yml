@@ -1,4 +1,4 @@
-name: Integrate IPTV v0.1.6 into MyTube branch
+name: Integrate pinned Nova IPTV v0.1.8 into MyTube branch
 on:
   push:
     branches:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: amjadrajamemon/IPTV
-          ref: 6549b9d48ce5204f5ebd81b83b83f96e1b153559
+          ref: aba592d868ddd615f4be67af5002d6f01f6751fb
           path: upstream-iptv
       - name: Rebuild upstream source exactly as IPTV CI does
         shell: bash
@@ -61,6 +61,19 @@ jobs:
           PY
           cp patches/v015/PlayerActivity.java NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
           sed -i 's/KEYCODE_HEADSETPHOOK/KEYCODE_HEADSETHOOK/g' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/PlayerActivity.java
+          # Replay exactly the v0.1.7 and v0.1.8 source migrations from the
+          # immutable pre-v0.1.9 IPTV commit. Never run apply_v019_stable_update.py.
+          python3 scripts/apply_v017_color_picker.py
+          python3 scripts/apply_v017x_upgrade.py
+          python3 scripts/apply_v018_connectivity.py
+          grep -Fq "versionName '0.1.8'" NovaIPTV-Pro/app/build.gradle
+          ! grep -Fq "versionName '0.1.9'" NovaIPTV-Pro/app/build.gradle
+          grep -q 'MAX_PLAYLIST_BYTES=96' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/core/Net.java
+          grep -q 'buildEnigmaHome' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java
+          grep -q 'ThemeColorPicker.show' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/ui/MainActivity.java
+          grep -q 'verifyReachability' NovaIPTV-Pro/app/src/main/java/com/novastream/iptv/core/Xtream.java
+          test -s NovaIPTV-Pro/app/src/test/java/com/novastream/iptv/core/PortalEndpointTest.java
+          echo 'Pinned v0.1.8 features and version checked; v0.1.9 excluded.'
       - name: Import latest Java, resources and regression tests
         shell: bash
         run: |
@@ -75,12 +88,16 @@ jobs:
           grep -q 'NovaPlaybackBridge.claim(player)' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'KEYCODE_SPACE' "$target/main/java/com/novastream/iptv/ui/PlayerActivity.java"
           grep -q 'setOnApplyWindowInsetsListener' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
-          sha256sum upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip > iptv-vendor/NOVA-V016-UPSTREAM-SHA256.txt
-          git add source/novaiptv/src iptv-vendor/NOVA-V016-UPSTREAM-SHA256.txt
+          sha256sum upstream-iptv/NovaIPTV-Pro-v0.1.6-Source-GitHub-Build.zip > iptv-vendor/NOVA-V018-BASE-SHA256.txt
+          printf '%s\n' 'aba592d868ddd615f4be67af5002d6f01f6751fb' > iptv-vendor/NOVA-V018-PIN.txt
+          grep -q 'verifyReachability' "$target/main/java/com/novastream/iptv/core/Xtream.java"
+          grep -q 'buildEnigmaHome' "$target/main/java/com/novastream/iptv/ui/MainActivity.java"
+          test -s "$target/main/java/com/novastream/iptv/core/PortalEndpoint.java"
+          git add source/novaiptv/src iptv-vendor/NOVA-V018-BASE-SHA256.txt iptv-vendor/NOVA-V018-PIN.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --cached --quiet; then
-            git commit -m 'feat(iptv): import latest Nova v0.1.6 live, themes, safe-area and TV keys'
+            git commit -m 'feat(iptv): import pinned Nova v0.1.8 portal recovery, XStreamity, themes and TV controls'
             git push origin HEAD:feature/iptv-v016-alignment-20261028
           fi
       - uses: actions/setup-java@v4
@@ -99,6 +116,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mytube-iptv-v016-integration-diagnostics
+          name: mytube-iptv-v018-integration-diagnostics
           path: source/novaiptv/build/reports/tests/
           if-no-files-found: ignore

@@ -1,4 +1,4 @@
-name: MyTube v1.9.3 Core Fixes ARM64 + Universal
+name: MyTube v1.9.4 Core Fixes ARM64 + Universal
 
 on:
   push:
@@ -34,11 +34,17 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 98' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 99' source/app/build.gradle.kts
           grep -Fq 'versionName = "1.9.3"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
-          grep -Fq 'historyExpanded' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq 'item(key = "home-three-feeds")' "$HOME"
+          grep -Fq 'title = "History"' "$HOME"
+          grep -Fq 'title = "Relevant"' "$HOME"
+          grep -Fq 'title = "Trending"' "$HOME"
+          grep -Fq 'showRecentChips = false' "$HOME"
+          ! grep -Fq 'historyExpanded' "$HOME"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -115,11 +121,11 @@ jobs:
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
               if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/MyTube-v1.9.3-ARM64-debug.apk"
+              cp "$APK" "dist/MyTube-v1.9.4-ARM64-debug.apk"
             else
               unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/MyTube-v1.9.3-Universal-debug.apk"
+              cp "$APK" "dist/MyTube-v1.9.4-Universal-debug.apk"
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -128,7 +134,7 @@ jobs:
       - name: Upload installable dual-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.9.3-ARM64-and-Universal
+          name: MyTube-v1.9.4-ARM64-and-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -140,13 +146,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.9.3-core-fixes-20261102"
+          TAG="v1.9.4-three-column-home-20261102"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to overwrite previous binaries"
             exit 1
           fi
-          gh release create "$TAG" dist/MyTube-v1.9.3-ARM64-debug.apk dist/MyTube-v1.9.3-Universal-debug.apk dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/MyTube-v1.9.4-ARM64-debug.apk dist/MyTube-v1.9.4-Universal-debug.apk dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MyTube v1.9.3 – Core playback fixes (ARM64 + Universal)" \
-            --notes "Fixes Next/Autoplay recommendation loops, enables immediate tap-to-wake from blackout, collapses Home watch history and recent-search chips, and removes both unused IPTV add-ons. Debug-signed with the pre-existing pinned MyTube signing identity. Build results include unit test and ABI/signature verification. Physical device and live YouTube regression tests are still recommended."
+            --title "MyTube v1.9.4 – Three-column Home + Playback Fixes (ARM64 + Universal)" \
+            --notes "Fixes Next/Autoplay recommendation loops, enables immediate tap-to-wake from blackout, restores permanent three-column History, Relevant and Trending Home feeds while hiding recent-search chips, and removes both unused IPTV add-ons. Debug-signed with the pre-existing pinned MyTube signing identity. Build results include unit test and ABI/signature verification. Physical device and live YouTube regression tests are still recommended."

@@ -79,7 +79,6 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
-    var historyExpanded by rememberSaveable(viewStateKey) { mutableStateOf(false) }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
 
@@ -160,53 +159,24 @@ fun DriveDeckScreen(
                 }
             }
             if (!playlistMode) {
-                // Keep the first screen focused on suggestions. Watch history
-                // is available on demand without permanently taking half the display.
-                if (historyEnabled) {
-                    item(key = "home-history-toggle") {
-                        Surface(
-                            color = TubeDeckSurface,
-                            modifier = Modifier.fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { historyExpanded = !historyExpanded }
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.History, null, modifier = Modifier.size(18.dp), tint = TubeDeckAccentCyan)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Watch history (" + watchHistory.size + ")",
-                                    modifier = Modifier.weight(1f),
-                                    color = TubeDeckTextPrimary,
-                                    fontSize = 13.sp
-                                )
-                                Icon(
-                                    if (historyExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    if (historyExpanded) "Collapse history" else "Show history",
-                                    tint = TubeDeckTextSecondary
-                                )
-                            }
-                        }
-                    }
-                }
-                if (historyEnabled && historyExpanded) {
-                    item(key = "home-history-expanded") {
-                        HomeShelf(
-                            "Watch history", watchHistory.take(12), onOpenVideo, listView,
-                            action = if (watchHistory.isNotEmpty()) "Clear" else null,
-                            onAction = onClearHistory
-                        )
-                    }
-                }
-                item(key = "home-main-feeds") {
+                // The permanent first-page layout consists of three equal Home columns.
+                // Search history is hidden until Search receives focus.
+                item(key = "home-three-feeds") {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.Top
                     ) {
+                        HomeFeedColumn(
+                            title = "History",
+                            videos = if (historyEnabled) watchHistory.take(12) else emptyList(),
+                            onOpenVideo = onOpenVideo,
+                            listView = listView,
+                            enabled = historyEnabled,
+                            action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
+                            onAction = onClearHistory,
+                            modifier = Modifier.weight(1f)
+                        )
                         HomeFeedColumn(
                             title = "Relevant",
                             videos = if (suggestionsEnabled) suggestedVideos.take(12) else emptyList(),

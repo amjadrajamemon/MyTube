@@ -140,7 +140,7 @@ fun SearchAssistField(
                             color = TubeDeckTextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
                         if (recentSearches.isNotEmpty()) TextButton(onClick = onClearRecentSearches) { Text("Clear history") }
                     }
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 224.dp)) {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 156.dp)) {
                         itemsIndexed(choices, key = { _, term -> term }) { index, term ->
                             val recent = recentSearches.any { it.equals(term, true) }
                             Row((if (index == 0) Modifier.focusRequester(firstSuggestionFocusRequester) else Modifier)

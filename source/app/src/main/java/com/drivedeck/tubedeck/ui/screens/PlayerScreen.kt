@@ -146,6 +146,7 @@ import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
 import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
+import com.drivedeck.tubedeck.player.PlaylistQueuePolicy
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
@@ -195,6 +196,7 @@ fun PlayerScreen(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
@@ -296,6 +298,7 @@ fun PlayerScreen(
             onPlayRelated = onPlayRelated,
             onPreviousItem = onPreviousItem,
             onNextItem = onNextItem,
+            playedVideoIds = playedVideoIds,
             onPlaybackEnded = onPlaybackEnded,
             playlistItems = playlistItems,
             playlistIndex = playlistIndex,
@@ -522,6 +525,7 @@ fun NativeExoPlayer(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
@@ -775,11 +779,14 @@ fun NativeExoPlayer(
     val episodeList = continuationEpisodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
     val episodeIndex = episodeList.indexOfFirst { it.videoId == sourceVideoId }
     val nextEpisode = if (episodeIndex in 0 until episodeList.lastIndex) {
-        episodeList[episodeIndex + 1]
+        episodeList.drop(episodeIndex + 1).firstOrNull {
+            PlaylistQueuePolicy.nextUnplayed(listOf(it.videoId), sourceVideoId, playedVideoIds) != null
+        }
     } else null
-    val relatedNext = resolved?.relatedVideos?.firstOrNull {
-        it.videoId.isNotBlank() && it.videoId != sourceVideoId
-    }
+    val relatedNextId = PlaylistQueuePolicy.nextUnplayed(
+        resolved?.relatedVideos.orEmpty().map { it.videoId }, sourceVideoId, playedVideoIds
+    )
+    val relatedNext = resolved?.relatedVideos?.firstOrNull { it.videoId == relatedNextId }
     var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     val sharedNextAction: (() -> Unit)? = when {
         onNextItem != null -> onNextItem
@@ -831,7 +838,9 @@ fun NativeExoPlayer(
                                     withTimeoutOrNull(8_000L) {
                                         YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId)
                                             .relatedVideos.firstOrNull {
-                                                it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                                PlaylistQueuePolicy.nextUnplayed(
+                                                    listOf(it.videoId), sourceVideoId, playedVideoIds
+                                                ) != null
                                             }
                                     }
                                 }.getOrNull()
@@ -848,7 +857,9 @@ fun NativeExoPlayer(
                                         YoutubeStreamResolver.searchVideos(title, 16)
                                     }.orEmpty()
                                     candidates.firstOrNull {
-                                        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                        PlaylistQueuePolicy.nextUnplayed(
+                                            listOf(it.videoId), sourceVideoId, playedVideoIds
+                                        ) != null
                                     }?.let { next ->
                                         OfflineMedia(
                                             id = "search-next-${next.videoId}-${System.nanoTime()}",
@@ -879,6 +890,7 @@ fun NativeExoPlayer(
         else -> null
     }
     val currentNextAction by rememberUpdatedState(sharedNextAction)
+    val latestSharedNextAction by rememberUpdatedState(sharedNextAction)
     val currentPreviousAction by rememberUpdatedState(onPreviousItem)
     var lastNextKeyTime by remember(media.id) { mutableLongStateOf(0L) }
     var lastPreviousKeyTime by remember(media.id) { mutableLongStateOf(0L) }
@@ -1179,7 +1191,11 @@ fun NativeExoPlayer(
                                     currentEpisodeIndex >= 0 &&
                                     currentEpisodeIndex < episodes.lastIndex
                                 ) {
-                                    episodes[currentEpisodeIndex + 1]
+                                    episodes.drop(currentEpisodeIndex + 1).firstOrNull {
+                                        PlaylistQueuePolicy.nextUnplayed(
+                                            listOf(it.videoId), currentVideoId, playedVideoIds
+                                        ) != null
+                                    }
                                 } else {
                                     null
                                 }
@@ -1203,29 +1219,17 @@ fun NativeExoPlayer(
                                         latestOnPlayPlaylistItem?.invoke(latestPlaylistIndex + 1)
                                     }
 
-                                    else -> latestOnPlaybackEnded?.invoke()
+                                    else -> { if (latestSharedNextAction != null) latestSharedNextAction?.invoke() else latestOnPlaybackEnded?.invoke() }
                                 }
                             }
 
                             PlaybackContinuationMode.AUTO_NEXT -> {
-                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
-                                val suggested = latestResolvedMedia?.relatedVideos
-                                    ?.firstOrNull { it.videoId.isNotBlank() && it.videoId != currentVideoId }
-
-                                when {
-                                    latestOnPlaybackEnded != null -> latestOnPlaybackEnded?.invoke()
-                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
-                                    suggested != null && latestOnPlayRelated != null -> {
-                                        latestOnPlayRelated?.invoke(
-                                            OfflineMedia(
-                                                id = "auto-next-${suggested.videoId}-${System.nanoTime()}",
-                                                title = suggested.title,
-                                                videoId = suggested.videoId,
-                                                thumbnailUrl = suggested.thumbnailUrl,
-                                                mediaUri = suggested.url
-                                            )
-                                        )
-                                    }
+                                // Manual Next and end-of-stream use one selection policy.
+                                // An empty related shelf triggers the same bounded Watch-Next lookup.
+                                if (latestSharedNextAction != null) {
+                                    latestSharedNextAction?.invoke()
+                                } else {
+                                    latestOnPlaybackEnded?.invoke()
                                 }
                             }
                         }
@@ -2255,7 +2259,7 @@ fun NativeExoPlayer(
 
                             val nextEnabled = sharedNextAction != null
                             IconButton(
-                                onClick = { sharedNextAction?.invoke() },
+                                onClick = { dispatchNextKey() },
                                 enabled = nextEnabled,
                                 modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {

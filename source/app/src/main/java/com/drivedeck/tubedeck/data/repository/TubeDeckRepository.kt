@@ -45,7 +45,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     /** This is the only in-app action that clears blackout; media/lifecycle events never do. */
-    fun restoreScreenAfterDoubleTap() {
+    fun restoreScreenAfterTap() {
         prefs.edit().putBoolean("screen_blackout_enabled", false).apply()
         _screenBlackoutEnabled.value = false
     }

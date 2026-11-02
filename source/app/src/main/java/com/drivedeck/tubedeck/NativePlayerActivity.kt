@@ -814,7 +814,7 @@ class NativePlayerActivity : ComponentActivity() {
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isNotBlank()) {
             // Keep bounded, session-local history independent of the Back/Forward navigation stacks.
-            playedVideoIds = (playedVideoIds + videoId).takeLast(80).toSet()
+            playedVideoIds = (playedVideoIds.toList().filterNot { it == videoId } + videoId).takeLast(80).toSet()
             repository.fetchSponsorSegments(videoId)
         }
     }

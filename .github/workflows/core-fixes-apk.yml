@@ -1,0 +1,152 @@
+name: MyTube v1.9.3 Core Fixes ARM64 + Universal
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - 'source/**'
+      - 'ci/**'
+      - '.github/workflows/core-fixes-apk.yml'
+      - '.github/mytube-signing-sha1.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mytube-core-fixes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dual-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    steps:
+      - name: Checkout the actual feature branch
+        uses: actions/checkout@v4
+
+      - name: Verify IPTV was removed and core fixes are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! test -d source/novaiptv
+          ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
+          ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
+          ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
+          grep -Fq 'versionCode = 98' source/app/build.gradle.kts
+          grep -Fq 'versionName = "1.9.3"' source/app/build.gradle.kts
+          grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
+          grep -Fq 'historyExpanded' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Restore the stable MyTube update-compatible debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: mytube-debug-signing-v1
+
+      - name: Verify existing signing identity (never silently rotate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="$HOME/.android/debug.keystore"
+          test -s "$KEY" || { echo "::error::Stable debug signing key missing; cannot publish an update-compatible APK"; exit 1; }
+          EXPECTED="$(tr -d '\r\n ' < .github/mytube-signing-sha1.txt)"
+          ACTUAL="$(keytool -list -v -keystore "$KEY" -storepass android -alias androiddebugkey -keypass android | awk -F': ' '/SHA1:/{print $2;exit}')"
+          test -n "$EXPECTED" && test "$EXPECTED" != "UNSET" && test "$ACTUAL" = "$EXPECTED" || {
+            echo "::error::APK signing identity differs from the prior MyTube release"; exit 1;
+          }
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="/usr/local/lib/android/sdk"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Configure Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Provision verified Whisper Tiny model
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL="source/app/src/main/assets/models/ggml-tiny-q5_1.bin"
+          mkdir -p "$(dirname "$MODEL")"
+          curl -fL --retry 3 --retry-delay 3 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin -o "$MODEL"
+          echo "2827a03e495b1ed3048ef28a6a4620537db4ee51  $MODEL" | sha1sum -c -
+
+      - name: Run ARM64 and universal unit tests
+        run: gradle -p source testArm64DebugUnitTest testUniversalDebugUnitTest --no-parallel --max-workers=2 --stacktrace
+
+      - name: Compile ARM64 APK
+        run: gradle -p source assembleArm64Debug --no-parallel --max-workers=2 --stacktrace
+
+      - name: Compile Universal APK
+        run: |
+          gradle --stop
+          gradle -p source assembleUniversalDebug --no-parallel --max-workers=2 --stacktrace
+
+      - name: Verify ABI, signing, manifest and produce SHA256 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          for FLAVOR in arm64 universal; do
+            APK="source/app/build/outputs/apk/$FLAVOR/debug/app-$FLAVOR-debug.apk"
+            test -s "$APK"
+            unzip -t "$APK" >/dev/null
+            "$SIGNER" verify --verbose "$APK"
+            if [ "$FLAVOR" = "arm64" ]; then
+              unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
+              if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
+              cp "$APK" "dist/MyTube-v1.9.3-ARM64-debug.apk"
+            else
+              unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
+              unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
+              cp "$APK" "dist/MyTube-v1.9.3-Universal-debug.apk"
+            fi
+          done
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Upload installable dual-APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTube-v1.9.3-ARM64-and-Universal
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish direct-download feature release
+        if: github.ref == 'refs/heads/feature/fix-next-autoplay-blackout-home-20261102'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v1.9.3-core-fixes-20261102"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists; refusing to overwrite previous binaries"
+            exit 1
+          fi
+          gh release create "$TAG" dist/MyTube-v1.9.3-ARM64-debug.apk dist/MyTube-v1.9.3-Universal-debug.apk dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "MyTube v1.9.3 – Core playback fixes (ARM64 + Universal)" \
+            --notes "Fixes Next/Autoplay recommendation loops, enables immediate tap-to-wake from blackout, collapses Home watch history and recent-search chips, and removes both unused IPTV add-ons. Debug-signed with the pre-existing pinned MyTube signing identity. Build results include unit test and ABI/signature verification. Physical device and live YouTube regression tests are still recommended."

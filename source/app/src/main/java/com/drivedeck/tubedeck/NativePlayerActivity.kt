@@ -112,6 +112,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var activePlaylistIndex by mutableStateOf(-1)
     private val playbackBackStack = ArrayDeque<OfflineMedia>()
     private val playbackForwardStack = ArrayDeque<OfflineMedia>()
+    private var playedVideoIds by mutableStateOf<Set<String>>(emptySet())
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -505,6 +506,7 @@ class NativePlayerActivity : ComponentActivity() {
                         { playlistMode = true; showDownload = true }
                     } else null,
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
+                    playedVideoIds = playedVideoIds,
                     onPreviousItem = when {
                         activePlaylistId != null && activePlaylistIndex > 0 ->
                             { { playPlaylistItem(activePlaylistIndex - 1) } }
@@ -517,8 +519,6 @@ class NativePlayerActivity : ComponentActivity() {
                             activePlaylistIndex >= 0 &&
                             activePlaylistIndex < activePlaylistItems.lastIndex ->
                             { { playPlaylistItem(activePlaylistIndex + 1) } }
-                        playbackForwardStack.isNotEmpty() ->
-                            { { playForwardItem() } }
                         else -> null
                     },
                     onPlaybackEnded = if (
@@ -813,6 +813,8 @@ class NativePlayerActivity : ComponentActivity() {
         }
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isNotBlank()) {
+            // Keep bounded, session-local history independent of the Back/Forward navigation stacks.
+            playedVideoIds = (playedVideoIds + videoId).takeLast(80).toSet()
             repository.fetchSponsorSegments(videoId)
         }
     }

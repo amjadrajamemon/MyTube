@@ -43,8 +43,6 @@ fun DriveDeckScreen(
     onSearchQueryChange: (String) -> Unit,
     onExecuteSearch: (String) -> Unit,
     onOpenDownloads: () -> Unit,
-    onOpenIptv: () -> Unit = {},
-    onOpenNovaIptv: () -> Unit = {},
     googleAccount: GoogleAccountProfile? = null,
     onGoogleAccountClick: () -> Unit = {},
     recentSearches: List<String> = emptyList(),
@@ -81,6 +79,7 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
+    var historyExpanded by rememberSaveable(viewStateKey) { mutableStateOf(false) }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
 
@@ -101,31 +100,8 @@ fun DriveDeckScreen(
             googleAccount = googleAccount,
             onGoogleAccountClick = onGoogleAccountClick,
             searchPlaceholder = if (playlistMode) "Search playlists and Mixes" else "Search YouTube",
-            autoFocus = tvNavigation
+            autoFocus = false
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Button(
-                onClick = onOpenIptv,
-                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
-            ) {
-                Icon(Icons.Default.LiveTv, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(7.dp))
-                Text("IPTV Extreme")
-            }
-            Button(
-                onClick = onOpenNovaIptv,
-                modifier = Modifier.tvInputHighlight(RoundedCornerShape(12.dp))
-            ) {
-                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("IPTV Pro")
-            }
-        }
 
         ContentViewModeBar(
             listView = listView,
@@ -184,24 +160,53 @@ fun DriveDeckScreen(
                 }
             }
             if (!playlistMode) {
-                // Keep all three Home categories visible in one row, even when a feed is disabled.
-                // Individual Settings toggles still control whether each column loads video cards.
-                item(key = "home-three-feeds") {
+                // Keep the first screen focused on suggestions. Watch history
+                // is available on demand without permanently taking half the display.
+                if (historyEnabled) {
+                    item(key = "home-history-toggle") {
+                        Surface(
+                            color = TubeDeckSurface,
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { historyExpanded = !historyExpanded }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.History, null, modifier = Modifier.size(18.dp), tint = TubeDeckAccentCyan)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Watch history (" + watchHistory.size + ")",
+                                    modifier = Modifier.weight(1f),
+                                    color = TubeDeckTextPrimary,
+                                    fontSize = 13.sp
+                                )
+                                Icon(
+                                    if (historyExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    if (historyExpanded) "Collapse history" else "Show history",
+                                    tint = TubeDeckTextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+                if (historyEnabled && historyExpanded) {
+                    item(key = "home-history-expanded") {
+                        HomeShelf(
+                            "Watch history", watchHistory.take(12), onOpenVideo, listView,
+                            action = if (watchHistory.isNotEmpty()) "Clear" else null,
+                            onAction = onClearHistory
+                        )
+                    }
+                }
+                item(key = "home-main-feeds") {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        HomeFeedColumn(
-                            title = "History",
-                            videos = if (historyEnabled) watchHistory.take(12) else emptyList(),
-                            onOpenVideo = onOpenVideo,
-                            listView = listView,
-                            enabled = historyEnabled,
-                            action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
-                            onAction = onClearHistory,
-                            modifier = Modifier.weight(1f)
-                        )
                         HomeFeedColumn(
                             title = "Relevant",
                             videos = if (suggestionsEnabled) suggestedVideos.take(12) else emptyList(),
@@ -790,7 +795,7 @@ fun DriveDeckTopHeader(
                 onRemoveRecentSearch = onRemoveRecentSearch,
                 onClearRecentSearches = onClearRecentSearches,
                 placeholder = searchPlaceholder,
-                showRecentChips = true,
+                showRecentChips = false,
                 autoFocus = autoFocus,
                 modifier = Modifier.fillMaxWidth()
             )

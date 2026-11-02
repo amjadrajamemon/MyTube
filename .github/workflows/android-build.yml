@@ -4,7 +4,7 @@ name: Build MyTube Android APKs
 
 on:
   push:
-    branches: [ main, 'feature/**' ]
+    branches: [ main ]
     paths:
       - 'source/**'
       - 'ci/**'

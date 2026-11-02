@@ -54,9 +54,9 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             hostView.foreground = protectiveForeground
             val detector = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: MotionEvent): Boolean = true
-                override fun onSingleTapConfirmed(e: MotionEvent): Boolean = true
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    repository.restoreScreenAfterDoubleTap()
+                // ACTION_UP is immediate; confirmed taps wait for Android's double-tap timeout.
+                override fun onSingleTapUp(e: MotionEvent): Boolean {
+                    repository.restoreScreenAfterTap()
                     return true
                 }
                 override fun onLongPress(e: MotionEvent) {
@@ -65,7 +65,7 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             })
             val mask = FrameLayout(activity).apply {
                 setBackgroundColor(android.graphics.Color.BLACK)
-                contentDescription = "Screen blank. Double-tap to restore video"
+                contentDescription = "Screen blank. Tap to restore video"
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 setOnTouchListener { _, event ->
                     detector.onTouchEvent(event)

@@ -1060,15 +1060,19 @@ fun NativeExoPlayer(
             .build()
     }
     val resumeStore = remember(context) { VideoResumeStore(context) }
-    val savedResume = remember(media.mediaUri, resumeAfterInterruptions, initialPositionMs) {
-        if (resumeAfterInterruptions && initialPositionMs < 1_000L) {
+    val privateSession by remember(context) {
+        com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).privateSession
+    }.collectAsState()
+    val resumeEnabled = resumeAfterInterruptions && !privateSession
+    val savedResume = remember(media.mediaUri, resumeEnabled, initialPositionMs) {
+        if (resumeEnabled && initialPositionMs < 1_000L) {
             resumeStore.find(media.mediaUri)
         } else null
     }
     var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
 
-    LaunchedEffect(isPlaying, resumeAfterInterruptions, showResumePrompt, media.mediaUri) {
-        if (resumeAfterInterruptions && !showResumePrompt && isPlaying) {
+    LaunchedEffect(isPlaying, resumeEnabled, showResumePrompt, media.mediaUri) {
+        if (resumeEnabled && !showResumePrompt && isPlaying) {
             while (isActive) {
                 delay(12_000L)
                 if (exoPlayer.isPlaying) {
@@ -1080,9 +1084,9 @@ fun NativeExoPlayer(
     LaunchedEffect(showResumePrompt, isPlaying) {
         if (showResumePrompt && isPlaying) exoPlayer.pause()
     }
-    DisposableEffect(exoPlayer, resumeAfterInterruptions) {
+    DisposableEffect(exoPlayer, resumeEnabled) {
         onDispose {
-            if (resumeAfterInterruptions) {
+            if (resumeEnabled) {
                 runCatching {
                     val pos = if (exoPlayer.playbackState == Player.STATE_ENDED) 0L
                         else exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -1090,6 +1094,9 @@ fun NativeExoPlayer(
                 }
             }
         }
+    }
+    LaunchedEffect(privateSession) {
+        if (privateSession) showResumePrompt = false
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)

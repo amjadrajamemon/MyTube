@@ -34,12 +34,23 @@ class LocalDownloadCommitTest {
         assertTrue(staged.exists())
     }
 
-    @Test fun acceptsAlreadyCommittedFileAfterInterruptedCatalogSave() {
+    @Test fun acceptsIdenticalCommittedFileAfterInterruptedCatalogSave() {
+        val staged = temp.newFile("task-id.mp4").apply { writeBytes(byteArrayOf(9, 8)) }
+        val completed = temp.newFile("video_task-id.mp4").apply { writeBytes(byteArrayOf(9, 8)) }
+
+        assertEquals(completed, LocalDownloadCommit.commit(staged, completed))
+        assertArrayEquals(byteArrayOf(9, 8), completed.readBytes())
+    }
+
+    @Test fun refusesSameSizeButDifferentExistingMedia() {
         val staged = temp.newFile("task-id.mp4").apply { writeBytes(byteArrayOf(9, 8)) }
         val completed = temp.newFile("video_task-id.mp4").apply { writeBytes(byteArrayOf(3, 4)) }
 
-        assertEquals(completed, LocalDownloadCommit.commit(staged, completed))
+        assertThrows(IllegalStateException::class.java) {
+            LocalDownloadCommit.commit(staged, completed)
+        }
         assertArrayEquals(byteArrayOf(3, 4), completed.readBytes())
+        assertTrue(staged.exists())
     }
 
     @Test fun refusesMissingOrEmptyStagingFile() {

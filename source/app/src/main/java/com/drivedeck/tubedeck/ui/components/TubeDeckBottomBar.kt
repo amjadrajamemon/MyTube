@@ -85,7 +85,7 @@ fun TubeDeckBottomBar(
                         WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                     )
                 )
-                DeckNavigationPlacement.SIDE -> Modifier
+                DeckNavigationPlacement.SIDE -> Modifier.navigationBarsPadding()
             }),
         color = TubeDeckSurface,
         tonalElevation = if (profile.name == "AMOLED Black") 0.dp else 8.dp

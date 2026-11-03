@@ -451,6 +451,110 @@ fun DriveDeckScreen(
     }
 }
 
+/**
+ * A theme's introduction is deliberately composed differently for terminals,
+ * dashboards, cinema, arcade and editorial views. It is not a color swatch.
+ */
+@Composable
+private fun ThemeDashboardBanner(title: String, subtitle: String) {
+    val profile = LocalDeckThemeProfile.current
+    val presentation = profile.homePresentation
+    val terminal = presentation == DeckHomePresentation.DESKTOP_TABLE ||
+        presentation == DeckHomePresentation.HUD_CONSOLE
+    val editorial = presentation == DeckHomePresentation.MINIMAL_EDITORIAL
+    val arcade = presentation == DeckHomePresentation.ARCADE_GALLERY
+    val bare = presentation == DeckHomePresentation.AMOLED_INDEX || editorial
+    Surface(
+        color = if (bare) TubeDeckBackground else TubeDeckSurfaceVariant,
+        shape = RoundedCornerShape(if (bare || terminal) 0.dp else profile.cornerRadiusDp.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(
+                horizontal = if (editorial) 14.dp else 10.dp,
+                vertical = if (editorial) 24.dp else if (terminal) 8.dp else 12.dp
+            )
+        ) {
+            Text(
+                text = if (terminal) "▶ $title" else if (arcade) "★ $title" else title,
+                color = if (arcade || terminal) TubeDeckAccentCyan else TubeDeckTextPrimary,
+                fontWeight = if (editorial) FontWeight.Normal else FontWeight.ExtraBold,
+                fontSize = when {
+                    editorial -> 29.sp
+                    presentation == DeckHomePresentation.AMOLED_INDEX -> 27.sp
+                    terminal -> 15.sp
+                    else -> 20.sp
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(if (editorial) 10.dp else 3.dp))
+            Text(
+                subtitle,
+                color = TubeDeckTextSecondary,
+                fontSize = if (editorial) 13.sp else 10.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** A real full-width spotlight for cinema, glass and editorial themes. */
+@Composable
+private fun HomeSpotlight(
+    video: HomeVideo,
+    eyebrow: String,
+    onOpenVideo: (HomeVideo) -> Unit
+) {
+    val profile = LocalDeckThemeProfile.current
+    val editorial = profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL
+    val cinema = profile.homePresentation == DeckHomePresentation.CINEMA_STRIPS
+    val shape = RoundedCornerShape(if (editorial) 0.dp else profile.cornerRadiusDp.dp)
+    Surface(
+        color = if (editorial) TubeDeckBackground else TubeDeckSurfaceVariant,
+        shape = shape,
+        modifier = Modifier.fillMaxWidth().tvInputHighlight(shape).clickable { onOpenVideo(video) }
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            if (editorial) {
+                Text(eyebrow, color = TubeDeckAccentCyan,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 10.dp))
+                Text(video.title, color = TubeDeckTextPrimary,
+                    fontSize = 23.sp, lineHeight = 27.sp, maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            }
+            Box {
+                VideoThumbnail(
+                    video,
+                    Modifier.fillMaxWidth().aspectRatio(if (cinema) 2.3f else 16f / 9f)
+                )
+                if (!editorial) Surface(
+                    modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+                    color = TubeDeckBackground.copy(alpha = .88f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(eyebrow, color = TubeDeckAccentCyan, fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                }
+            }
+            if (!editorial) {
+                Text(video.title, color = TubeDeckTextPrimary,
+                    fontSize = if (cinema) 20.sp else 17.sp,
+                    lineHeight = if (cinema) 24.sp else 21.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp))
+            }
+            Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 12.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp))
+        }
+    }
+}
+
 @Composable
 private fun ContentViewModeBar(
     listView: Boolean,

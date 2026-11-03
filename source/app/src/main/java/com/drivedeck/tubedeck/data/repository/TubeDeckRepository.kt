@@ -156,6 +156,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
+            putString("viewingMode", next.viewingMode.name)
+            putInt("viewingDimPercent", next.viewingDimPercent.coerceIn(10, 85))
+            putBoolean("nightAudioEnabled", next.nightAudioEnabled)
             putBoolean("autoRotatePlayback", next.autoRotatePlayback)
             putString("playbackContinuationMode", next.playbackContinuationMode.name)
             putBoolean("homeSuggestionsEnabled", next.homeSuggestionsEnabled)
@@ -222,6 +225,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
         preferredPlaybackSpeed = loadPreferredPlaybackSpeed(),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
+        viewingMode = enumValue(prefs.getString("viewingMode", null), ViewingMode.NORMAL),
+        viewingDimPercent = prefs.getInt("viewingDimPercent", 55).coerceIn(10, 85),
+        nightAudioEnabled = prefs.getBoolean("nightAudioEnabled", false),
         autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
         playbackContinuationMode = enumValue(
             prefs.getString("playbackContinuationMode", null),

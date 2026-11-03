@@ -101,30 +101,32 @@ object YoutubeStreamResolver {
                         }
                     }
 
-                    request.dataToSend()?.let { body ->
-                        connection.doOutput = true
-                        connection.outputStream.use { it.write(body) }
-                    }
-
-                    val code = connection.responseCode
-                    if (code == 429) {
-                        connection.disconnect()
-                        throw ReCaptchaException("HTTP 429", request.url())
-                    }
-
-                    val stream = if (code >= 400) connection.errorStream else connection.inputStream
-                    val body = if (stream != null && request.httpMethod() != "HEAD") {
-                        BufferedInputStream(stream).use { input ->
-                            ByteArrayOutputStream().use { output ->
-                                input.copyTo(output)
-                                output.toString(StandardCharsets.UTF_8.name())
-                            }
-                        }
-                    } else {
-                        ""
-                    }
-
+                    // Always release the connection: request-body write failures,
+                    // HTTP response exceptions and interrupted reads happen before
+                    // Response is constructed, not just while constructing it.
                     return try {
+                        request.dataToSend()?.let { body ->
+                            connection.doOutput = true
+                            connection.outputStream.use { it.write(body) }
+                        }
+
+                        val code = connection.responseCode
+                        if (code == 429) {
+                            throw ReCaptchaException("HTTP 429", request.url())
+                        }
+
+                        val stream = if (code >= 400) connection.errorStream else connection.inputStream
+                        val body = if (stream != null && request.httpMethod() != "HEAD") {
+                            BufferedInputStream(stream).use { input ->
+                                ByteArrayOutputStream().use { output ->
+                                    input.copyTo(output)
+                                    output.toString(StandardCharsets.UTF_8.name())
+                                }
+                            }
+                        } else {
+                            ""
+                        }
+
                         Response(
                             code,
                             connection.responseMessage ?: "",

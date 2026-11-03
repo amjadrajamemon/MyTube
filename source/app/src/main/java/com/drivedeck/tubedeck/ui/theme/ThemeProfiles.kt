@@ -11,7 +11,10 @@ import androidx.compose.ui.text.font.FontFamily
 enum class DeckNavigationPlacement { BOTTOM, TOP, SIDE }
 enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
 /** Real screen structures instead of palette-only variations. */
-enum class DeckHomePresentation { THREE_COLUMN, STACKED_SHELVES, CINEMA_STRIPS }
+enum class DeckHomePresentation {
+    THREE_COLUMN, IPTV_DASHBOARD, STACKED_SHELVES, DESKTOP_TABLE, HUD_CONSOLE,
+    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL
+}
 enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD }
 enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND }
 enum class DeckMotionStyle { INSTANT, SNAP, GLIDE, PULSE }
@@ -41,11 +44,13 @@ object DeckThemeCatalog {
             cornerRadiusDp = 18, contentGapDp = 14,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 78,
             geometry = DeckCardGeometry.CINEMA,
+            homePresentation = DeckHomePresentation.THREE_COLUMN,
             playerChrome = DeckPlayerChrome.THEATER, navVisual = DeckNavVisual.PILL, subtitle = "TV-first rail · cinematic widescreen cards"),
         DeckThemeProfile("Xtreamity", 0xFFFF9C32L, 0xFF10121CL, fontScale = 1.10f,
             cornerRadiusDp = 5, contentGapDp = 8,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 70,
             geometry = DeckCardGeometry.COMPACT,
+            homePresentation = DeckHomePresentation.IPTV_DASHBOARD,
             playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMPACT,
             motionStyle = DeckMotionStyle.SNAP, subtitle = "Dense streaming dashboard · sharp modules"),
         DeckThemeProfile("Android", 0xFF6750A4L, 0xFFF5F2F9L, textArgb = 0xFF201D26L,
@@ -57,7 +62,7 @@ object DeckThemeCatalog {
             fontFamily = FontFamily.Monospace, cornerRadiusDp = 4, contentGapDp = 6,
             navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 48,
             geometry = DeckCardGeometry.TERMINAL,
-            homePresentation = DeckHomePresentation.STACKED_SHELVES,
+            homePresentation = DeckHomePresentation.DESKTOP_TABLE,
             playerChrome = DeckPlayerChrome.CONSOLE, navVisual = DeckNavVisual.COMMAND,
             motionStyle = DeckMotionStyle.SNAP,
             subtitle = "Compact desktop menu · monospace labels"),
@@ -66,6 +71,7 @@ object DeckThemeCatalog {
             cornerRadiusDp = 0, contentGapDp = 14,
             navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 54,
             geometry = DeckCardGeometry.TERMINAL,
+            homePresentation = DeckHomePresentation.HUD_CONSOLE,
             playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMMAND,
             motionStyle = DeckMotionStyle.PULSE,
             subtitle = "Instrument-style typography · compact controls"),
@@ -78,11 +84,13 @@ object DeckThemeCatalog {
         DeckThemeProfile("Glass Midnight", 0xFF00D2FFL, 0xFF080B11L,
             cornerRadiusDp = 18, contentGapDp = 12, navigationHeightDp = 76,
             geometry = DeckCardGeometry.ROUNDED,
+            homePresentation = DeckHomePresentation.GLASS_CAROUSEL,
             playerChrome = DeckPlayerChrome.GLASS, navVisual = DeckNavVisual.PILL,
             subtitle = "Translucent-style dark glass · roomy spacing"),
         DeckThemeProfile("AMOLED Black", 0xFF00E5FFL, 0xFF000000L,
             cornerRadiusDp = 0, contentGapDp = 5, navigationHeightDp = 60,
             geometry = DeckCardGeometry.SQUARE,
+            homePresentation = DeckHomePresentation.AMOLED_INDEX,
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.ICONS,
             motionStyle = DeckMotionStyle.INSTANT,
             subtitle = "True black · maximum density and contrast"),
@@ -90,7 +98,7 @@ object DeckThemeCatalog {
             fontFamily = FontFamily.Monospace, fontScale = 1.10f,
             cornerRadiusDp = 2, contentGapDp = 10,
             geometry = DeckCardGeometry.SQUARE,
-            homePresentation = DeckHomePresentation.STACKED_SHELVES,
+            homePresentation = DeckHomePresentation.ARCADE_GALLERY,
             playerChrome = DeckPlayerChrome.ARCADE, navVisual = DeckNavVisual.COMMAND,
             motionStyle = DeckMotionStyle.PULSE,
             subtitle = "Arcade lettering · bright neon blocks"),
@@ -98,7 +106,7 @@ object DeckThemeCatalog {
             textArgb = 0xFF202833L, fontScale = 1.04f,
             cornerRadiusDp = 8, contentGapDp = 18, navigationHeightDp = 64,
             geometry = DeckCardGeometry.COMPACT,
-            homePresentation = DeckHomePresentation.CINEMA_STRIPS,
+            homePresentation = DeckHomePresentation.MINIMAL_EDITORIAL,
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.MINIMAL,
             motionStyle = DeckMotionStyle.INSTANT,
             subtitle = "Paper-like spacious interface · quiet controls")

@@ -36,6 +36,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -103,6 +104,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var resolveJob: kotlinx.coroutines.Job? = null
     private var nextAudioLookupInProgress = false
     private val nextSession = AudioNextSessionPolicy()
+    private var positionSnapshotJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -134,11 +136,26 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             playWhenReady = false
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    // Snapshot promptly on pause/resume rather than polling twice per second.
+                    // Snapshots are event-driven when paused, so a sleeping TV box
+                    // has no periodically waking coroutine during audio pause.
+                    positionSnapshotJob?.cancel()
+                    positionSnapshotJob = null
                     if (sourceUrl.isNotBlank()) {
                         BackgroundAudioController.markPosition(
                             sourceUrl, player.currentPosition.coerceAtLeast(0L)
                         )
+                    }
+                    if (isPlaying) {
+                        positionSnapshotJob = serviceScope.launch {
+                            while (isActive && player.isPlaying) {
+                                if (sourceUrl.isNotBlank()) {
+                                    BackgroundAudioController.markPosition(
+                                        sourceUrl, player.currentPosition.coerceAtLeast(0L)
+                                    )
+                                }
+                                delay(2_000L)
+                            }
+                        }
                     }
                     if (isPlaying && startupPending) {
                         startupPending = false
@@ -218,18 +235,6 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 }
             })
             .build()
-        serviceScope.launch {
-            while (isActive) {
-                if (sourceUrl.isNotBlank() && player.playbackState != Player.STATE_IDLE) {
-                    BackgroundAudioController.markPosition(
-                        sourceUrl, player.currentPosition.coerceAtLeast(0L)
-                    )
-                }
-                // Position is only needed for Return to Video and the notification.
-                // Don't keep a sleeping TV box awake at 2 Hz while paused.
-                delay(if (player.isPlaying) 2_000L else 5_000L)
-            }
-        }
     }
 
     /**
@@ -310,6 +315,10 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             } catch (error: Exception) {
                 PlaybackDiagnostics.record(this@BackgroundAudioPlaybackService,
                     "background_audio_next_error", error.javaClass.simpleName)
+                // If autoplay has already exhausted the current audio stream,
+                // an unavailable network/next suggestion must not leave a
+                // permanently idle foreground service behind.
+                if (player.playbackState == Player.STATE_ENDED) stopSelf()
             } finally {
                 nextAudioLookupInProgress = false
             }
@@ -478,6 +487,8 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        positionSnapshotJob?.cancel()
+        positionSnapshotJob = null
         BackgroundAudioController.startup.fail(requestId, "Audio playback stopped before it was ready")
         BackgroundAudioController.markStopped(sourceUrl)
         serviceScope.cancel()

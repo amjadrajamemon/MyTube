@@ -1573,6 +1573,39 @@ object YoutubeStreamResolver {
                 .take(limit.coerceIn(1, 40))
         }
 
+    /**
+     * Actual NewPipe continuation tokens, not repeated first-page searches.
+     * Call only at the end of a visible Home feed; callers hold the cursor in memory.
+     * No imposed total-page count. UI virtualizes thumbnails and repositories bound RAM.
+     */
+    suspend fun searchVideosPage(
+        query: String,
+        cursor: org.schabi.newpipe.extractor.Page?,
+        limit: Int = 36
+    ): Pair<List<RelatedVideo>, org.schabi.newpipe.extractor.Page?> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val clean = query.trim()
+            if (clean.isBlank()) return@withContext emptyList<RelatedVideo>() to null
+            ensureInitialized()
+            val service = NewPipe.getService("YouTube")
+            val handler = service.searchQHFactory.fromQuery(clean, listOf("videos"), "")
+            val items: List<org.schabi.newpipe.extractor.InfoItem>
+            val nextPage: org.schabi.newpipe.extractor.Page?
+            if (cursor == null) {
+                val info = SearchInfo.getInfo(service, handler)
+                items = info.relatedItems
+                nextPage = info.nextPage
+            } else {
+                val page = SearchInfo.getMoreItems(service, handler, cursor)
+                items = page.items
+                nextPage = page.nextPage
+            }
+            items.filterIsInstance<StreamInfoItem>()
+                .mapNotNull(::relatedVideoFromSearchItem)
+                .distinctBy { it.videoId }
+                .take(limit.coerceIn(1, 50)) to nextPage
+        }
+
     suspend fun searchVideos(query: String, limit: Int = 20): List<RelatedVideo> =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
             val clean = query.trim()

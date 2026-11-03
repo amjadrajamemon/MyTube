@@ -898,6 +898,7 @@ class MainActivity : ComponentActivity() {
                         } else if (!isPipMode && currentScreen == ActiveScreen.BROWSER && !isBrowserFullscreen) {
                             Column {
                                 TopNavBar(
+                                    includeStatusBarInset = activeDeckProfile.navigationPlacement != DeckNavigationPlacement.TOP,
                                     currentUrl = currentUrl,
                                     recentSearches = recentSearches,
                                     onRemoveRecentSearch = repository::removeRecentSearch,

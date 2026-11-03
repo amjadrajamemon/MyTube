@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.drivedeck.tubedeck.ui.screens
 
 import androidx.compose.foundation.background

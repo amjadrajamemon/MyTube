@@ -287,15 +287,24 @@ fun PlayerScreen(
     val youtube = YoutubeUrls.videoId(media.mediaUri) != null
 
     when {
-        youtube && (playerMode == PlayerMode.WEB || useWebFallback) -> WebPlayer(
-            media = media,
-            onClose = onClose,
-            onDownloadVideo = onDownloadVideo,
-            onDownloadPlaylist = onDownloadPlaylist,
-            googleAccount = googleAccount,
-            onGoogleAccountClick = onGoogleAccountClick,
-            modifier = modifier.fillMaxSize()
-        )
+        youtube && (playerMode == PlayerMode.WEB || useWebFallback) -> Box(modifier.fillMaxSize()) {
+            WebPlayer(
+                media = media,
+                onClose = onClose,
+                onDownloadVideo = onDownloadVideo,
+                onDownloadPlaylist = onDownloadPlaylist,
+                googleAccount = googleAccount,
+                onGoogleAccountClick = onGoogleAccountClick,
+                modifier = Modifier.fillMaxSize()
+            )
+            // Native audio compression cannot process WebView's separate audio session.
+            // Visual modes still apply without intercepting browser touch events.
+            val dim = ViewingModePolicy.videoDim(viewingMode, viewingDimPercent, inPictureInPicture)
+            if (dim > 0f) Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = dim)))
+            if (viewingMode == ViewingMode.NIGHT && !inPictureInPicture) {
+                Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = .055f)))
+            }
+        }
 
         else -> NativeExoPlayer(
             media = media,
@@ -1923,9 +1932,9 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused) {
+    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused, viewingMenuVisible) {
         // Do not hide TV controls while a remote or keyboard has focus inside them.
-        if (controlsVisible && autoHideControls && !tvControlsFocused) {
+        if (controlsVisible && autoHideControls && !tvControlsFocused && !viewingMenuVisible) {
             delay(4200)
             if (!tvControlsFocused) controlsVisible = false
         }
@@ -1988,7 +1997,7 @@ fun NativeExoPlayer(
     BackHandler(
         enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
             !showSettings && !showQuickActions && !showEqualizer &&
-            !showCaptionMenu && !showQualityMenu && !showComments &&
+            !showCaptionMenu && !showQualityMenu && !showComments && !viewingMenuVisible &&
             !showPlaybackModeCards
     ) {
         controlsVisible = false
@@ -2027,7 +2036,7 @@ fun NativeExoPlayer(
             if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
                 false
             } else {
-                val modalVisible = showSettings || showQuickActions || showEqualizer ||
+                val modalVisible = showSettings || showQuickActions || showEqualizer || viewingMenuVisible ||
                     showCaptionMenu || showQualityMenu || showPlaybackModeCards || showComments || showBookmarks
                 val decision = if (!modalVisible) {
                     TvRemoteKeyLearningPolicy.remap(

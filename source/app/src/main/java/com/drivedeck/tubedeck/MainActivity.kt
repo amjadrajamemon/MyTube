@@ -65,6 +65,7 @@ import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.screens.*
 import com.drivedeck.tubedeck.ui.theme.TubeDeckBackground
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
@@ -113,6 +114,7 @@ class MainActivity : ComponentActivity() {
     private var embeddedPlaybackRequested = false
     private var automaticEmbeddedHandoff = false
     private var closeActivePlaybackUi: (() -> Unit)? = null
+    private var tvNavigateBackBehindPip: (() -> Boolean)? = null
     private val playbackBackCoordinator = PlaybackBackCoordinator()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -124,6 +126,19 @@ class MainActivity : ComponentActivity() {
     // androidx.core. OEM head units sometimes send media keys only to this hook.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // STOP is a hardware-remote escape if the TV shell hides its PiP X.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_MEDIA_STOP
+        ) {
+            NativePipSessionBridge.activeSessionId.value?.let { session ->
+                NativePipSessionBridge.request(session, NativePipSessionBridge.Action.CLOSE)
+                return true
+            }
+            if (isPipMode && playerActive) {
+                closeActivePlaybackCompletely()
+                return true
+            }
+        }
         // Some TV/XY AUTO ROMs send transport keys to the Activity, not MediaSession.
         if (playerActive &&
             com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
@@ -478,6 +493,9 @@ class MainActivity : ComponentActivity() {
                     }
                     return navigateBack()
                 }
+
+                // The TV Back key navigates the parent UI beneath native PiP.
+                SideEffect { tvNavigateBackBehindPip = { navigateBrowserBackOrApp() } }
 
                 fun navigateBrowserForwardOrApp(): Boolean {
                     if (currentScreen == ActiveScreen.BROWSER && webCanGoForward) {
@@ -899,6 +917,35 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     bottomBar = {
+                        Column {
+                        if (!isPipMode && nativePipSessionId != null &&
+                            isTvLikeNavigationDevice(this@MainActivity)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .background(TubeDeckBackground)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Mini-player active", modifier = Modifier.weight(1f))
+                                OutlinedButton(
+                                    onClick = {
+                                        NativePipSessionBridge.request(
+                                            nativePipSessionId, NativePipSessionBridge.Action.SHOW_CHOOSER
+                                        )
+                                    }
+                                ) { Text("Expand") }
+                                Button(
+                                    onClick = {
+                                        NativePipSessionBridge.request(
+                                            nativePipSessionId, NativePipSessionBridge.Action.CLOSE
+                                        )
+                                    },
+                                    modifier = Modifier.tvInputHighlight()
+                                ) { Text("Close mini-player") }
+                            }
+                        }
                         if (!isPipMode && currentScreen != ActiveScreen.PLAYER && !isBrowserFullscreen &&
                             !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)) {
                             TubeDeckBottomBar(
@@ -917,6 +964,7 @@ class MainActivity : ComponentActivity() {
                                     navigateTo(screen)
                                 }
                             )
+                        }
                         }
                     }
                 ) { innerPadding ->
@@ -1645,6 +1693,15 @@ class MainActivity : ComponentActivity() {
         val now = SystemClock.elapsedRealtime()
 
         NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            if (isTvLikeNavigationDevice(this)) {
+                // Preserve SmartTube-style background navigation while the mini-player
+                // floats; at the navigation root, Back closes playback immediately.
+                if (tvNavigateBackBehindPip?.invoke() != true) {
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.CLOSE)
+                }
+                PlaybackBackSequenceTracker.reset()
+                return
+            }
             val rapidCount = PlaybackBackSequenceTracker.record(now)
             nativePipBackExitJob?.cancel()
             nativePipBackExitJob = null
@@ -1671,6 +1728,10 @@ class MainActivity : ComponentActivity() {
         }
 
         if (!playerActive) return
+        if (isPipMode && isTvLikeNavigationDevice(this)) {
+            closeActivePlaybackCompletely()
+            return
+        }
 
         val rapidCount = PlaybackBackSequenceTracker.record(now)
         if (rapidCount >= 3) {
@@ -1918,6 +1979,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        tvNavigateBackBehindPip = null
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         webPipExitResolutionJob?.cancel()

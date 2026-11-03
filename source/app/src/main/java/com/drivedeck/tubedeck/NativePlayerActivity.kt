@@ -478,6 +478,7 @@ class NativePlayerActivity : ComponentActivity() {
                     showRelevantShelf = settings.showRelevantShelf,
                     showEpisodesShelf = settings.showEpisodesShelf,
                     floatingCardsMode = settings.floatingCardsMode,
+                    animatedCardPreviews = settings.animatedCardPreviews,
                     hideWatchedRecommendations = settings.hideWatchedRecommendations,
                     lowResourceMode = settings.lowResourceMode,
                     subtitleTextScale = settings.subtitleTextScale,

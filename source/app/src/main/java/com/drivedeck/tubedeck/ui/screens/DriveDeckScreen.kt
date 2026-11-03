@@ -316,37 +316,132 @@ fun DriveDeckScreen(
                             }
                         }
 
-                        when {
-                            layout == HomeLayoutPolicy.Layout.WIDE_COLUMNS -> Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                repeat(3) { index ->
-                                    Feed(index, Modifier.weight(1f), horizontalCards = false)
-                                }
-                            }
-                            layout == HomeLayoutPolicy.Layout.SWIPE_PANELS -> {
-                                // One readable panel per viewport; swipe left/right to move
-                                // History -> Relevant -> Trending. The next panel peeks in.
-                                val panelWidth = (maxWidth - 30.dp).coerceAtMost(620.dp)
-                                LazyRow(
+                        when (deckTheme.homePresentation) {
+                            DeckHomePresentation.THREE_COLUMN -> when (layout) {
+                                HomeLayoutPolicy.Layout.WIDE_COLUMNS -> Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    contentPadding = PaddingValues(horizontal = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    items(3) { index ->
-                                        Feed(index, Modifier.width(panelWidth), horizontalCards = false)
+                                    repeat(3) { index ->
+                                        Feed(index, Modifier.weight(1f), horizontalCards = false)
+                                    }
+                                }
+                                else -> {
+                                    // On phones, these are real swipeable feed PANELS.
+                                    // Each panel is wide enough for a readable list row.
+                                    val panelWidth = (maxWidth - 30.dp).coerceAtMost(620.dp)
+                                    LazyRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        items(3) { index ->
+                                            Feed(index, Modifier.width(panelWidth), horizontalCards = false)
+                                        }
                                     }
                                 }
                             }
-                            else -> Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+
+                            DeckHomePresentation.IPTV_DASHBOARD -> Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Stacked and cinema themes use direct horizontal video swipes.
+                                ThemeDashboardBanner("CHANNEL DASHBOARD", "MYTUBE / SOURCE COLLECTION")
+                                if (maxWidth >= 840.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        repeat(3) { index ->
+                                            Feed(index, Modifier.weight(1f), horizontalCards = false)
+                                        }
+                                    }
+                                } else repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                            }
+
+                            DeckHomePresentation.STACKED_SHELVES -> Column(
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                ThemeDashboardBanner("Discover", "Your library and personalized recommendations")
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
                                 }
+                            }
+
+                            DeckHomePresentation.DESKTOP_TABLE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                ThemeDashboardBanner("MYTUBE://WORKSPACE", "LIBRARY  /  DISCOVERY  /  TRENDING")
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
+                                }
+                            }
+
+                            DeckHomePresentation.HUD_CONSOLE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                ThemeDashboardBanner("MEDIA COMMAND CENTER", "FEED STATUS / LIVE MONITOR")
+                                if (maxWidth >= 760.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Feed(0, Modifier.weight(1f), horizontalCards = false)
+                                        Feed(1, Modifier.weight(1f), horizontalCards = false)
+                                    }
+                                } else {
+                                    Feed(0, Modifier.fillMaxWidth(), horizontalCards = true)
+                                    Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                            }
+
+                            DeckHomePresentation.CINEMA_STRIPS -> Column(
+                                verticalArrangement = Arrangement.spacedBy(18.dp)
+                            ) {
+                                suggestedVideos.firstOrNull()?.let { video ->
+                                    HomeSpotlight(video, "NOW SHOWING", onOpenVideo)
+                                }
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                            }
+
+                            DeckHomePresentation.GLASS_CAROUSEL -> Column(
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                ThemeDashboardBanner("Explore MyTube", "Swipe to discover what matters to you")
+                                suggestedVideos.firstOrNull()?.let { video ->
+                                    HomeSpotlight(video, "FEATURED FOR YOU", onOpenVideo)
+                                }
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                            }
+
+                            DeckHomePresentation.AMOLED_INDEX -> Column(
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                ThemeDashboardBanner("Library", "PURE BLACK  /  NO DISTRACTIONS")
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
+                                }
+                            }
+
+                            DeckHomePresentation.ARCADE_GALLERY -> Column(
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                ThemeDashboardBanner("SELECT YOUR STAGE", "PLAYER ONE  /  VIDEO ARCADE")
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
+                                }
+                            }
+
+                            DeckHomePresentation.MINIMAL_EDITORIAL -> Column(
+                                verticalArrangement = Arrangement.spacedBy(24.dp)
+                            ) {
+                                ThemeDashboardBanner("Watch something wonderful.", "A quieter place to discover")
+                                suggestedVideos.firstOrNull()?.let { video ->
+                                    HomeSpotlight(video, "EDITOR'S PICK", onOpenVideo)
+                                }
+                                Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
                             }
                         }
                     }

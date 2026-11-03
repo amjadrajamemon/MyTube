@@ -1,0 +1,80 @@
+name: Publish MyTube v2.1.0 night viewing direct APKs
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - .github/workflows/publish-v210-direct.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release-exact-passed-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Verify original successful build and source identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_SHA="$(gh run view 41661326789 --repo "$GITHUB_REPOSITORY" --json headSha,conclusion --jq 'select(.conclusion == "success") | .headSha')"
+          test "$RUN_SHA" = "dc8dc58860bff867bb493a26b56f296d5725ac36" || {
+            echo "::error::The verified v2.1.0 build did not pass at the approved commit"
+            exit 1
+          }
+
+      - name: Fetch and verify the exact signed APKs from the successful build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 41661326789 --repo "$GITHUB_REPOSITORY" \
+            --name "MyTube-v2.1.0-ARM64-and-Universal" --dir dist
+          test -s dist/MyTube-v2.1.0-ARM64-debug.apk
+          test -s dist/MyTube-v2.1.0-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -t dist/MyTube-v2.1.0-ARM64-debug.apk >/dev/null
+          unzip -t dist/MyTube-v2.1.0-Universal-debug.apk >/dev/null
+          ls -lh dist
+
+      - name: Publish separate direct-download APK release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v2.1.0-night-viewing-20261103"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Release already exists. Preserving existing downloads."
+            exit 0
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          # MyTube v2.1.0 — Night Viewing & Night Audio
+
+          This development prerelease makes changes in ONLY the two requested feature areas:
+
+          - **Lights Out / Cinema / Night viewing:** four choices (Normal, Lights Out, Cinema and Night), adjustable video dimming for Lights Out and Night, warm night tint, and immersive Cinema layout. Player gear, in-player moon control and Settings include saved choices. The existing full-blackout audio option is retained separately.
+          - **Night Audio:** opt-in Android dynamic-range compression designed to soften loud passages and lift quiet dialogue. Session-scoped processing is preserved during audio-only handoff. It is guarded on unsupported Android versions and known car ROMs to prevent audio stack instability.
+
+          No sleep timer, queue manager, A-B repeat, casting, voice search or other unrelated features were added.
+
+          The ARM64 and Universal debug APKs were copied WITHOUT REBUILD from successful GitHub Actions run 41661326789 at commit dc8dc58860bff867bb493a26b56f296d5725ac36. Both unit-test suites, both APK builds, ABI checks and signing verification passed. On-device checking is still necessary, especially for Night Audio platform-effect support.
+          EOF
+          gh release create "$TAG" \
+            dist/MyTube-v2.1.0-ARM64-debug.apk \
+            dist/MyTube-v2.1.0-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target dc8dc58860bff867bb493a26b56f296d5725ac36 \
+            --title "MyTube v2.1.0 — Lights Out, Cinema, Night Viewing & Night Audio" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

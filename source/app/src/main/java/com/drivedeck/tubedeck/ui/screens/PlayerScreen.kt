@@ -1077,8 +1077,8 @@ fun NativeExoPlayer(
             }
         }
     }
-    LaunchedEffect(showResumePrompt, exoPlayer.playbackState) {
-        if (showResumePrompt && exoPlayer.playWhenReady) exoPlayer.pause()
+    LaunchedEffect(showResumePrompt, isPlaying) {
+        if (showResumePrompt && isPlaying) exoPlayer.pause()
     }
     DisposableEffect(exoPlayer, resumeAfterInterruptions) {
         onDispose {

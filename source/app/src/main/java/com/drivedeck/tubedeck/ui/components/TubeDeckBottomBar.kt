@@ -31,18 +31,24 @@ fun TubeDeckBottomBar(
     onNavigate: (ActiveScreen) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val profile = LocalDeckThemeProfile.current
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .border(width = 1.dp, color = TubeDeckBorder)
-            .navigationBarsPadding(),
+            .then(if (profile.navigationPlacement == DeckNavigationPlacement.BOTTOM)
+                Modifier.navigationBarsPadding() else Modifier),
         color = TubeDeckSurface,
-        tonalElevation = 8.dp
+        tonalElevation = if (profile.name == "AMOLED Black") 0.dp else 8.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+                .padding(
+                    horizontal = profile.contentGapDp.dp / 2,
+                    vertical = if (profile.navigationPlacement == DeckNavigationPlacement.TOP) 2.dp
+                        else (profile.navigationHeightDp - 48).coerceAtLeast(3).dp / 2
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -206,6 +212,59 @@ private fun DeckNavItem(
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 color = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary,
                 maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * Optional TV-first vertical navigation. This is a real navigation placement,
+ * not an overlay drawn across the playing video.
+ */
+@Composable
+fun TubeDeckSideRail(
+    currentScreen: ActiveScreen,
+    activeDownloadCount: Int,
+    onNavigate: (ActiveScreen) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val profile = LocalDeckThemeProfile.current
+    val destinations = listOf(
+        Triple(ActiveScreen.HOME, "Home", Icons.Default.Home),
+        Triple(ActiveScreen.MIXES, "Mixes", Icons.Default.QueueMusic),
+        Triple(ActiveScreen.DOWNLOADS, "Downloads", Icons.Default.Download),
+        Triple(ActiveScreen.OFFLINE_VAULT, "Vault", Icons.Default.Folder),
+        Triple(ActiveScreen.SETTINGS, "Settings", Icons.Default.Settings)
+    )
+    NavigationRail(
+        modifier = modifier.width(if (profile.name == "ATV") 98.dp else 78.dp)
+            .fillMaxHeight().border(1.dp, TubeDeckBorder),
+        containerColor = TubeDeckSurface,
+        contentColor = TubeDeckTextPrimary,
+        header = {
+            Icon(
+                Icons.Default.PlayCircleFilled,
+                contentDescription = "MyTube",
+                modifier = Modifier.padding(vertical = 14.dp).size(29.dp),
+                tint = TubeDeckAccentCyan
+            )
+        }
+    ) {
+        destinations.forEach { (screen, label, icon) ->
+            NavigationRailItem(
+                selected = currentScreen == screen,
+                onClick = { onNavigate(screen) },
+                icon = {
+                    BadgedBox(badge = {
+                        if (screen == ActiveScreen.DOWNLOADS && activeDownloadCount > 0)
+                            Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) }
+                    }) { Icon(icon, contentDescription = label) }
+                },
+                label = { Text(label, fontSize = if (profile.name == "ATV") 11.sp else 9.sp) },
+                alwaysShowLabel = true,
+                modifier = Modifier.tvInputHighlight(
+                    RoundedCornerShape(profile.cornerRadiusDp.dp)
+                )
             )
         }
     }

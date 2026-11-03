@@ -64,8 +64,7 @@ fun DownloadModal(
     var urlText by remember { mutableStateOf(initialUrl) }
     val hasVideo = YoutubeUrls.videoId(urlText) != null
     val hasPlaylist = YoutubeUrls.playlist(urlText)
-    // Choosing a folder is a required first-run step. Explain it where the
-    // Download button is shown rather than dismissing the dialog with a toast.
+    // A selected SAF folder is optional; app-private storage is the safe default.
     val hasDownloadFolder = !settings.downloadTreeUri.isNullOrBlank()
     var playlistRequested by remember(initialUrl) { mutableStateOf(initialPlaylistMode || (hasPlaylist && !hasVideo)) }
     val isPlaylist = playlistRequested || (hasPlaylist && !hasVideo)
@@ -477,8 +476,8 @@ fun DownloadModal(
 
                 if (!hasDownloadFolder) {
                     Text(
-                        "Choose a writable download folder in Settings, then tap Save before starting a download.",
-                        color = MaterialTheme.colorScheme.error,
+                        "Destination: MyTube app storage. To save outside the app, choose a folder in Settings and tap Save.",
+                        color = TubeDeckTextSecondary,
                         fontSize = 12.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -490,7 +489,7 @@ fun DownloadModal(
                         else onStartDownload(urlText, "YouTube Media", selectedMode, selectedQuality)
                         onDismiss()
                     },
-                    enabled = hasDownloadFolder && !isFetching && fetchError == null &&
+                    enabled = !isFetching && fetchError == null &&
                         (if (isPlaylist) playlistItems.any { it.isSelected }
                          else if (selectedMode == DownloadMode.VIDEO) videoQualities.isNotEmpty() else audioAvailable),
                     modifier = Modifier.fillMaxWidth().height(50.dp),

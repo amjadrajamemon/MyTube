@@ -3,6 +3,7 @@
 package com.drivedeck.tubedeck.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -12,6 +13,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -791,6 +796,7 @@ private fun HomeFeedColumn(
     onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
     val state = rememberLazyListState()
+    val gridState = rememberLazyGridState()
     val profile = LocalDeckThemeProfile.current
     val cardShape = RoundedCornerShape(profile.cornerRadiusDp.dp)
     val imageRatio = when(profile.geometry) {
@@ -802,8 +808,12 @@ private fun HomeFeedColumn(
     LaunchedEffect(horizontal, focusIndex) {
         if (focusIndex >= 0) state.scrollToItem(focusIndex)
     }
-    val lastIndex by remember(state) {
-        derivedStateOf { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    val lastIndex by remember(state, gridState, profile.homePresentation) {
+        derivedStateOf {
+            if (profile.homePresentation == DeckHomePresentation.ARCADE_GALLERY) {
+                gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            } else state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        }
     }
     // Prevent repeated requests when the list is still at its previous end.
     var lastRequestedSize by remember(title) { mutableIntStateOf(-1) }
@@ -828,8 +838,22 @@ private fun HomeFeedColumn(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val heading = when (profile.homePresentation) {
+                        DeckHomePresentation.DESKTOP_TABLE -> "> ${title.uppercase(Locale.ROOT)} /"
+                        DeckHomePresentation.HUD_CONSOLE -> "▸ ${title.uppercase(Locale.ROOT)} · ${videos.size}"
+                        DeckHomePresentation.ARCADE_GALLERY -> "★ ${title.uppercase(Locale.ROOT)}"
+                        DeckHomePresentation.IPTV_DASHBOARD -> "${title.uppercase(Locale.ROOT)}  •  ${videos.size}"
+                        DeckHomePresentation.AMOLED_INDEX -> title.uppercase(Locale.ROOT)
+                        DeckHomePresentation.MINIMAL_EDITORIAL -> "${title}."
+                        else -> title
+                    }
                     Text(
-                        title, color = TubeDeckTextPrimary, fontSize = 16.sp,
+                        heading, color = if (profile.homePresentation == DeckHomePresentation.ARCADE_GALLERY ||
+                                profile.homePresentation == DeckHomePresentation.HUD_CONSOLE)
+                                TubeDeckAccentCyan else TubeDeckTextPrimary,
+                        fontSize = if (profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL) 20.sp
+                            else if (profile.homePresentation == DeckHomePresentation.DESKTOP_TABLE) 13.sp
+                            else 16.sp,
                         fontWeight = FontWeight.Bold, maxLines = 1,
                         softWrap = false, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -896,7 +920,23 @@ private fun HomeFeedColumn(
                         }
                     }
                 }
-                if (horizontal) {
+                if (profile.homePresentation == DeckHomePresentation.ARCADE_GALLERY) {
+                    // A true arcade selection grid, not recolored horizontal shelves.
+                    BoxWithConstraints(Modifier.fillMaxWidth().height(620.dp)) {
+                        val columns = if (maxWidth >= 500.dp) 3 else 2
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(columns),
+                            state = gridState,
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            gridItemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
+                                HomeCard(video, Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                } else if (horizontal) {
                     LazyRow(
                         state = state,
                         modifier = Modifier.fillMaxWidth().height(

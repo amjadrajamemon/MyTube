@@ -234,7 +234,8 @@ class NativePlayerActivity : ComponentActivity() {
                 fontScale = settings.fontScale,
                 accentArgb = settings.themeAccentArgb,
                 backgroundArgb = settings.themeBackgroundArgb,
-                textArgb = settings.themeTextArgb
+                textArgb = settings.themeTextArgb,
+                appearancePreset = settings.appearancePreset
             ) {
                 val media = currentMedia
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()

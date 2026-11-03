@@ -57,6 +57,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var activeSponsorId: String? = null
     private var homeSuggestionsJob: Job? = null
     private var homeTrendingJob: Job? = null
+    private val homePageJobs = mutableMapOf<String, Job>()
+    private val homePageCursors = mutableMapOf<String, org.schabi.newpipe.extractor.Page?>()
+    private val homePageQueries = mutableMapOf<String, String>()
+    private val homePageExhausted = mutableSetOf<String>()
+    private val _moreFeedsLoading = MutableStateFlow<Set<String>>(emptySet())
+    val moreFeedsLoading: StateFlow<Set<String>> = _moreFeedsLoading.asStateFlow()
+    private val _moreFeedsExhausted = MutableStateFlow<Set<String>>(emptySet())
+    val moreFeedsExhausted: StateFlow<Set<String>> = _moreFeedsExhausted.asStateFlow()
     private var homeLiveJob: Job? = null
     private var liveSearchJob: Job? = null
     private var videoSearchJob: Job? = null
@@ -697,6 +705,65 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     "${cacheKey}_updated",
                     now - HomeFeedPolicy.CACHE_MS + 120_000L
                 ).apply()
+            }
+        }
+    }
+
+    /**
+     * Paginate Home feeds using actual provider cursors. Never refetch just page 1,
+     * and never expand the image composition to all prior pages. A rolling recent
+     * in-memory window prevents unbounded RAM while scrolling forward indefinitely.
+     * When the provider has no next-page cursor, the UI shows an end-of-feed state.
+     */
+    fun loadMoreHomeFeed(feed: String) {
+        if (feed !in setOf("Relevant", "Trending")) return
+        if (homePageJobs[feed]?.isActive == true || feed in homePageExhausted) return
+        val country = _homeCountry.value
+        val query = if (feed == "Trending") {
+            "popular trending videos ${Locale("", country).displayCountry.ifBlank { country }}"
+        } else {
+            val lastQuery = _recentSearches.value.firstOrNull().orEmpty()
+            val watchTitle = _watchHistory.value.firstOrNull()?.title.orEmpty()
+            val seed = lastQuery.ifBlank { watchTitle }.take(65)
+            if (seed.isBlank()) "interesting documentaries and technology videos" else "$seed related videos"
+        }
+        if (homePageQueries[feed] != query) {
+            homePageQueries[feed] = query
+            homePageCursors.remove(feed)
+            homePageExhausted.remove(feed)
+            _moreFeedsExhausted.value = _moreFeedsExhausted.value - feed
+        }
+        homePageJobs[feed] = scope.launch {
+            _moreFeedsLoading.value = _moreFeedsLoading.value + feed
+            try {
+                val (items, nextCursor) = YoutubeStreamResolver.searchVideosPage(
+                    query, homePageCursors[feed], limit = 36
+                )
+                ensureActive()
+                if (homePageQueries[feed] != query) return@launch
+                val target = if (feed == "Relevant") _homeSuggestions else _homeTrending
+                val seen = target.value.mapTo(hashSetOf()) { it.videoId }
+                val watched = if (feed == "Relevant") _watchHistory.value.mapTo(hashSetOf()) { it.videoId }
+                    else emptySet()
+                val next = items
+                    .filter { it.videoId !in seen && it.videoId !in watched }
+                    .map(::relatedToHome)
+                if (next.isNotEmpty()) {
+                    // Rolling memory window; the continuation cursor does NOT reset.
+                    // Keeps scrolling/buffering viable even after hundreds of pages.
+                    target.value = (target.value + next).takeLast(360)
+                }
+                homePageCursors[feed] = nextCursor
+                if (nextCursor == null) {
+                    homePageExhausted.add(feed)
+                    _moreFeedsExhausted.value = _moreFeedsExhausted.value + feed
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // A failed page must remain retryable via the Load More control.
+            } finally {
+                _moreFeedsLoading.value = _moreFeedsLoading.value - feed
             }
         }
     }

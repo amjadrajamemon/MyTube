@@ -130,6 +130,7 @@ fun SettingsScreen(
     var showRelevantShelf by remember { mutableStateOf(currentSettings.showRelevantShelf) }
     var showEpisodesShelf by remember { mutableStateOf(currentSettings.showEpisodesShelf) }
     var floatingCardsMode by remember { mutableStateOf(currentSettings.floatingCardsMode) }
+    var animatedCardPreviews by remember { mutableStateOf(currentSettings.animatedCardPreviews) }
     var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
     var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
     var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
@@ -643,6 +644,14 @@ fun SettingsScreen(
                     "Manual keeps the screen uncluttered. The 15-second mode opens suggestions only near the end; dismissing them keeps them hidden for that video.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
+                ToggleRow(
+                    "Animated thumbnail previews when a related card stays focused",
+                    animatedCardPreviews
+                ) { animatedCardPreviews = it }
+                Text(
+                    "Optional: tries YouTube's short animated WebP thumbnail after 1.1 seconds of focus. Uses no second video player; falls back to the static image. Disabled in Low Resource Mode or on older Android.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
                 ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
                     lowResourceMode = it
                 }
@@ -813,6 +822,7 @@ fun SettingsScreen(
                             showRelevantShelf = showRelevantShelf,
                             showEpisodesShelf = showEpisodesShelf,
                             floatingCardsMode = floatingCardsMode,
+                            animatedCardPreviews = animatedCardPreviews,
                             hideWatchedRecommendations = hideWatchedRecommendations,
                             lowResourceMode = lowResourceMode,
                             subtitleTextScale = subtitleTextScale,

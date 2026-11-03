@@ -89,6 +89,25 @@ fun DriveDeckScreen(
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val firstVideoFocus = remember { FocusRequester() }
+    val searchResultFocus = remember { FocusRequester() }
+    var selectedSearchVideoId by rememberSaveable(viewStateKey) { mutableStateOf("") }
+    val activeSearchVideos = when {
+        liveSearchQuery.isNotBlank() -> liveSearchResults
+        tvNavigation && videoSearchQuery.isNotBlank() -> videoSearchResults
+        else -> emptyList()
+    }
+    val hasTvSearchResults = activeSearchVideos.isNotEmpty()
+    val searchResultTargetId = selectedSearchVideoId.takeIf { id ->
+        activeSearchVideos.any { it.videoId == id }
+    } ?: activeSearchVideos.firstOrNull()?.videoId
+    LaunchedEffect(tvNavigation, playlistMode, liveSearchQuery, videoSearchQuery, hasTvSearchResults) {
+        if (tvNavigation && !playlistMode && hasTvSearchResults) {
+            repeat(4) {
+                delay(80)
+                if (runCatching { searchResultFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            }
+        }
+    }
     // Remember actual selection, not merely that focus was initialized. The
     // SaveableStateProvider in MainActivity restores this when returning from video.
     var selectedHomeFeed by rememberSaveable(viewStateKey) { mutableStateOf("") }
@@ -109,8 +128,8 @@ fun DriveDeckScreen(
     val focusFeed = chosenFeedAndVideo?.first
     val focusVideoId = chosenFeedAndVideo?.second
 
-    LaunchedEffect(tvNavigation, playlistMode, focusFeed != null) {
-        if (tvNavigation && !playlistMode && focusFeed != null) {
+    LaunchedEffect(tvNavigation, playlistMode, focusFeed != null, hasTvSearchResults) {
+        if (tvNavigation && !playlistMode && !hasTvSearchResults && focusFeed != null) {
             // First frame may precede feed data or the LazyColumn item mount.
             repeat(4) {
                 delay(80)
@@ -171,7 +190,10 @@ fun DriveDeckScreen(
                         loading = liveSearchStatus == "Loading",
                         emptyLabel = liveSearchStatus.takeIf { it.isNotBlank() && it != "Loading" },
                         action = "Clear",
-                        onAction = onClearLiveSearch
+                        onAction = onClearLiveSearch,
+                        firstResultFocus = if (tvNavigation) searchResultFocus else null,
+                        focusVideoId = searchResultTargetId,
+                        onVideoFocused = { selectedSearchVideoId = it.videoId }
                     )
                 }
             } else if (tvNavigation && videoSearchQuery.isNotBlank()) {
@@ -184,7 +206,10 @@ fun DriveDeckScreen(
                         loading = videoSearchStatus == "Loading",
                         emptyLabel = videoSearchStatus.takeIf { it.isNotBlank() && it != "Loading" },
                         action = "Clear",
-                        onAction = onClearVideoSearch
+                        onAction = onClearVideoSearch,
+                        firstResultFocus = searchResultFocus,
+                        focusVideoId = searchResultTargetId,
+                        onVideoFocused = { selectedSearchVideoId = it.videoId }
                     )
                 }
                 item(key = "tv-web-search-fallback") {
@@ -599,8 +624,12 @@ private fun HomeShelf(
     loading: Boolean = false,
     emptyLabel: String? = null,
     action: String? = null,
-    onAction: () -> Unit = {}
+    onAction: () -> Unit = {},
+    firstResultFocus: FocusRequester? = null,
+    focusVideoId: String? = null,
+    onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
+    val focusScrollScope = rememberCoroutineScope()
     Surface(
         color = TubeDeckSurface,
         shape = RoundedCornerShape(16.dp),
@@ -615,7 +644,23 @@ private fun HomeShelf(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         videos.forEach { video ->
-                            VideoListRow(video, onClick = { onOpenVideo(video) })
+                            val bring = remember(video.videoId) { BringIntoViewRequester() }
+                            VideoListRow(
+                                video,
+                                onClick = {
+                                    onVideoFocused(video)
+                                    onOpenVideo(video)
+                                },
+                                modifier = Modifier
+                                    .then(if (firstResultFocus != null && video.videoId == focusVideoId) Modifier.focusRequester(firstResultFocus) else Modifier)
+                                    .bringIntoViewRequester(bring)
+                                    .onFocusChanged {
+                                        if (it.isFocused) {
+                                            onVideoFocused(video)
+                                            focusScrollScope.launch { runCatching { bring.bringIntoView() } }
+                                        }
+                                    }
+                            )
                         }
                     }
                 } else {
@@ -630,10 +675,22 @@ private fun HomeShelf(
                                 verticalAlignment = Alignment.Top
                             ) {
                                 row.forEach { video ->
+                                    val bring = remember(video.videoId) { BringIntoViewRequester() }
                                     VideoTileCard(
                                         video,
-                                        onClick = { onOpenVideo(video) },
+                                        onClick = {
+                                            onVideoFocused(video)
+                                            onOpenVideo(video)
+                                        },
                                         modifier = Modifier.weight(1f)
+                                            .then(if (firstResultFocus != null && video.videoId == focusVideoId) Modifier.focusRequester(firstResultFocus) else Modifier)
+                                            .bringIntoViewRequester(bring)
+                                            .onFocusChanged {
+                                                if (it.isFocused) {
+                                                    onVideoFocused(video)
+                                                    focusScrollScope.launch { runCatching { bring.bringIntoView() } }
+                                                }
+                                            }
                                     )
                                 }
                                 if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -682,9 +739,13 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun VideoListRow(video: HomeVideo, onClick: () -> Unit) {
+private fun VideoListRow(
+    video: HomeVideo,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .tvInputHighlight(RoundedCornerShape(12.dp))

@@ -27,6 +27,10 @@ import com.drivedeck.tubedeck.ActiveScreen
 import com.drivedeck.tubedeck.ui.theme.*
 
 private fun deckNavigationIcons(style: DeckNavVisual): List<ImageVector> = when (style) {
+    DeckNavVisual.YOUTUBE_MOBILE, DeckNavVisual.YOUTUBE_DESKTOP -> listOf(
+        Icons.Default.Home, Icons.Default.Subscriptions, Icons.Default.Download,
+        Icons.Default.VideoLibrary, Icons.Default.Settings
+    )
     DeckNavVisual.TV_CLASSIC -> listOf(
         Icons.Default.Home, Icons.Default.Subscriptions, Icons.Default.Download,
         Icons.Default.VideoLibrary, Icons.Default.Settings
@@ -62,6 +66,11 @@ fun TubeDeckBottomBar(
     modifier: Modifier = Modifier
 ) {
     val profile = LocalDeckThemeProfile.current
+    if (profile.navVisual == DeckNavVisual.YOUTUBE_MOBILE ||
+        profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP) {
+        YouTubeMobileTabs(currentScreen, activeDownloadCount, onNavigate, modifier)
+        return
+    }
     val icons = deckNavigationIcons(profile.navVisual)
     Surface(
         modifier = modifier
@@ -234,7 +243,8 @@ private fun DeckNavItem(
         profile.navigationPlacement == DeckNavigationPlacement.TOP
     val iconOnly = profile.navVisual == DeckNavVisual.ICONS
     val shape = when (profile.navVisual) {
-        DeckNavVisual.COMMAND, DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> RoundedCornerShape(4.dp)
+        DeckNavVisual.COMMAND, DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC,
+        DeckNavVisual.YOUTUBE_MOBILE, DeckNavVisual.YOUTUBE_DESKTOP -> RoundedCornerShape(4.dp)
         DeckNavVisual.ICONS -> RoundedCornerShape(0.dp)
         DeckNavVisual.MINIMAL -> RoundedCornerShape(8.dp)
         DeckNavVisual.PILL -> RoundedCornerShape(24.dp)
@@ -242,7 +252,8 @@ private fun DeckNavItem(
     val selectedBackground = if (!isSelected) Color.Transparent else when (profile.navVisual) {
         DeckNavVisual.PILL -> TubeDeckAccentCyan.copy(alpha = .20f)
         DeckNavVisual.COMMAND -> TubeDeckAccentCyan.copy(alpha = .12f)
-        DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> TubeDeckAccentCyan.copy(alpha = .17f)
+        DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC,
+        DeckNavVisual.YOUTUBE_MOBILE, DeckNavVisual.YOUTUBE_DESKTOP -> TubeDeckAccentCyan.copy(alpha = .17f)
         DeckNavVisual.MINIMAL -> Color.Transparent
         DeckNavVisual.ICONS -> TubeDeckAccentCyan.copy(alpha = .08f)
     }
@@ -270,7 +281,8 @@ private fun DeckNavItem(
     ) {
         val iconTint = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary
         val iconSize = when (profile.navVisual) {
-            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> 18.dp
+            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC,
+            DeckNavVisual.YOUTUBE_MOBILE, DeckNavVisual.YOUTUBE_DESKTOP -> 18.dp
             DeckNavVisual.ICONS -> 25.dp
             DeckNavVisual.MINIMAL -> 17.dp
             else -> 20.dp
@@ -289,6 +301,98 @@ private fun DeckNavItem(
                     fontSize = if (profile.navVisual == DeckNavVisual.COMPACT) 9.sp else 10.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1)
+            }
+        }
+    }
+}
+
+/** Bottom navigation for the mobile video-feed experience. */
+@Composable
+private fun YouTubeMobileTabs(
+    currentScreen: ActiveScreen,
+    activeDownloadCount: Int,
+    onNavigate: (ActiveScreen) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = listOf(
+        Triple(ActiveScreen.HOME, "Home", Icons.Default.Home),
+        Triple(ActiveScreen.MIXES, "Playlists", Icons.Default.Subscriptions),
+        Triple(ActiveScreen.DOWNLOADS, "Downloads", Icons.Default.Download),
+        Triple(ActiveScreen.OFFLINE_VAULT, "Library", Icons.Default.VideoLibrary),
+        Triple(ActiveScreen.SETTINGS, "You", Icons.Default.AccountCircle)
+    )
+    Surface(
+        modifier = modifier.fillMaxWidth().navigationBarsPadding()
+            .border(0.5.dp, TubeDeckBorder),
+        color = Color(0xFF171717)
+    ) {
+        Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
+            tabs.forEach { (screen, name, icon) ->
+                val selected = currentScreen == screen
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                        .tvInputHighlight(RoundedCornerShape(8.dp))
+                        .clickable { onNavigate(screen) }.padding(vertical = 5.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    BadgedBox(badge = {
+                        if (screen == ActiveScreen.DOWNLOADS && activeDownloadCount > 0)
+                            Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) }
+                    }) {
+                        Icon(icon, name,
+                            tint = if (selected) Color.White else Color.LightGray,
+                            modifier = Modifier.size(22.dp))
+                    }
+                    Text(name, fontSize = 10.sp, maxLines = 1,
+                        color = if (selected) Color.White else Color.LightGray,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
+
+/** Desktop rail with text-forward navigation instead of TV-size icon tiles. */
+@Composable
+private fun YouTubeDesktopRail(
+    currentScreen: ActiveScreen,
+    activeDownloadCount: Int,
+    onNavigate: (ActiveScreen) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val destinations = listOf(
+        Triple(ActiveScreen.HOME, "Home", Icons.Default.Home),
+        Triple(ActiveScreen.MIXES, "Subscriptions", Icons.Default.Subscriptions),
+        Triple(ActiveScreen.DOWNLOADS, "Downloads", Icons.Default.Download),
+        Triple(ActiveScreen.OFFLINE_VAULT, "You", Icons.Default.VideoLibrary),
+        Triple(ActiveScreen.SETTINGS, "Settings", Icons.Default.Settings)
+    )
+    Surface(color = Color(0xFF171717), modifier = modifier.width(188.dp).fillMaxHeight()) {
+        Column(
+            Modifier.fillMaxHeight().padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            destinations.forEach { (screen, title, icon) ->
+                val selected = currentScreen == screen
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (selected) Color(0xFF333333) else Color.Transparent)
+                        .tvInputHighlight(RoundedCornerShape(9.dp))
+                        .clickable { onNavigate(screen) }
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    horizontalArrangement = Arrangement.spacedBy(17.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(icon, title, modifier = Modifier.size(22.dp),
+                        tint = if (selected) Color.White else TubeDeckTextSecondary)
+                    Text(title, fontSize = 13.sp, color = if (selected) Color.White else TubeDeckTextSecondary,
+                        maxLines = 1, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    if (screen == ActiveScreen.DOWNLOADS && activeDownloadCount > 0) {
+                        Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) }
+                    }
+                }
             }
         }
     }
@@ -367,6 +471,10 @@ fun TubeDeckSideRail(
         SmartTvNavigationRail(currentScreen, activeDownloadCount, onNavigate, modifier)
         return
     }
+    if (profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP) {
+        YouTubeDesktopRail(currentScreen, activeDownloadCount, onNavigate, modifier)
+        return
+    }
     val icons = deckNavigationIcons(profile.navVisual)
     val destinations = listOf(
         Triple(ActiveScreen.HOME, "Home", icons[0]),
@@ -377,7 +485,8 @@ fun TubeDeckSideRail(
     )
     NavigationRail(
         modifier = modifier.width(when (profile.navVisual) {
-            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> 72.dp
+            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC, DeckNavVisual.YOUTUBE_MOBILE -> 72.dp
+            DeckNavVisual.YOUTUBE_DESKTOP -> 188.dp
             DeckNavVisual.COMMAND -> 94.dp
             else -> if (profile.name == "ATV") 98.dp else 78.dp
         })

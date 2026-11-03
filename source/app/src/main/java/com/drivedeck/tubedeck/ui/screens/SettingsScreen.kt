@@ -40,6 +40,8 @@ import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
+import com.drivedeck.tubedeck.ui.components.RemoteInputTrainingDialog
+import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
@@ -127,6 +129,16 @@ fun SettingsScreen(
     }
     var showRelevantShelf by remember { mutableStateOf(currentSettings.showRelevantShelf) }
     var showEpisodesShelf by remember { mutableStateOf(currentSettings.showEpisodesShelf) }
+    var floatingCardsMode by remember { mutableStateOf(currentSettings.floatingCardsMode) }
+    var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
+    var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
+    var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
+    var subtitleBottomInsetDp by remember { mutableIntStateOf(currentSettings.subtitleBottomInsetDp.coerceIn(0, 120)) }
+    var remoteNextKeyCode by remember { mutableIntStateOf(currentSettings.remoteNextKeyCode) }
+    var remotePreviousKeyCode by remember { mutableIntStateOf(currentSettings.remotePreviousKeyCode) }
+    var showRemoteTraining by remember { mutableStateOf(false) }
+    val repository = remember(context) { TubeDeckRepository.get(context) }
+    val privateSession by repository.privateSession.collectAsState()
 
     var appearancePreset by remember { mutableStateOf(currentSettings.appearancePreset) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
@@ -183,6 +195,16 @@ fun SettingsScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    if (showRemoteTraining) {
+        RemoteInputTrainingDialog(
+            nextCode = remoteNextKeyCode,
+            previousCode = remotePreviousKeyCode,
+            onNextCode = { remoteNextKeyCode = it },
+            onPreviousCode = { remotePreviousKeyCode = it },
+            onDismiss = { showRemoteTraining = false }
         )
     }
 
@@ -351,6 +373,14 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "App interface") {
+                ToggleRow("Private session · don't save new watches or searches", privateSession) {
+                    repository.setPrivateSession(it)
+                }
+                Text(
+                    "Private session lasts until the application process closes. Existing history isn't deleted, and downloads and account activity are not anonymized.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider()
                 ToggleRow("Force Android TV remote / air-mouse mode", forceTvNavigation) {
                     forceTvNavigation = it
                 }
@@ -358,6 +388,15 @@ fun SettingsScreen(
                     "Enable on generic TV boxes if MyTube does not recognize the remote, air mouse, or physical keyboard. Supports native TV search and focus navigation without changing phone/car defaults.",
                     color = TubeDeckTextSecondary,
                     fontSize = 11.sp
+                )
+                TextButton(onClick = { showRemoteTraining = true }) {
+                    Icon(Icons.Default.Keyboard, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Learn TV remote buttons and keyboard keys")
+                }
+                Text(
+                    "The mapping is applied after saving Settings. System Home, Back, volume and D-pad direction keys are protected from remapping.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
                 ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
                 Text(
@@ -563,6 +602,42 @@ fun SettingsScreen(
 
                 ToggleRow("Swipe shelf · Relevant row", showRelevantShelf) { showRelevantShelf = it }
                 ToggleRow("Swipe shelf · Episodes row", showEpisodesShelf) { showEpisodesShelf = it }
+                ToggleRow("Hide played videos from recommendation cards", hideWatchedRecommendations) {
+                    hideWatchedRecommendations = it
+                }
+                Text("Floating recommendations", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("Off", "Manual", "Last 15 seconds").forEach { mode ->
+                        FilterChip(
+                            selected = floatingCardsMode == mode,
+                            onClick = { floatingCardsMode = mode },
+                            label = { Text(mode, fontSize = 10.sp) }
+                        )
+                    }
+                }
+                Text(
+                    "Manual keeps the screen uncluttered. The 15-second mode opens suggestions only near the end; dismissing them keeps them hidden for that video.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
+                    lowResourceMode = it
+                }
+                Text(
+                    "Useful on low-RAM Android TV boxes and car units; manually selected quality remains available.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider()
+                Text("Subtitle size · ${(subtitleTextScale * 100).toInt()}%", color = TubeDeckTextPrimary)
+                Slider(
+                    value = subtitleTextScale, onValueChange = { subtitleTextScale = it },
+                    valueRange = .8f..1.8f, steps = 9
+                )
+                Text("Subtitle bottom clearance · ${subtitleBottomInsetDp} dp", color = TubeDeckTextPrimary)
+                Slider(
+                    value = subtitleBottomInsetDp.toFloat(),
+                    onValueChange = { subtitleBottomInsetDp = it.toInt() },
+                    valueRange = 0f..120f, steps = 11
+                )
                 HorizontalDivider()
 
                 Text(
@@ -713,6 +788,13 @@ fun SettingsScreen(
                             equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
                             showRelevantShelf = showRelevantShelf,
                             showEpisodesShelf = showEpisodesShelf,
+                            floatingCardsMode = floatingCardsMode,
+                            hideWatchedRecommendations = hideWatchedRecommendations,
+                            lowResourceMode = lowResourceMode,
+                            subtitleTextScale = subtitleTextScale,
+                            subtitleBottomInsetDp = subtitleBottomInsetDp,
+                            remoteNextKeyCode = remoteNextKeyCode,
+                            remotePreviousKeyCode = remotePreviousKeyCode,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
                             themeAccentArgb = themeAccentArgb,

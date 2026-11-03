@@ -466,7 +466,16 @@ fun DownloadModal(
                 }
 
                 if (!isPlaylist && isFetching) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                fetchError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                fetchError?.let { error ->
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    if (!isPlaylist && hasVideo) {
+                        Text(
+                            "Format preview failed. You can still try downloading; detailed results will appear in Downloads.",
+                            color = TubeDeckTextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
                 if (!isPlaylist && !isFetching && selectedMode == DownloadMode.VIDEO && videoQualities.isEmpty() && fetchError == null) {
                     Text("No compatible video stream is available for this video.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -489,13 +498,21 @@ fun DownloadModal(
                         else onStartDownload(urlText, "YouTube Media", selectedMode, selectedQuality)
                         onDismiss()
                     },
-                    enabled = !isFetching && fetchError == null &&
-                        (if (isPlaylist) playlistItems.any { it.isSelected }
-                         else if (selectedMode == DownloadMode.VIDEO) videoQualities.isNotEmpty() else audioAvailable),
+                    enabled = !isFetching &&
+                        (if (isPlaylist) fetchError == null && playlistItems.any { it.isSelected }
+                         else hasVideo && (
+                             fetchError != null ||
+                                 if (selectedMode == DownloadMode.VIDEO) videoQualities.isNotEmpty() else audioAvailable
+                         )),
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
                     shape = RoundedCornerShape(12.dp)
-                ) { Text("Start Download", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        if (!isPlaylist && hasVideo && fetchError != null) "Try Download Anyway" else "Start Download",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

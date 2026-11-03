@@ -13,10 +13,10 @@ enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
 /** Real screen structures instead of palette-only variations. */
 enum class DeckHomePresentation {
     THREE_COLUMN, IPTV_DASHBOARD, STACKED_SHELVES, DESKTOP_TABLE, HUD_CONSOLE,
-    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL, SMARTTUBE_TV
+    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL, SMARTTUBE_TV, YOUTUBE_STANDARD, YOUTUBE_DESKTOP
 }
-enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD, TV_CLASSIC }
-enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND, TV_CLASSIC }
+enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD, TV_CLASSIC, YOUTUBE_MOBILE, YOUTUBE_DESKTOP }
+enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND, TV_CLASSIC, YOUTUBE_MOBILE, YOUTUBE_DESKTOP }
 enum class DeckMotionStyle { INSTANT, SNAP, GLIDE, PULSE }
 
 data class DeckThemeProfile(
@@ -110,6 +110,22 @@ object DeckThemeCatalog {
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.MINIMAL,
             motionStyle = DeckMotionStyle.INSTANT,
             subtitle = "Paper-like spacious interface · quiet controls"),
+        DeckThemeProfile("YouTube Standard", 0xFFFF0033L, 0xFF101010L,
+            textArgb = 0xFFFFFFFFL, fontScale = 1.04f,
+            cornerRadiusDp = 10, contentGapDp = 8,
+            navigationPlacement = DeckNavigationPlacement.BOTTOM, navigationHeightDp = 64,
+            geometry = DeckCardGeometry.ROUNDED,
+            homePresentation = DeckHomePresentation.YOUTUBE_STANDARD,
+            playerChrome = DeckPlayerChrome.YOUTUBE_MOBILE,
+            navVisual = DeckNavVisual.YOUTUBE_MOBILE, motionStyle = DeckMotionStyle.SNAP),
+        DeckThemeProfile("YouTube Desktop", 0xFFFF0033L, 0xFF0F0F0FL,
+            textArgb = 0xFFFFFFFFL, fontScale = 1.0f,
+            cornerRadiusDp = 6, contentGapDp = 10,
+            navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 72,
+            geometry = DeckCardGeometry.SQUARE,
+            homePresentation = DeckHomePresentation.YOUTUBE_DESKTOP,
+            playerChrome = DeckPlayerChrome.YOUTUBE_DESKTOP,
+            navVisual = DeckNavVisual.YOUTUBE_DESKTOP, motionStyle = DeckMotionStyle.GLIDE),
         DeckThemeProfile("SmartTube TV", 0xFF18A9B5L, 0xFF0D0D0DL,
             fontScale = 1.09f, cornerRadiusDp = 3, contentGapDp = 10,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 72,

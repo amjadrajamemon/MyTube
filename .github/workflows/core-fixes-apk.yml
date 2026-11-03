@@ -59,6 +59,25 @@ jobs:
           grep -Fq 'AudioNextSessionPolicy()' source/app/src/main/java/com/drivedeck/tubedeck/player/BackgroundAudioPlaybackService.kt
           grep -Fq 'positionSnapshotJob' source/app/src/main/java/com/drivedeck/tubedeck/player/BackgroundAudioPlaybackService.kt
           grep -Fq 'Restore video from blackout' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
+          # Regression check: the spinner and central Play/Pause MUST use the
+          # same safe-drawing coordinate system and shared Y offset, especially
+          # on landscape TV boxes with asymmetric system/navigation bar insets.
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path("source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt").read_text()
+          start = src.index("if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive)")
+          end = src.index("if (gestureOverlayVisible)", start)
+          spinner = src[start:end]
+          assert ".fillMaxSize()" in spinner
+          assert ".windowInsetsPadding(WindowInsets.safeDrawing)" in spinner
+          assert ".offset(y = centerPlayYOffset)" in spinner
+          assert src.count(".offset(y = centerPlayYOffset)") == 2, "Play and spinner offsets diverged"
+          assert 'val centerPlayYOffset = if (compactPortrait) 12.dp else 10.dp' in src
+          assert 'val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp' in src
+          assert 'Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter)' in src
+          print("PASS: loading spinner and Play control share safe-drawing center/offset/size")
+          PY
+
           grep -Fq 'enableScreenBlackout(); controlsVisible = false' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           ! grep -Fq 'always-reachable audio-only blackout shortcut' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'connection.disconnect()' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt

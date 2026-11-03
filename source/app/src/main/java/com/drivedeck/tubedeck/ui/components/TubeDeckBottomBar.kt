@@ -27,6 +27,10 @@ import com.drivedeck.tubedeck.ActiveScreen
 import com.drivedeck.tubedeck.ui.theme.*
 
 private fun deckNavigationIcons(style: DeckNavVisual): List<ImageVector> = when (style) {
+    DeckNavVisual.TV_CLASSIC -> listOf(
+        Icons.Default.Home, Icons.Default.Subscriptions, Icons.Default.Download,
+        Icons.Default.VideoLibrary, Icons.Default.Settings
+    )
     DeckNavVisual.COMMAND -> listOf(
         Icons.Default.Dashboard, Icons.Default.ViewList, Icons.Default.CloudDownload,
         Icons.Default.FolderOpen, Icons.Default.Tune
@@ -230,7 +234,7 @@ private fun DeckNavItem(
         profile.navigationPlacement == DeckNavigationPlacement.TOP
     val iconOnly = profile.navVisual == DeckNavVisual.ICONS
     val shape = when (profile.navVisual) {
-        DeckNavVisual.COMMAND, DeckNavVisual.COMPACT -> RoundedCornerShape(4.dp)
+        DeckNavVisual.COMMAND, DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> RoundedCornerShape(4.dp)
         DeckNavVisual.ICONS -> RoundedCornerShape(0.dp)
         DeckNavVisual.MINIMAL -> RoundedCornerShape(8.dp)
         DeckNavVisual.PILL -> RoundedCornerShape(24.dp)
@@ -238,7 +242,7 @@ private fun DeckNavItem(
     val selectedBackground = if (!isSelected) Color.Transparent else when (profile.navVisual) {
         DeckNavVisual.PILL -> TubeDeckAccentCyan.copy(alpha = .20f)
         DeckNavVisual.COMMAND -> TubeDeckAccentCyan.copy(alpha = .12f)
-        DeckNavVisual.COMPACT -> TubeDeckAccentCyan.copy(alpha = .17f)
+        DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> TubeDeckAccentCyan.copy(alpha = .17f)
         DeckNavVisual.MINIMAL -> Color.Transparent
         DeckNavVisual.ICONS -> TubeDeckAccentCyan.copy(alpha = .08f)
     }
@@ -266,7 +270,7 @@ private fun DeckNavItem(
     ) {
         val iconTint = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary
         val iconSize = when (profile.navVisual) {
-            DeckNavVisual.COMPACT -> 18.dp
+            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> 18.dp
             DeckNavVisual.ICONS -> 25.dp
             DeckNavVisual.MINIMAL -> 17.dp
             else -> 20.dp
@@ -291,6 +295,63 @@ private fun DeckNavItem(
 }
 
 /**
+ * Dedicated television navigation, intentionally unlike the floating phone tabs.
+ * Pointer clicks and D-pad/keyboard focus travel through the same controls.
+ */
+@Composable
+private fun SmartTvNavigationRail(
+    currentScreen: ActiveScreen,
+    activeDownloadCount: Int,
+    onNavigate: (ActiveScreen) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val destinations = listOf(
+        Triple(ActiveScreen.HOME, "Home", Icons.Default.Home),
+        Triple(ActiveScreen.MIXES, "Playlists", Icons.Default.Subscriptions),
+        Triple(ActiveScreen.DOWNLOADS, "Downloads", Icons.Default.Download),
+        Triple(ActiveScreen.OFFLINE_VAULT, "Library", Icons.Default.VideoLibrary),
+        Triple(ActiveScreen.SETTINGS, "Settings", Icons.Default.Settings)
+    )
+    Surface(
+        color = Color(0xFF151515),
+        modifier = modifier.width(112.dp).fillMaxHeight().border(1.dp, TubeDeckBorder)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxHeight().padding(top = 14.dp, start = 5.dp, end = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.SmartDisplay, contentDescription = null,
+                tint = TubeDeckAccentCyan,
+                modifier = Modifier.padding(start = 10.dp, bottom = 15.dp).size(28.dp))
+            destinations.forEach { (screen, label, icon) ->
+                val active = currentScreen == screen
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (active) Color(0xFF343434) else Color.Transparent)
+                        .tvInputHighlight(RoundedCornerShape(4.dp))
+                        .clickable { onNavigate(screen) }
+                        .padding(horizontal = 8.dp, vertical = 13.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(icon, contentDescription = label,
+                        tint = if (active) Color.White else TubeDeckTextSecondary,
+                        modifier = Modifier.size(20.dp))
+                    Column {
+                        Text(label, color = if (active) Color.White else TubeDeckTextSecondary,
+                            fontSize = 11.sp, maxLines = 1)
+                        if (screen == ActiveScreen.DOWNLOADS && activeDownloadCount > 0)
+                            Text("${activeDownloadCount.coerceAtMost(99)} active",
+                                fontSize = 9.sp, color = TubeDeckAccentCyan)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Optional TV-first vertical navigation. This is a real navigation placement,
  * not an overlay drawn across the playing video.
  */
@@ -302,6 +363,10 @@ fun TubeDeckSideRail(
     modifier: Modifier = Modifier
 ) {
     val profile = LocalDeckThemeProfile.current
+    if (profile.navVisual == DeckNavVisual.TV_CLASSIC) {
+        SmartTvNavigationRail(currentScreen, activeDownloadCount, onNavigate, modifier)
+        return
+    }
     val icons = deckNavigationIcons(profile.navVisual)
     val destinations = listOf(
         Triple(ActiveScreen.HOME, "Home", icons[0]),
@@ -312,7 +377,7 @@ fun TubeDeckSideRail(
     )
     NavigationRail(
         modifier = modifier.width(when (profile.navVisual) {
-            DeckNavVisual.COMPACT -> 72.dp
+            DeckNavVisual.COMPACT, DeckNavVisual.TV_CLASSIC -> 72.dp
             DeckNavVisual.COMMAND -> 94.dp
             else -> if (profile.name == "ATV") 98.dp else 78.dp
         })

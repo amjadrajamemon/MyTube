@@ -74,7 +74,9 @@ jobs:
           assert src.count(".offset(y = centerPlayYOffset)") == 2, "Play and spinner offsets diverged"
           assert 'val centerPlayYOffset = if (compactPortrait) 12.dp else 10.dp' in src
           assert 'val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp' in src
-          assert 'Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter)' in src
+          # Equivalent modifier chains may wrap across lines when themed player chrome is added.
+          import re
+          assert re.search(r'Modifier\.focusRequester\(tvPlayPauseFocus\)\s*\.size\(centerControlDiameter\)', src), "Player focus target and spinner center must share the same size"
           print("PASS: loading spinner and Play control share safe-drawing center/offset/size")
           PY
 

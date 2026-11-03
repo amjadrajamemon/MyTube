@@ -1620,14 +1620,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 item.optLong("durationSeconds"), item.optLong("downloadDate")
             )
         }.filter { media ->
-            val uri = Uri.parse(media.mediaUri)
-            when (uri.scheme) {
-                "file" -> uri.path?.let { File(it).isFile } == true
-                "content" -> runCatching {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
-                }.getOrDefault(false)
-                else -> false
-            }
+            // A SAF folder or removable USB drive may be temporarily unavailable at
+            // app startup. Do not silently discard otherwise valid library records:
+            // a later catalog save would make that loss permanent even after the
+            // device is reconnected or the folder permission is restored.
+            val scheme = runCatching { Uri.parse(media.mediaUri).scheme }.getOrNull()
+            media.id.isNotBlank() && scheme in setOf("file", "content")
         }
     }
 

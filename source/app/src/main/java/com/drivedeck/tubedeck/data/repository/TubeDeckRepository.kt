@@ -65,6 +65,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
     @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
+    // Private mode is process-scoped and NEVER persisted to disk.
+    private val _privateSession = MutableStateFlow(false)
+    val privateSession: StateFlow<Boolean> = _privateSession
+    fun setPrivateSession(enabled: Boolean) { _privateSession.value = enabled }
     val settings: StateFlow<TubeDeckSettings> = _settings.asStateFlow()
     private val _blockedAdsCount = MutableStateFlow(prefs.getInt("blocked_ads_count", 0))
     val blockedAdsCount: StateFlow<Int> = _blockedAdsCount.asStateFlow()
@@ -160,6 +164,15 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putFloat("equalizerTextScale", next.equalizerTextScale.coerceIn(1.0f, 1.8f))
             putBoolean("showRelevantShelf", next.showRelevantShelf)
             putBoolean("showEpisodesShelf", next.showEpisodesShelf)
+            putString("floatingCardsMode", next.floatingCardsMode.takeIf {
+                it in setOf("Off", "Manual", "Last 15 seconds")
+            } ?: "Manual")
+            putBoolean("hideWatchedRecommendations", next.hideWatchedRecommendations)
+            putBoolean("lowResourceMode", next.lowResourceMode)
+            putFloat("subtitleTextScale", next.subtitleTextScale.coerceIn(0.8f, 1.8f))
+            putInt("subtitleBottomInsetDp", next.subtitleBottomInsetDp.coerceIn(0, 120))
+            putInt("remoteNextKeyCode", next.remoteNextKeyCode.coerceAtLeast(0))
+            putInt("remotePreviousKeyCode", next.remotePreviousKeyCode.coerceAtLeast(0))
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
@@ -221,6 +234,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
         equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
         showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),
         showEpisodesShelf = prefs.getBoolean("showEpisodesShelf", true),
+        floatingCardsMode = prefs.getString("floatingCardsMode", "Manual")
+            ?.takeIf { it in setOf("Off", "Manual", "Last 15 seconds") } ?: "Manual",
+        hideWatchedRecommendations = prefs.getBoolean("hideWatchedRecommendations", true),
+        lowResourceMode = prefs.getBoolean("lowResourceMode", false),
+        subtitleTextScale = prefs.getFloat("subtitleTextScale", 1.0f).coerceIn(0.8f, 1.8f),
+        subtitleBottomInsetDp = prefs.getInt("subtitleBottomInsetDp", 0).coerceIn(0, 120),
+        remoteNextKeyCode = prefs.getInt("remoteNextKeyCode", 0).coerceAtLeast(0),
+        remotePreviousKeyCode = prefs.getInt("remotePreviousKeyCode", 0).coerceAtLeast(0),
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
@@ -248,6 +269,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     fun getVideoThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
     fun recordSearch(query: String) {
+        if (_privateSession.value) return
         saveRecentSearches(SearchAssistPolicy.record(query, _recentSearches.value))
     }
 
@@ -447,6 +469,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun recordWatch(media: OfflineMedia) {
+        if (_privateSession.value) return
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isBlank() || YoutubeUrls.videoId(media.mediaUri) == null) return
         val item = HomeVideo(

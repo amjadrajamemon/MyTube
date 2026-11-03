@@ -34,3 +34,10 @@ Published binaries inspected by [dedicated forensic run #41617842919](https://gi
 - The package forensic workflow cannot prove installed runtime behavior or actual notch avoidance on every OEM firmware.
 - 10 theme signatures now differ structurally, but user perception, balance of controls, typography, fullscreen and each UI density still require screenshot/manual testing.
 - Production release promotion is not part of this first-stage audit.
+
+## E. First-stage automated verification outcome
+- **PASS:** [theme/UI feature-branch CI run #41618289405](https://github.com/amjadrajamemon/MyTube/actions/runs/41618289405), commit `68e40577f9447c47f672fc7fb7c7070c4c818e49`.
+- Source assertions, existing debug signing identity, ARM64 and Universal JVM unit tests (including theme layout uniqueness), Android lint workflow step, both APK builds, zip/signature/ABI verification and installation-artifact upload completed successfully.
+- APKs are available as **GitHub Actions artifacts** `MyTube-v2.0.0-ARM64-and-Universal` (artifact ID 13223365747) under the successful CI run.
+- Both original published v2.0.0 release APKs were independently audited and passed the package forensic workflow. No published release was overwritten.
+- The CI pass proves source/build/package checks only; notch and header screenshots must still be verified on actual firmware before a promoted release.

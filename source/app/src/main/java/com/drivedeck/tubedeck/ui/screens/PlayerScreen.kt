@@ -952,6 +952,11 @@ fun NativeExoPlayer(
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
+    // The spinner and central Play/Pause row must share the exact same offset.
+    // More importantly, BOTH are positioned inside safeDrawing insets. The old
+    // spinner was centered on the raw screen while Play was centered inside
+    // the system-bar-safe area, causing an obvious landscape/TV-box drift.
+    val centerPlayYOffset = if (compactPortrait) 12.dp else 10.dp
 
     fun loadResolvedStream(
         sourceMedia: YoutubeStreamResolver.ResolvedMedia,
@@ -2154,24 +2159,34 @@ fun NativeExoPlayer(
 
             if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive) &&
                 resolveError == null && !inPictureInPicture) {
-                Surface(
-                    color = Color.Black.copy(alpha = .68f),
-                    shape = CircleShape,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp,
+                // Spinner and visible Play/Pause share the same safeDrawing
+                // coordinate space, center offset and control diameter. A
+                // fullscreen Box alone is not enough on asymmetric TV/landscape
+                // navigation-bar insets: it would center on the raw window.
+                Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = if (compactPortrait) 12.dp else 10.dp)
-                        .zIndex(50f)
-                        .size(centerControlDiameter)
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .zIndex(50f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(centerControlDiameter),
-                            strokeWidth = if (compactPortrait) 4.dp else 5.dp,
-                            color = TubeDeckAccentCyan,
-                            trackColor = Color.White.copy(alpha = .26f)
-                        )
+                    Surface(
+                        color = Color.Black.copy(alpha = .68f),
+                        shape = CircleShape,
+                        tonalElevation = 8.dp,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .offset(y = centerPlayYOffset)
+                            .size(centerControlDiameter)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                strokeWidth = if (compactPortrait) 4.dp else 5.dp,
+                                color = TubeDeckAccentCyan,
+                                trackColor = Color.White.copy(alpha = .26f)
+                            )
+                        }
                     }
                 }
             }
@@ -2278,7 +2293,7 @@ fun NativeExoPlayer(
 
                         Row(
                             Modifier.align(Alignment.Center)
-                                .offset(y = if (compactPortrait) 12.dp else 10.dp),
+                                .offset(y = centerPlayYOffset),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
                         ) {

@@ -14,6 +14,7 @@ enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
 enum class DeckHomePresentation { THREE_COLUMN, STACKED_SHELVES, CINEMA_STRIPS }
 enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD }
 enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND }
+enum class DeckMotionStyle { INSTANT, SNAP, GLIDE, PULSE }
 
 data class DeckThemeProfile(
     val name: String,
@@ -30,6 +31,7 @@ data class DeckThemeProfile(
     val homePresentation: DeckHomePresentation = DeckHomePresentation.THREE_COLUMN,
     val playerChrome: DeckPlayerChrome = DeckPlayerChrome.CLASSIC,
     val navVisual: DeckNavVisual = DeckNavVisual.PILL,
+    val motionStyle: DeckMotionStyle = DeckMotionStyle.GLIDE,
     val subtitle: String = ""
 )
 
@@ -44,7 +46,8 @@ object DeckThemeCatalog {
             cornerRadiusDp = 5, contentGapDp = 8,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 70,
             geometry = DeckCardGeometry.COMPACT,
-            playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMPACT, subtitle = "Dense streaming dashboard · sharp modules"),
+            playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMPACT,
+            motionStyle = DeckMotionStyle.SNAP, subtitle = "Dense streaming dashboard · sharp modules"),
         DeckThemeProfile("Android", 0xFF6750A4L, 0xFFF5F2F9L, textArgb = 0xFF201D26L,
             cornerRadiusDp = 24, contentGapDp = 12,
             geometry = DeckCardGeometry.ROUNDED,
@@ -56,6 +59,7 @@ object DeckThemeCatalog {
             geometry = DeckCardGeometry.TERMINAL,
             homePresentation = DeckHomePresentation.STACKED_SHELVES,
             playerChrome = DeckPlayerChrome.CONSOLE, navVisual = DeckNavVisual.COMMAND,
+            motionStyle = DeckMotionStyle.SNAP,
             subtitle = "Compact desktop menu · monospace labels"),
         DeckThemeProfile("Digital HUD", 0xFF2DFFD1L, 0xFF010F14L,
             fontFamily = FontFamily.Monospace, fontScale = 1.08f,
@@ -63,6 +67,7 @@ object DeckThemeCatalog {
             navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 54,
             geometry = DeckCardGeometry.TERMINAL,
             playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMMAND,
+            motionStyle = DeckMotionStyle.PULSE,
             subtitle = "Instrument-style typography · compact controls"),
         DeckThemeProfile("Cinema", 0xFFF4B860L, 0xFF090909L, fontScale = 1.14f,
             fontFamily = FontFamily.Serif, cornerRadiusDp = 6, contentGapDp = 15,
@@ -79,6 +84,7 @@ object DeckThemeCatalog {
             cornerRadiusDp = 0, contentGapDp = 5, navigationHeightDp = 60,
             geometry = DeckCardGeometry.SQUARE,
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.ICONS,
+            motionStyle = DeckMotionStyle.INSTANT,
             subtitle = "True black · maximum density and contrast"),
         DeckThemeProfile("Retro Neon", 0xFFFF4DD2L, 0xFF180724L,
             fontFamily = FontFamily.Monospace, fontScale = 1.10f,
@@ -86,6 +92,7 @@ object DeckThemeCatalog {
             geometry = DeckCardGeometry.SQUARE,
             homePresentation = DeckHomePresentation.STACKED_SHELVES,
             playerChrome = DeckPlayerChrome.ARCADE, navVisual = DeckNavVisual.COMMAND,
+            motionStyle = DeckMotionStyle.PULSE,
             subtitle = "Arcade lettering · bright neon blocks"),
         DeckThemeProfile("Focus Minimal", 0xFF4D78A8L, 0xFFF5F7F8L,
             textArgb = 0xFF202833L, fontScale = 1.04f,
@@ -93,6 +100,7 @@ object DeckThemeCatalog {
             geometry = DeckCardGeometry.COMPACT,
             homePresentation = DeckHomePresentation.CINEMA_STRIPS,
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.MINIMAL,
+            motionStyle = DeckMotionStyle.INSTANT,
             subtitle = "Paper-like spacious interface · quiet controls")
     )
 

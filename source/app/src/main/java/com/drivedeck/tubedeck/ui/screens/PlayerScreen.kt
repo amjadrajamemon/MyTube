@@ -107,6 +107,7 @@ import com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
 import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MediaItem.SubtitleConfiguration
 import androidx.media3.common.MimeTypes
@@ -232,7 +233,10 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = xyAutoCompatibilityMode
+    // Firmware-based auto detection handles recognized XY AUTO units without
+    // asking the user to enable a compatibility toggle manually.
+    val carHeadUnit = xyAutoCompatibilityMode ||
+        remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context.applicationContext) }
 
     // Normal playback Back is intentionally owned by the parent Activity so its
     // single/double-Back state machine cannot be bypassed by a nested Compose handler.
@@ -289,7 +293,7 @@ fun PlayerScreen(
 
         else -> NativeExoPlayer(
             media = media,
-            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+            xyAutoCompatibilityMode = carHeadUnit,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
             inPictureInPicture = inPictureInPicture,
@@ -579,7 +583,10 @@ fun NativeExoPlayer(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = xyAutoCompatibilityMode
+    // Firmware-based auto detection handles recognized XY AUTO units without
+    // asking the user to enable a compatibility toggle manually.
+    val carHeadUnit = xyAutoCompatibilityMode ||
+        remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context.applicationContext) }
     val resourceLimits = remember(context, carHeadUnit, lowResourceMode) {
         if (lowResourceMode) PlaybackResourcePolicy.choose(true, 160, 2, true)
         else PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)

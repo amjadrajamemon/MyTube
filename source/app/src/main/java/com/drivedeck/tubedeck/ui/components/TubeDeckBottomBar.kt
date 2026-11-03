@@ -36,8 +36,17 @@ fun TubeDeckBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .border(width = 1.dp, color = TubeDeckBorder)
-            .then(if (profile.navigationPlacement == DeckNavigationPlacement.BOTTOM)
-                Modifier.navigationBarsPadding() else Modifier),
+            .then(when (profile.navigationPlacement) {
+                DeckNavigationPlacement.BOTTOM -> Modifier.navigationBarsPadding()
+                // A top-mounted navigation row must respect the entire display cutout:
+                // status bar plus left/right notch insets on rotated Android TV hardware.
+                DeckNavigationPlacement.TOP -> Modifier.windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    )
+                )
+                DeckNavigationPlacement.SIDE -> Modifier
+            }),
         color = TubeDeckSurface,
         tonalElevation = if (profile.name == "AMOLED Black") 0.dp else 8.dp
     ) {

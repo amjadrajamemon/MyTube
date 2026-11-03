@@ -29,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -828,6 +829,14 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val activeDeckProfile = LocalDeckThemeProfile.current
+                // Measured dp screen size is the safe trigger for foldables,
+                // small phone windows and rotated/side-by-side app windows.
+                val availableViewportWidthDp = LocalConfiguration.current.screenWidthDp
+                val adaptiveNavigationPlacement =
+                    if (activeDeckProfile.navigationPlacement == DeckNavigationPlacement.SIDE &&
+                        availableViewportWidthDp < 700
+                    ) DeckNavigationPlacement.BOTTOM
+                    else activeDeckProfile.navigationPlacement
                 val showPrimaryNav = !isPipMode && currentScreen != ActiveScreen.PLAYER &&
                     !isBrowserFullscreen &&
                     !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)
@@ -847,7 +856,7 @@ class MainActivity : ComponentActivity() {
                     topBar = {
                         Column {
                         if (showPrimaryNav &&
-                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.TOP
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.TOP
                         ) {
                             TubeDeckBottomBar(
                                 currentScreen = currentScreen,
@@ -898,7 +907,7 @@ class MainActivity : ComponentActivity() {
                         } else if (!isPipMode && currentScreen == ActiveScreen.BROWSER && !isBrowserFullscreen) {
                             Column {
                                 TopNavBar(
-                                    includeStatusBarInset = activeDeckProfile.navigationPlacement != DeckNavigationPlacement.TOP,
+                                    includeStatusBarInset = adaptiveNavigationPlacement != DeckNavigationPlacement.TOP,
                                     currentUrl = currentUrl,
                                     recentSearches = recentSearches,
                                     onRemoveRecentSearch = repository::removeRecentSearch,
@@ -979,7 +988,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (showPrimaryNav &&
-                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.BOTTOM
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.BOTTOM
                         ) {
                             TubeDeckBottomBar(
                                 currentScreen = currentScreen,
@@ -1000,7 +1009,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Row(Modifier.weight(1f).fillMaxWidth()) {
                         if (showPrimaryNav &&
-                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.SIDE
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.SIDE
                         ) {
                             TubeDeckSideRail(
                                 currentScreen = currentScreen,

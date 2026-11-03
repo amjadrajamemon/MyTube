@@ -2637,29 +2637,10 @@ fun NativeExoPlayer(
                 }
             }
 
-            // An always-reachable audio-only blackout shortcut is vital on car
-            // dashboards: the normal transport controls hide after 4.2 seconds.
-            // Keep this shortcut accessible without requiring a tap that might
-            // pause or seek the playing video.
-            if (!controlsVisible && !inPictureInPicture) {
-                IconButton(
-                    onClick = {
-                        com.drivedeck.tubedeck.data.repository.TubeDeckRepository
-                            .get(context).enableScreenBlackout()
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        .navigationBarsPadding()
-                        .padding(end = 12.dp, bottom = 12.dp)
-                        .zIndex(65f)
-                        .background(Color.Black.copy(alpha = .8f), CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.VisibilityOff,
-                        "Black screen, continue audio",
-                        tint = Color.White
-                    )
-                }
-            }
+            // The permanent bottom-right blackout eye was distracting on every
+            // video and duplicated the fading eye in the lower control bar.
+            // Keep the lower-bar eye (above) unchanged. During blackout the
+            // opaque PlaybackBlackoutHost owns the screen and any tap restores it.
 
             if (showEqualizer && !inPictureInPicture) {
                 PlaybackEqualizerOverlay(

@@ -156,6 +156,10 @@ import com.drivedeck.tubedeck.ui.components.TvRemoteNavigationPolicy
 import com.drivedeck.tubedeck.ui.components.TvPlayerKeyAction
 import com.drivedeck.tubedeck.ui.components.TvRemoteKeyLearningPolicy
 import com.drivedeck.tubedeck.ui.components.VideoBookmarksDialog
+import com.drivedeck.tubedeck.ui.components.FocusAnimatedThumbs
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.compose.AsyncImagePainter
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
 import com.drivedeck.tubedeck.player.CreatorLinksPolicy
 import com.drivedeck.tubedeck.ui.theme.*
@@ -183,6 +187,7 @@ fun PlayerScreen(
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
     floatingCardsMode: String = "Manual",
+    animatedCardPreviews: Boolean = false,
     hideWatchedRecommendations: Boolean = true,
     lowResourceMode: Boolean = false,
     subtitleTextScale: Float = 1.0f,
@@ -2263,6 +2268,15 @@ fun NativeExoPlayer(
                     relatedLoading = fallbackRecommendationsLoading,
                     relatedError = fallbackRecommendationsError,
                     firstFocus = tvCardsFocus,
+                    allowAnimatedPreviews = FocusAnimatedThumbs.eligible(
+                        requested = animatedCardPreviews,
+                        lowResourceMode = lowResourceMode,
+                        pictureInPicture = inPictureInPicture,
+                        blackout = com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context)
+                            .screenBlackoutEnabled.collectAsState().value,
+                        sdk = android.os.Build.VERSION.SDK_INT,
+                        metered = !FocusAnimatedThumbs.onUnmeteredNetwork(context)
+                    ),
                     onClose = {
                         showPlaybackModeCards = false
                         cardsDismissedThisVideo = true
@@ -3747,6 +3761,7 @@ private fun PlaybackContinuationCards(
     relatedLoading: Boolean = false,
     relatedError: Boolean = false,
     firstFocus: FocusRequester? = null,
+    allowAnimatedPreviews: Boolean = false,
     onClose: () -> Unit = {},
     onRetry: () -> Unit = {},
     onPlayMedia: (OfflineMedia) -> Unit
@@ -3820,7 +3835,8 @@ private fun PlaybackContinuationCards(
                         ) { related ->
                             RelatedVideoCard(
                                 video = related,
-                                cardWidth = compactCardWidth
+                                cardWidth = compactCardWidth,
+                                allowAnimatedPreview = allowAnimatedPreviews
                             ) {
                                 onPlayMedia(
                                     OfflineMedia(
@@ -4800,22 +4816,58 @@ private fun EpisodeVideoCard(
 private fun RelatedVideoCard(
     video: YoutubeStreamResolver.RelatedVideo,
     cardWidth: Dp,
+    allowAnimatedPreview: Boolean = false,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    var focused by remember { mutableStateOf(false) }
+    var previewReady by remember { mutableStateOf(false) }
+    LaunchedEffect(focused, allowAnimatedPreview) {
+        previewReady = false
+        if (focused && allowAnimatedPreview) {
+            delay(1_100)
+            previewReady = true
+        }
+    }
+    val animatedUrl = remember(video.videoId) { FocusAnimatedThumbs.url(video.videoId) }
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .onFocusChanged { focused = it.isFocused }
             .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = video.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
-            )
+            val imageModifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+            if (previewReady && animatedUrl != null) {
+                SubcomposeAsyncImage(
+                    model = animatedUrl,
+                    imageLoader = FocusAnimatedThumbs.imageLoader(context),
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = imageModifier,
+                    content = {
+                        if (painter.state is AsyncImagePainter.State.Success) {
+                            SubcomposeAsyncImageContent()
+                        } else {
+                            AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = video.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                )
+            } else {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = imageModifier
+                )
+            }
             if (video.durationSeconds > 0L) {
                 Surface(
                     color = Color.Black.copy(alpha = .82f),

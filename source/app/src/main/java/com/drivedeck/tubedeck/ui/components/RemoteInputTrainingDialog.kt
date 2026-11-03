@@ -29,8 +29,12 @@ internal object TvRemoteKeyLearningPolicy {
         KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_ESCAPE
     )
 
+    // KeyEvent.getMaxKeyCode() is a framework call unavailable in local JVM unit tests.
+    // The OS supplies key codes from real input events; do not reject newer/vendor
+    // remote buttons merely because this build targets an older SDK. Unknown (0)
+    // and protected system/navigation keys must never be bound to player actions.
     fun allowed(keyCode: Int): Boolean =
-        keyCode in 1..KeyEvent.getMaxKeyCode() && keyCode !in protectedKeys
+        keyCode > KeyEvent.KEYCODE_UNKNOWN && keyCode !in protectedKeys
 
     fun remap(
         keyCode: Int,

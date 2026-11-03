@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
@@ -81,6 +84,23 @@ fun DriveDeckScreen(
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
+    val firstVideoFocus = remember { FocusRequester() }
+    var initialHomeFocusSet by rememberSaveable(viewStateKey) { mutableStateOf(false) }
+    val focusFeed = when {
+        historyEnabled && watchHistory.isNotEmpty() -> "History"
+        suggestionsEnabled && suggestedVideos.isNotEmpty() -> "Relevant"
+        trendingEnabled && trendingVideos.isNotEmpty() -> "Trending"
+        else -> null
+    }
+    LaunchedEffect(tvNavigation, playlistMode, focusFeed) {
+        if (tvNavigation && !playlistMode && !initialHomeFocusSet && focusFeed != null) {
+            // Wait for LazyColumn's cards before giving a remote an actionable focus.
+            delay(160)
+            if (runCatching { firstVideoFocus.requestFocus() }.isSuccess) {
+                initialHomeFocusSet = true
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -175,6 +195,7 @@ fun DriveDeckScreen(
                             enabled = historyEnabled,
                             action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
                             onAction = onClearHistory,
+                            firstItemFocus = if (focusFeed == "History" && tvNavigation) firstVideoFocus else null,
                             modifier = Modifier.weight(1f)
                         )
                         HomeFeedColumn(
@@ -185,6 +206,7 @@ fun DriveDeckScreen(
                             enabled = suggestionsEnabled,
                             action = if (suggestionsEnabled) "Refresh" else null,
                             onAction = onRefreshFeed,
+                            firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
                             modifier = Modifier.weight(1f)
                         )
                         HomeFeedColumn(
@@ -197,6 +219,7 @@ fun DriveDeckScreen(
                             loading = trendingStatus == "Loading",
                             action = if (trendingEnabled) "Refresh" else null,
                             onAction = onRefreshFeed,
+                            firstItemFocus = if (focusFeed == "Trending" && tvNavigation) firstVideoFocus else null,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -424,7 +447,8 @@ private fun HomeFeedColumn(
     subtitle: String? = null,
     loading: Boolean = false,
     action: String? = null,
-    onAction: () -> Unit = {}
+    onAction: () -> Unit = {},
+    firstItemFocus: FocusRequester? = null
 ) {
     Surface(
         color = TubeDeckSurface,
@@ -482,9 +506,10 @@ private fun HomeFeedColumn(
                     Text("No videos yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
                 }
             } else {
-                videos.forEach { video ->
+                videos.forEachIndexed { index, video ->
                     Column(
                         modifier = Modifier.fillMaxWidth()
+                            .then(if (index == 0 && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
                             .clip(RoundedCornerShape(9.dp))
                             .tvInputHighlight(RoundedCornerShape(9.dp))
                             .clickable { onOpenVideo(video) }

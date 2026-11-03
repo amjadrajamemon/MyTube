@@ -203,8 +203,10 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # Pushing UI/package audit fixes must never republish or overwrite v2.0.0.
+      # Workflow dispatch is a deliberate promotion step after device review.
       - name: Publish direct-download feature release
-        if: github.ref == 'refs/heads/feature/fix-next-autoplay-blackout-home-20261102'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/fix-next-autoplay-blackout-home-20261102'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash

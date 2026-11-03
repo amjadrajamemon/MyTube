@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.drivedeck.tubedeck.ui.screens
 
@@ -101,13 +101,16 @@ fun DriveDeckScreen(
     // Each feed can independently switch between vertical and horizontal scrolling.
     // The global List/Tile selector also changes the actual card composition.
     var historyHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
+            deckTheme.geometry == DeckCardGeometry.CINEMA)
     }
     var relevantHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
+            deckTheme.geometry == DeckCardGeometry.CINEMA)
     }
     var trendingHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
+            deckTheme.geometry == DeckCardGeometry.CINEMA)
     }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
@@ -247,11 +250,20 @@ fun DriveDeckScreen(
                 // The permanent first-page layout consists of three equal Home columns.
                 // Search history is hidden until Search receives focus.
                 item(key = "home-three-feeds") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.Top
+                    // Three equal columns on a real TV canvas; preserve all three
+                    // shelves on phones/rotated devices by stacking instead of
+                    // compressing titles and toolbar actions into unreadable strips.
+                    BoxWithConstraints(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
+                        val triple = deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN &&
+                            maxWidth >= 570.dp
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            maxItemsInEachRow = if (triple) 3 else 1,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                         HomeFeedColumn(
                             title = "History",
                             horizontal = historyHorizontal,
@@ -317,6 +329,7 @@ fun DriveDeckScreen(
                             },
                             modifier = Modifier.weight(1f)
                         )
+                        }
                     }
                 }
             }
@@ -592,28 +605,41 @@ private fun HomeFeedColumn(
             ),
             verticalArrangement = Arrangement.spacedBy((profile.contentGapDp / 2).dp)
         ) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 38.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = TubeDeckTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    if (!subtitle.isNullOrBlank()) Text(subtitle, color = TubeDeckTextSecondary, fontSize = 10.sp)
-                }
-                IconButton(
-                    onClick = onToggleOrientation,
-                    modifier = Modifier.size(32.dp)
+            // Header text owns its entire first row: no more two-line or
+            // clipped History / Relevant / Trending beside two toolbar buttons.
+            Column(Modifier.fillMaxWidth().heightIn(min = 45.dp)) {
+                Text(
+                    title, color = TubeDeckTextPrimary, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1,
+                    softWrap = false, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Icon(
-                        if (horizontal) Icons.Default.ViewDay else Icons.Default.SwapHoriz,
-                        contentDescription = if (horizontal) "$title: switch to vertical scroll" else "$title: switch to horizontal scroll",
-                        tint = TubeDeckAccentCyan,
-                        modifier = Modifier.size(19.dp)
-                    )
-                }
-                if (action != null) {
-                    IconButton(onClick = onAction, modifier = Modifier.size(30.dp)) {
-                        Icon(
-                            if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
-                            "$action $title", tint = TubeDeckAccentCyan, modifier = Modifier.size(18.dp)
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            subtitle, modifier = Modifier.weight(1f),
+                            color = TubeDeckTextSecondary, fontSize = 9.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
+                    } else Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onToggleOrientation, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            if (horizontal) Icons.Default.ViewDay else Icons.Default.SwapHoriz,
+                            contentDescription = if (horizontal) "$title: switch to vertical scroll" else "$title: switch to horizontal scroll",
+                            tint = TubeDeckAccentCyan, modifier = Modifier.size(17.dp)
+                        )
+                    }
+                    if (action != null) {
+                        IconButton(onClick = onAction, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
+                                "$action $title", tint = TubeDeckAccentCyan, modifier = Modifier.size(17.dp)
+                            )
+                        }
                     }
                 }
             }

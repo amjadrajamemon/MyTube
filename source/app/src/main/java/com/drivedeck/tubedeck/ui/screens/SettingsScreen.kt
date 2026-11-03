@@ -142,7 +142,7 @@ fun SettingsScreen(
     val repository = remember(context) { TubeDeckRepository.get(context) }
     val privateSession by repository.privateSession.collectAsState()
 
-    var appearancePreset by remember { mutableStateOf(currentSettings.appearancePreset) }
+    var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
@@ -262,7 +262,7 @@ fun SettingsScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(94.dp)
+                                    .height(132.dp)
                                     .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
                                     .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
@@ -291,28 +291,9 @@ fun SettingsScreen(
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = preset.fontFamily
                                     )
-                                    Text(
-                                        preset.subtitle,
-                                        color = Color(preset.textArgb.toInt()),
-                                        fontFamily = preset.fontFamily,
-                                        fontSize = 9.sp,
-                                        lineHeight = 11.sp,
-                                        maxLines = 3,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            Modifier.size(width = 28.dp, height = 5.dp)
-                                                .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
-                                                .background(Color(preset.accentArgb.toInt()))
-                                        )
-                                        Spacer(Modifier.width(5.dp))
-                                        Text(
-                                            preset.navigationPlacement.name.lowercase().replaceFirstChar { it.uppercase() },
-                                            color = Color(preset.textArgb.toInt()),
-                                            fontSize = 8.sp
-                                        )
-                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    ThemeLayoutPreview(preset)
+
                                 }
                             }
                         }
@@ -357,7 +338,7 @@ fun SettingsScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            appearancePreset = "Glass Midnight"
+                            appearancePreset = "Kodi Arctic"
                             fontScale = 1.0f
                             themeAccentArgb = 0xFF00D2FFL
                             themeBackgroundArgb = 0xFF080B11L
@@ -862,6 +843,87 @@ fun SettingsScreen(
     }
 }
 
+
+/**
+ * Actual diagram of a theme's Home architecture, not a colored title card
+ * or marketing copy. Keeps the settings selector compact and scannable.
+ */
+@Composable
+private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
+    val ink = Color(profile.textArgb.toInt())
+    val accent = Color(profile.accentArgb.toInt())
+    val panel = ink.copy(alpha = 0.12f)
+    @Composable
+    fun Tile(width: androidx.compose.ui.Modifier, height: androidx.compose.ui.unit.Dp) {
+        Box(width.height(height).clip(RoundedCornerShape(3.dp)).background(panel))
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (profile.navigationPlacement == DeckNavigationPlacement.TOP) {
+            Box(Modifier.fillMaxWidth().height(6.dp).background(accent.copy(alpha = .8f)))
+        }
+        Row(Modifier.fillMaxWidth().height(57.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (profile.navigationPlacement == DeckNavigationPlacement.SIDE) {
+                Column(Modifier.width(12.dp).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    repeat(4) {
+                        Box(Modifier.fillMaxWidth().height(8.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(if (it == 0) accent else panel))
+                    }
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (profile.homePresentation) {
+                    DeckHomePresentation.THREE_COLUMN -> Row(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        repeat(3) { Box(Modifier.weight(1f).height(50.dp).background(panel)) }
+                    }
+                    DeckHomePresentation.DESKTOP_TABLE, DeckHomePresentation.AMOLED_INDEX,
+                    DeckHomePresentation.YOUTUBE_STANDARD -> repeat(3) {
+                        Box(Modifier.fillMaxWidth().height(if (it == 0) 20.dp else 12.dp)
+                            .background(if (it == 0) accent.copy(alpha = .35f) else panel))
+                    }
+                    DeckHomePresentation.YOUTUBE_DESKTOP, DeckHomePresentation.ARCADE_GALLERY -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 21.dp) }
+                        }
+                    }
+                    DeckHomePresentation.CINEMA_STRIPS, DeckHomePresentation.GLASS_CAROUSEL,
+                    DeckHomePresentation.MINIMAL_EDITORIAL -> {
+                        Box(Modifier.fillMaxWidth().height(29.dp)
+                            .background(accent.copy(alpha = .25f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 21.dp) }
+                        }
+                    }
+                    DeckHomePresentation.HUD_CONSOLE, DeckHomePresentation.IPTV_DASHBOARD -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(2f), 48.dp)
+                            Tile(Modifier.weight(1f), 48.dp)
+                        }
+                    }
+                    else -> repeat(2) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
+                        }
+                    }
+                }
+            }
+        }
+        if (profile.navigationPlacement == DeckNavigationPlacement.BOTTOM) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(5) {
+                    Box(Modifier.weight(1f).height(5.dp)
+                        .background(if (it == 0) accent else panel))
+                }
+            }
+        }
+    }
+}
 
 private val appearancePresets = DeckThemeCatalog.presets
 

@@ -198,7 +198,8 @@ class MainActivity : ComponentActivity() {
                 fontScale = activeAppearance.fontScale,
                 accentArgb = activeAppearance.themeAccentArgb,
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
-                textArgb = activeAppearance.themeTextArgb
+                textArgb = activeAppearance.themeTextArgb,
+                appearancePreset = activeAppearance.appearancePreset
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()

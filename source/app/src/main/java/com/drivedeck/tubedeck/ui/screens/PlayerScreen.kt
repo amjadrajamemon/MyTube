@@ -161,6 +161,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
+import com.drivedeck.tubedeck.player.VideoResumeStore
 import com.drivedeck.tubedeck.player.CreatorLinksPolicy
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
@@ -190,6 +191,7 @@ fun PlayerScreen(
     animatedCardPreviews: Boolean = false,
     hideWatchedRecommendations: Boolean = true,
     lowResourceMode: Boolean = false,
+    resumeAfterInterruptions: Boolean = true,
     subtitleTextScale: Float = 1.0f,
     subtitleBottomInsetDp: Int = 0,
     remoteNextKeyCode: Int = 0,
@@ -299,6 +301,7 @@ fun PlayerScreen(
             animatedCardPreviews = animatedCardPreviews,
             hideWatchedRecommendations = hideWatchedRecommendations,
             lowResourceMode = lowResourceMode,
+            resumeAfterInterruptions = resumeAfterInterruptions,
             subtitleTextScale = subtitleTextScale,
             subtitleBottomInsetDp = subtitleBottomInsetDp,
             remoteNextKeyCode = remoteNextKeyCode,
@@ -534,6 +537,7 @@ fun NativeExoPlayer(
     animatedCardPreviews: Boolean,
     hideWatchedRecommendations: Boolean,
     lowResourceMode: Boolean,
+    resumeAfterInterruptions: Boolean,
     subtitleTextScale: Float,
     subtitleBottomInsetDp: Int,
     remoteNextKeyCode: Int,
@@ -1054,6 +1058,38 @@ fun NativeExoPlayer(
                 }
             })
             .build()
+    }
+    val resumeStore = remember(context) { VideoResumeStore(context) }
+    val savedResume = remember(media.mediaUri, resumeAfterInterruptions, initialPositionMs) {
+        if (resumeAfterInterruptions && initialPositionMs < 1_000L) {
+            resumeStore.find(media.mediaUri)
+        } else null
+    }
+    var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
+
+    LaunchedEffect(isPlaying, resumeAfterInterruptions, showResumePrompt, media.mediaUri) {
+        if (resumeAfterInterruptions && !showResumePrompt && isPlaying) {
+            while (isActive) {
+                delay(12_000L)
+                if (exoPlayer.isPlaying) {
+                    resumeStore.record(media.mediaUri, exoPlayer.currentPosition.coerceAtLeast(0L))
+                }
+            }
+        }
+    }
+    LaunchedEffect(showResumePrompt, exoPlayer.playbackState) {
+        if (showResumePrompt && exoPlayer.playWhenReady) exoPlayer.pause()
+    }
+    DisposableEffect(exoPlayer, resumeAfterInterruptions) {
+        onDispose {
+            if (resumeAfterInterruptions) {
+                runCatching {
+                    val pos = if (exoPlayer.playbackState == Player.STATE_ENDED) 0L
+                        else exoPlayer.currentPosition.coerceAtLeast(0L)
+                    resumeStore.record(media.mediaUri, pos)
+                }
+            }
+        }
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
@@ -2986,6 +3022,37 @@ fun NativeExoPlayer(
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         }
+    }
+
+    if (showResumePrompt && savedResume != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showResumePrompt = false
+                resumeStore.record(media.mediaUri, 0L)
+                exoPlayer.play()
+            },
+            title = { Text("Resume previous video?") },
+            text = {
+                Text("You were watching this video at " +
+                    formatDuration(savedResume.positionMs) +
+                    ". Continue from this point, or start over?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResumePrompt = false
+                    exoPlayer.seekTo(savedResume.positionMs)
+                    exoPlayer.play()
+                }) { Text("Resume") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showResumePrompt = false
+                    resumeStore.record(media.mediaUri, 0L)
+                    exoPlayer.seekTo(0L)
+                    exoPlayer.play()
+                }) { Text("Start over") }
+            }
+        )
     }
 
     if (showBookmarks) {

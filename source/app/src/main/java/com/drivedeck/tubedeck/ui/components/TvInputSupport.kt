@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck.ui.components
 
 import android.app.UiModeManager
+import android.hardware.input.InputManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -12,6 +13,8 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -50,6 +53,39 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
         pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
         (largeDisplay && !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) ||
         physicalRemote
+}
+
+/**
+ * Reevaluate input capabilities when a Bluetooth/USB remote, keyboard,
+ * gamepad or mouse connects/disconnects, and when the window configuration
+ * changes. Android can report a new controller without recreating the screen.
+ */
+@Composable
+fun rememberAdaptiveTvNavigation(): Boolean {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    var tvNavigation by remember(
+        context, configuration.uiMode, configuration.smallestScreenWidthDp
+    ) { mutableStateOf(isTvLikeNavigationDevice(context)) }
+
+    DisposableEffect(context, configuration.uiMode, configuration.smallestScreenWidthDp) {
+        val manager = context.getSystemService(Context.INPUT_SERVICE) as? InputManager
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) {
+                tvNavigation = isTvLikeNavigationDevice(context)
+            }
+            override fun onInputDeviceRemoved(deviceId: Int) {
+                tvNavigation = isTvLikeNavigationDevice(context)
+            }
+            override fun onInputDeviceChanged(deviceId: Int) {
+                tvNavigation = isTvLikeNavigationDevice(context)
+            }
+        }
+        manager?.registerInputDeviceListener(listener, null)
+        tvNavigation = isTvLikeNavigationDevice(context)
+        onDispose { manager?.unregisterInputDeviceListener(listener) }
+    }
+    return tvNavigation
 }
 
 /**

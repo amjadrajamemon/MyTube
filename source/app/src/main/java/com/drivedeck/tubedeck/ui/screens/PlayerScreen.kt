@@ -2123,7 +2123,9 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                if (playbackCardsSwipeZone && dragging) {
+                                if (playbackCardsSwipeZone && dragging &&
+                                    floatingCardsMode != "Off"
+                                ) {
                                     showPlaybackModeCards = totalDy < -(size.height * .08f)
                                     controlsVisible = true
                                     gestureOverlayVisible = false
@@ -2208,6 +2210,7 @@ fun NativeExoPlayer(
                             onDragEnd = {
                                 if (downwardDrag > 72f) {
                                     showPlaybackModeCards = false
+                                    cardsDismissedThisVideo = true
                                     controlsVisible = true
                                 }
                                 downwardDrag = 0f
@@ -2221,12 +2224,25 @@ fun NativeExoPlayer(
                 PlaybackContinuationCards(
                     episodesLoading = continuationEpisodesLoading,
                     currentVideoId = currentVideoId,
-                    relatedVideos = resolved?.relatedVideos.orEmpty(),
+                    relatedVideos = shelfRelated,
                     episodeShelf = continuationEpisodeShelf,
                     showRelevantShelf = showRelevantShelf,
                     showEpisodesShelf = showEpisodesShelf,
+                    relatedLoading = fallbackRecommendationsLoading,
+                    relatedError = fallbackRecommendationsError,
+                    firstFocus = tvCardsFocus,
+                    onClose = {
+                        showPlaybackModeCards = false
+                        cardsDismissedThisVideo = true
+                        tvPendingControlFocus = true
+                    },
+                    onRetry = {
+                        fallbackRecommendationsAttempted = false
+                        fallbackRecommendationsError = false
+                    },
                     onPlayMedia = { selected ->
                         showPlaybackModeCards = false
+                        cardsDismissedThisVideo = true
                         onPlayRelated?.invoke(selected)
                     }
                 )

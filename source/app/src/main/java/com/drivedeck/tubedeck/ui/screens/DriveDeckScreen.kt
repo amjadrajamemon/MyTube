@@ -8,6 +8,9 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -80,6 +83,8 @@ fun DriveDeckScreen(
     trendingStatus: String = "",
     viewStateKey: String = "home",
     onRefreshFeed: () -> Unit = {},
+    onLoadMoreHomeFeed: (String) -> Unit = {},
+    moreFeedsLoading: Set<String> = emptySet(),
     onClearLiveSearch: () -> Unit = {},
     onClearVideoSearch: () -> Unit = {},
     onOpenWebSearch: (String) -> Unit = {},
@@ -88,6 +93,11 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
+    // Each feed can independently switch between vertical and horizontal scrolling.
+    // The global List/Tile selector also changes the actual card composition.
+    var historyHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
+    var relevantHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
+    var trendingHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val firstVideoFocus = remember { FocusRequester() }
@@ -233,7 +243,12 @@ fun DriveDeckScreen(
                     ) {
                         HomeFeedColumn(
                             title = "History",
-                            videos = if (historyEnabled) watchHistory.take(12) else emptyList(),
+                            horizontal = historyHorizontal,
+                            onToggleOrientation = { historyHorizontal = !historyHorizontal },
+                            loadMoreEnabled = false,
+                            moreLoading = "History" in moreFeedsLoading,
+                            onLoadMore = { onLoadMoreHomeFeed("History") },
+                            videos = if (historyEnabled) watchHistory else emptyList(),
                             onOpenVideo = onOpenVideo,
                             listView = listView,
                             enabled = historyEnabled,
@@ -249,7 +264,12 @@ fun DriveDeckScreen(
                         )
                         HomeFeedColumn(
                             title = "Relevant",
-                            videos = if (suggestionsEnabled) suggestedVideos.take(12) else emptyList(),
+                            horizontal = relevantHorizontal,
+                            onToggleOrientation = { relevantHorizontal = !relevantHorizontal },
+                            loadMoreEnabled = true,
+                            moreLoading = "Relevant" in moreFeedsLoading,
+                            onLoadMore = { onLoadMoreHomeFeed("Relevant") },
+                            videos = if (suggestionsEnabled) suggestedVideos else emptyList(),
                             onOpenVideo = onOpenVideo,
                             listView = listView,
                             enabled = suggestionsEnabled,
@@ -265,8 +285,13 @@ fun DriveDeckScreen(
                         )
                         HomeFeedColumn(
                             title = "Trending",
+                            horizontal = trendingHorizontal,
+                            onToggleOrientation = { trendingHorizontal = !trendingHorizontal },
+                            loadMoreEnabled = true,
+                            moreLoading = "Trending" in moreFeedsLoading,
+                            onLoadMore = { onLoadMoreHomeFeed("Trending") },
                             subtitle = countryCode,
-                            videos = if (trendingEnabled) trendingVideos.take(12) else emptyList(),
+                            videos = if (trendingEnabled) trendingVideos else emptyList(),
                             onOpenVideo = onOpenVideo,
                             listView = listView,
                             enabled = trendingEnabled,
@@ -492,8 +517,14 @@ private fun PlaylistThumbnail(playlist: PlaylistCandidate, modifier: Modifier) {
 }
 
 /**
- * Home has three equally sized columns on all supported screen widths.
- * Cards stack vertically within a column rather than creating three separate full-width shelves.
+ * Three permanent Home feeds; each independently supports a vertical list or
+ * horizontal carousel. The layouts are deliberately different:
+ * List = compact thumbnail to the left, full wrapped title on the right;
+ * Tile = large thumbnail above the full wrapped title.
+ *
+ * Lazy composition keeps only the visible cards resident. More items are
+ * requested on demand at the trailing edge rather than retaining infinite
+ * thumbnails or decoding a video preview in the Home page.
  */
 @Composable
 private fun HomeFeedColumn(
@@ -502,6 +533,11 @@ private fun HomeFeedColumn(
     onOpenVideo: (HomeVideo) -> Unit,
     listView: Boolean,
     enabled: Boolean,
+    horizontal: Boolean,
+    onToggleOrientation: () -> Unit,
+    loadMoreEnabled: Boolean,
+    moreLoading: Boolean,
+    onLoadMore: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     loading: Boolean = false,
@@ -511,48 +547,50 @@ private fun HomeFeedColumn(
     focusVideoId: String? = null,
     onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
-    val focusScrollScope = rememberCoroutineScope()
-    Surface(
-        color = TubeDeckSurface,
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier
-    ) {
+    val state = rememberLazyListState()
+    val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
+    LaunchedEffect(horizontal, focusIndex) {
+        if (focusIndex >= 0) state.scrollToItem(focusIndex)
+    }
+    val lastIndex by remember(state) {
+        derivedStateOf { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    }
+    // Prevent repeated requests when the list is still at its previous end.
+    var lastRequestedSize by remember(title) { mutableIntStateOf(-1) }
+    LaunchedEffect(lastIndex, videos.size, horizontal, moreLoading, enabled, loadMoreEnabled) {
+        if (enabled && loadMoreEnabled && !moreLoading && videos.isNotEmpty() &&
+            lastIndex >= videos.lastIndex - 2 && lastRequestedSize != videos.size
+        ) {
+            lastRequestedSize = videos.size
+            onLoadMore()
+        }
+    }
+    Surface(color = TubeDeckSurface, shape = RoundedCornerShape(12.dp), modifier = modifier) {
         Column(
             modifier = Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(if (listView) 8.dp else 12.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 34.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        color = TubeDeckTextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            Row(Modifier.fillMaxWidth().heightIn(min = 38.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = TubeDeckTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    if (!subtitle.isNullOrBlank()) Text(subtitle, color = TubeDeckTextSecondary, fontSize = 10.sp)
+                }
+                IconButton(
+                    onClick = onToggleOrientation,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        if (horizontal) Icons.Default.ViewDay else Icons.Default.SwapHoriz,
+                        contentDescription = if (horizontal) "$title: switch to vertical scroll" else "$title: switch to horizontal scroll",
+                        tint = TubeDeckAccentCyan,
+                        modifier = Modifier.size(19.dp)
                     )
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            text = subtitle,
-                            color = TubeDeckTextSecondary,
-                            fontSize = 10.sp,
-                            maxLines = 1
-                        )
-                    }
                 }
                 if (action != null) {
-                    IconButton(
-                        onClick = onAction,
-                        modifier = Modifier.size(28.dp)
-                    ) {
+                    IconButton(onClick = onAction, modifier = Modifier.size(30.dp)) {
                         Icon(
-                            imageVector = if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
-                            contentDescription = "$action $title",
-                            tint = TubeDeckAccentCyan,
-                            modifier = Modifier.size(17.dp)
+                            if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
+                            "$action $title", tint = TubeDeckAccentCyan, modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -560,55 +598,77 @@ private fun HomeFeedColumn(
             if (!enabled) {
                 Text("Off in Settings", color = TubeDeckTextSecondary, fontSize = 10.sp)
             } else if (videos.isEmpty()) {
-                if (loading) {
-                    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    }
-                } else {
-                    Text("No videos yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
+                Box(Modifier.fillMaxWidth().height(64.dp), contentAlignment = Alignment.Center) {
+                    if (loading || moreLoading) CircularProgressIndicator(Modifier.size(21.dp), strokeWidth = 2.dp)
+                    else Text("No videos yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
                 }
             } else {
-                videos.forEachIndexed { _, video ->
-                    val bringIntoView = remember(video.videoId) { BringIntoViewRequester() }
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                            .then(if (video.videoId == focusVideoId && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
-                            .bringIntoViewRequester(bringIntoView)
-                            .onFocusChanged { focus ->
-                                if (focus.isFocused) {
-                                    onVideoFocused(video)
-                                    focusScrollScope.launch {
-                                        runCatching { bringIntoView.bringIntoView() }
-                                    }
-                                }
-                            }
-                            .clip(RoundedCornerShape(9.dp))
-                            .tvInputHighlight(RoundedCornerShape(9.dp))
-                            .clickable {
-                                onVideoFocused(video)
-                                onOpenVideo(video)
-                            }
-                    ) {
-                        VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            video.title,
-                            color = TubeDeckTextPrimary,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = if (isTvLikeNavigationDevice(LocalContext.current)) 14.sp else if (listView) 10.5.sp else 11.sp,
-                            lineHeight = if (isTvLikeNavigationDevice(LocalContext.current)) 17.sp else 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!listView) {
-                            Text(
-                                video.channelTitle,
-                                color = TubeDeckTextSecondary,
-                                fontSize = 9.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                @Composable
+                fun HomeCard(video: HomeVideo, width: Modifier) {
+                    val focused = video.videoId == focusVideoId
+                    val itemModifier = width
+                        .then(if (focused && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
+                        .onFocusChanged { if (it.isFocused) onVideoFocused(video) }
+                        .clip(RoundedCornerShape(10.dp))
+                        .tvInputHighlight(RoundedCornerShape(10.dp))
+                        .clickable {
+                            onVideoFocused(video)
+                            onOpenVideo(video)
                         }
+                        .padding(3.dp)
+                    if (listView) {
+                        Row(itemModifier, verticalAlignment = Alignment.Top) {
+                            VideoThumbnail(video, Modifier.width(72.dp).aspectRatio(16f / 9f))
+                            Column(Modifier.weight(1f).padding(start = 6.dp)) {
+                                Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.sp, lineHeight = 14.sp, softWrap = true)
+                                Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 9.sp, softWrap = true)
+                            }
+                        }
+                    } else {
+                        Column(itemModifier) {
+                            VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                            Spacer(Modifier.height(5.dp))
+                            Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp, lineHeight = 15.sp, softWrap = true)
+                            Spacer(Modifier.height(3.dp))
+                            Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp, softWrap = true)
+                            VideoViews(video.viewCount)
+                        }
+                    }
+                }
+                if (horizontal) {
+                    LazyRow(
+                        state = state,
+                        modifier = Modifier.fillMaxWidth().height(if (listView) 190.dp else 330.dp),
+                        contentPadding = PaddingValues(end = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
+                            HomeCard(video, Modifier.width(if (listView) 215.dp else 232.dp))
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        state = state,
+                        modifier = Modifier.fillMaxWidth().height(if (listView) 480.dp else 600.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (listView) 6.dp else 14.dp)
+                    ) {
+                        itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
+                            HomeCard(video, Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+                if (moreLoading) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                } else if (loadMoreEnabled) {
+                    TextButton(onClick = {
+                        lastRequestedSize = videos.size
+                        onLoadMore()
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Load more $title", fontSize = 10.sp)
                     }
                 }
             }

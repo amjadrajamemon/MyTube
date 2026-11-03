@@ -9,6 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.content.res.ColorStateList
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -71,6 +73,25 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
                     detector.onTouchEvent(event)
                     true // Never leak taps, long presses or swipes to the video.
                 }
+
+                // A small, dim restore affordance belongs to the blackout panel,
+                // NOT to the normal player. The fading lower controls retain their
+                // own Black Screen action, without a duplicate floating eye.
+                // The rest of the display stays black; any tap also restores it.
+                val density = activity.resources.displayMetrics.density
+                val edge = (48f * density).toInt()
+                val margin = (12f * density).toInt()
+                addView(ImageButton(activity).apply {
+                    setImageResource(android.R.drawable.ic_menu_revert)
+                    imageTintList = ColorStateList.valueOf(android.graphics.Color.rgb(78, 78, 78))
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    contentDescription = "Restore video from blackout"
+                    isFocusable = false // The host panel must not steal TV remote focus.
+                    setOnClickListener { repository.restoreScreenAfterTap() }
+                }, FrameLayout.LayoutParams(edge, edge, Gravity.END or Gravity.BOTTOM).apply {
+                    marginEnd = margin
+                    bottomMargin = margin
+                })
             }
             var installed = false
             var disposed = false

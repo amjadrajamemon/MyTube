@@ -64,11 +64,14 @@ import com.drivedeck.tubedeck.ui.components.GoogleDeviceCodeDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
+import com.drivedeck.tubedeck.ui.components.TubeDeckSideRail
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.screens.*
 import com.drivedeck.tubedeck.ui.theme.TubeDeckBackground
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
+import com.drivedeck.tubedeck.ui.theme.LocalDeckThemeProfile
+import com.drivedeck.tubedeck.ui.theme.DeckNavigationPlacement
 import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -822,11 +825,35 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val activeDeckProfile = LocalDeckThemeProfile.current
+                val showPrimaryNav = !isPipMode && currentScreen != ActiveScreen.PLAYER &&
+                    !isBrowserFullscreen &&
+                    !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)
+                val navigateTheme: (ActiveScreen) -> Unit = { screen ->
+                    if (screen == ActiveScreen.MIXES && playlistSearchResults.isEmpty() &&
+                        playlistSearchStatus.isBlank()
+                    ) repository.searchPlaylists(mixesSearchQuery)
+                    if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
+                    else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
+                    navigateTo(screen)
+                }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = TubeDeckBackground,
                     contentWindowInsets = WindowInsets.safeDrawing,
                     topBar = {
+                        Column {
+                        if (showPrimaryNav &&
+                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.TOP
+                        ) {
+                            TubeDeckBottomBar(
+                                currentScreen = currentScreen,
+                                activeDownloadCount = activeDownloads.size,
+                                blockedAdsCount = blockedAdsCount,
+                                onNavigate = navigateTheme
+                            )
+                        }
                         if (!isPipMode && currentScreen == ActiveScreen.BROWSER &&
                             settings.desktopYoutubeUiEnabled && !isBrowserFullscreen
                         ) {
@@ -916,6 +943,7 @@ class MainActivity : ComponentActivity() {
                                 GlobalProgressBar(isVisible = hasActiveDownloads, progress = averageProgress)
                             }
                         }
+                        }
                     },
                     bottomBar = {
                         Column {
@@ -947,23 +975,14 @@ class MainActivity : ComponentActivity() {
                                 ) { Text("Close mini-player") }
                             }
                         }
-                        if (!isPipMode && currentScreen != ActiveScreen.PLAYER && !isBrowserFullscreen &&
-                            !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)) {
+                        if (showPrimaryNav &&
+                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.BOTTOM
+                        ) {
                             TubeDeckBottomBar(
                                 currentScreen = currentScreen,
                                 activeDownloadCount = activeDownloads.size,
                                 blockedAdsCount = blockedAdsCount,
-                                onNavigate = { screen ->
-                                    if (screen == ActiveScreen.MIXES &&
-                                        playlistSearchResults.isEmpty() &&
-                                        playlistSearchStatus.isBlank()
-                                    ) {
-                                        repository.searchPlaylists(mixesSearchQuery)
-                                    }
-                                    if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
-                                    else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
-                                    navigateTo(screen)
-                                }
+                                onNavigate = navigateTheme
                             )
                         }
                         }
@@ -976,7 +995,17 @@ class MainActivity : ComponentActivity() {
                             .padding(contentPadding)
                             .consumeWindowInsets(contentPadding)
                     ) {
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                        Row(Modifier.weight(1f).fillMaxWidth()) {
+                        if (showPrimaryNav &&
+                            activeDeckProfile.navigationPlacement == DeckNavigationPlacement.SIDE
+                        ) {
+                            TubeDeckSideRail(
+                                currentScreen = currentScreen,
+                                activeDownloadCount = activeDownloads.size,
+                                onNavigate = navigateTheme
+                            )
+                        }
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
                         if (browserSessionCreated) {
                             BrowserScreen(
                                     currentUrl = currentUrl,
@@ -1419,6 +1448,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        }
                         }
                         if (showPlaybackExitChoices && !isPipMode) {
                             val bridgedSession = nativePipSessionId

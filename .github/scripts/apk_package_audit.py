@@ -85,7 +85,7 @@ def audit(apk, args):
     if not good:
         problems.append("AAPT2 manifest/badging validation failed: " + data[-500:])
     package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", data)
-    min_sdk = re.search(r"sdkVersion:'([^']+)'", data)
+    min_sdk = re.search(r"sdkVersion:\s*'([^']+)'", data)
     target_sdk = re.search(r"targetSdkVersion:'([^']+)'", data)
     result["package"] = package.groups() if package else None
     result["min_sdk"] = min_sdk.group(1) if min_sdk else None

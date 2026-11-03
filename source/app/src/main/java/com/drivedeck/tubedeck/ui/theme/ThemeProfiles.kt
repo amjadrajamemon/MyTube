@@ -10,6 +10,10 @@ import androidx.compose.ui.text.font.FontFamily
  */
 enum class DeckNavigationPlacement { BOTTOM, TOP, SIDE }
 enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
+/** Real screen structures instead of palette-only variations. */
+enum class DeckHomePresentation { THREE_COLUMN, STACKED_SHELVES, CINEMA_STRIPS }
+enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD }
+enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND }
 
 data class DeckThemeProfile(
     val name: String,
@@ -23,6 +27,9 @@ data class DeckThemeProfile(
     val navigationPlacement: DeckNavigationPlacement = DeckNavigationPlacement.BOTTOM,
     val navigationHeightDp: Int = 68,
     val geometry: DeckCardGeometry = DeckCardGeometry.ROUNDED,
+    val homePresentation: DeckHomePresentation = DeckHomePresentation.THREE_COLUMN,
+    val playerChrome: DeckPlayerChrome = DeckPlayerChrome.CLASSIC,
+    val navVisual: DeckNavVisual = DeckNavVisual.PILL,
     val subtitle: String = ""
 )
 
@@ -31,41 +38,62 @@ object DeckThemeCatalog {
         DeckThemeProfile("ATV", 0xFF19A9FFL, 0xFF080D19L, fontScale = 1.16f,
             cornerRadiusDp = 18, contentGapDp = 14,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 78,
-            geometry = DeckCardGeometry.CINEMA, subtitle = "TV-first rail · cinematic widescreen cards"),
+            geometry = DeckCardGeometry.CINEMA,
+            playerChrome = DeckPlayerChrome.THEATER, navVisual = DeckNavVisual.PILL, subtitle = "TV-first rail · cinematic widescreen cards"),
         DeckThemeProfile("Xtreamity", 0xFFFF9C32L, 0xFF10121CL, fontScale = 1.10f,
             cornerRadiusDp = 5, contentGapDp = 8,
             navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 70,
-            geometry = DeckCardGeometry.COMPACT, subtitle = "Dense streaming dashboard · sharp modules"),
+            geometry = DeckCardGeometry.COMPACT,
+            playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMPACT, subtitle = "Dense streaming dashboard · sharp modules"),
         DeckThemeProfile("Android", 0xFF6750A4L, 0xFFF5F2F9L, textArgb = 0xFF201D26L,
             cornerRadiusDp = 24, contentGapDp = 12,
-            geometry = DeckCardGeometry.ROUNDED, subtitle = "Material-like light surfaces · rounded cards"),
+            geometry = DeckCardGeometry.ROUNDED,
+            homePresentation = DeckHomePresentation.STACKED_SHELVES,
+            navVisual = DeckNavVisual.PILL, subtitle = "Material-like light surfaces · rounded cards"),
         DeckThemeProfile("Linux Desktop", 0xFF29C49BL, 0xFF151B22L,
             fontFamily = FontFamily.Monospace, cornerRadiusDp = 4, contentGapDp = 6,
             navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 48,
-            geometry = DeckCardGeometry.TERMINAL, subtitle = "Compact desktop menu · monospace labels"),
+            geometry = DeckCardGeometry.TERMINAL,
+            homePresentation = DeckHomePresentation.STACKED_SHELVES,
+            playerChrome = DeckPlayerChrome.CONSOLE, navVisual = DeckNavVisual.COMMAND,
+            subtitle = "Compact desktop menu · monospace labels"),
         DeckThemeProfile("Digital HUD", 0xFF2DFFD1L, 0xFF010F14L,
             fontFamily = FontFamily.Monospace, fontScale = 1.08f,
             cornerRadiusDp = 0, contentGapDp = 14,
             navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 54,
-            geometry = DeckCardGeometry.TERMINAL, subtitle = "Instrument-style typography · compact controls"),
+            geometry = DeckCardGeometry.TERMINAL,
+            playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.COMMAND,
+            subtitle = "Instrument-style typography · compact controls"),
         DeckThemeProfile("Cinema", 0xFFF4B860L, 0xFF090909L, fontScale = 1.14f,
             fontFamily = FontFamily.Serif, cornerRadiusDp = 6, contentGapDp = 15,
             navigationHeightDp = 82, geometry = DeckCardGeometry.CINEMA,
+            homePresentation = DeckHomePresentation.CINEMA_STRIPS,
+            playerChrome = DeckPlayerChrome.THEATER, navVisual = DeckNavVisual.MINIMAL,
             subtitle = "Editorial serif titles · wide cinematic thumbnails"),
         DeckThemeProfile("Glass Midnight", 0xFF00D2FFL, 0xFF080B11L,
             cornerRadiusDp = 18, contentGapDp = 12, navigationHeightDp = 76,
-            geometry = DeckCardGeometry.ROUNDED, subtitle = "Translucent-style dark glass · roomy spacing"),
+            geometry = DeckCardGeometry.ROUNDED,
+            playerChrome = DeckPlayerChrome.GLASS, navVisual = DeckNavVisual.PILL,
+            subtitle = "Translucent-style dark glass · roomy spacing"),
         DeckThemeProfile("AMOLED Black", 0xFF00E5FFL, 0xFF000000L,
             cornerRadiusDp = 0, contentGapDp = 5, navigationHeightDp = 60,
-            geometry = DeckCardGeometry.SQUARE, subtitle = "True black · maximum density and contrast"),
+            geometry = DeckCardGeometry.SQUARE,
+            playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.ICONS,
+            subtitle = "True black · maximum density and contrast"),
         DeckThemeProfile("Retro Neon", 0xFFFF4DD2L, 0xFF180724L,
             fontFamily = FontFamily.Monospace, fontScale = 1.10f,
             cornerRadiusDp = 2, contentGapDp = 10,
-            geometry = DeckCardGeometry.SQUARE, subtitle = "Arcade lettering · bright neon blocks"),
+            geometry = DeckCardGeometry.SQUARE,
+            homePresentation = DeckHomePresentation.STACKED_SHELVES,
+            playerChrome = DeckPlayerChrome.ARCADE, navVisual = DeckNavVisual.COMMAND,
+            subtitle = "Arcade lettering · bright neon blocks"),
         DeckThemeProfile("Focus Minimal", 0xFF4D78A8L, 0xFFF5F7F8L,
             textArgb = 0xFF202833L, fontScale = 1.04f,
             cornerRadiusDp = 8, contentGapDp = 18, navigationHeightDp = 64,
-            geometry = DeckCardGeometry.COMPACT, subtitle = "Paper-like spacious interface · quiet controls")
+            geometry = DeckCardGeometry.COMPACT,
+            homePresentation = DeckHomePresentation.CINEMA_STRIPS,
+            playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.MINIMAL,
+            subtitle = "Paper-like spacious interface · quiet controls")
     )
 
     fun get(name: String): DeckThemeProfile =

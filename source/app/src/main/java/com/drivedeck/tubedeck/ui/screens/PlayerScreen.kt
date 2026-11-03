@@ -1470,7 +1470,7 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(media.id, media.mediaUri) {
+    LaunchedEffect(media.id, media.mediaUri, manualRecoveryAttempts) {
         isPreparing = true
         isBuffering = false
         val online = YoutubeUrls.videoId(media.mediaUri) != null
@@ -1809,6 +1809,13 @@ fun NativeExoPlayer(
 
     // TV Back first dismisses a visible player overlay, as it does in SmartTube.
     // A subsequent Back is owned by the Activity and its PiP/exit state machine.
+    BackHandler(enabled = showPlaybackModeCards && !inPictureInPicture) {
+        showPlaybackModeCards = false
+        cardsDismissedThisVideo = true
+        controlsVisible = true
+        tvPendingControlFocus = true
+    }
+
     BackHandler(
         enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
             !showSettings && !showQuickActions && !showEqualizer &&
@@ -1851,19 +1858,26 @@ fun NativeExoPlayer(
             if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
                 false
             } else {
-                val decision = TvRemoteNavigationPolicy.decide(
+                val modalVisible = showSettings || showQuickActions || showEqualizer ||
+                    showCaptionMenu || showQualityMenu || showPlaybackModeCards || showComments || showBookmarks
+                val decision = if (!modalVisible) {
+                    TvRemoteKeyLearningPolicy.remap(
+                        key.nativeKeyEvent.keyCode, key.nativeKeyEvent.repeatCount,
+                        remoteNextKeyCode, remotePreviousKeyCode
+                    )
+                } else null
+                val actionDecision = decision ?: TvRemoteNavigationPolicy.decide(
                     keyCode = key.nativeKeyEvent.keyCode,
                     repeatCount = key.nativeKeyEvent.repeatCount,
                     surfaceFocused = tvSurfaceFocused,
                     controlsVisible = controlsVisible,
-                    modalVisible = showSettings || showQuickActions || showEqualizer ||
-                        showCaptionMenu || showQualityMenu || showPlaybackModeCards || showComments
+                    modalVisible = modalVisible
                 )
                 fun showCenterControls() {
                     controlsVisible = true
                     tvPendingControlFocus = true
                 }
-                when (decision.action) {
+                when (actionDecision.action) {
                     TvPlayerKeyAction.IGNORE -> false
                     TvPlayerKeyAction.REVEAL_CENTER_CONTROLS -> {
                         showCenterControls()
@@ -1906,8 +1920,8 @@ fun NativeExoPlayer(
                     TvPlayerKeyAction.PREVIOUS -> dispatchPreviousKey()
                     TvPlayerKeyAction.SEEK_BACKWARD,
                     TvPlayerKeyAction.SEEK_FORWARD -> {
-                        val sign = if (decision.action == TvPlayerKeyAction.SEEK_FORWARD) 1L else -1L
-                        val seekMs = sign * decision.multiplier * seekIntervalSeconds * 1000L
+                        val sign = if (actionDecision.action == TvPlayerKeyAction.SEEK_FORWARD) 1L else -1L
+                        val seekMs = sign * actionDecision.multiplier * seekIntervalSeconds * 1000L
                         exoPlayer.seekTo(
                             (exoPlayer.currentPosition + seekMs)
                                 .coerceIn(0L, duration.coerceAtLeast(0L))
@@ -1918,7 +1932,7 @@ fun NativeExoPlayer(
                     }
                     TvPlayerKeyAction.SEEK_PERCENT -> {
                         if (duration > 0L) {
-                            exoPlayer.seekTo((duration * decision.percent / 100L).coerceIn(0L, duration))
+                            exoPlayer.seekTo((duration * actionDecision.percent / 100L).coerceIn(0L, duration))
                         }
                         true
                     }
@@ -1954,6 +1968,13 @@ fun NativeExoPlayer(
                     view.player = exoPlayer
                     view.resizeMode = resizeMode
                     view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
+                    view.subtitleView?.setFixedTextSize(
+                        android.util.TypedValue.COMPLEX_UNIT_SP,
+                        18f * subtitleTextScale.coerceIn(.8f, 1.8f)
+                    )
+                    view.subtitleView?.setBottomPaddingFraction(
+                        (0.08f + subtitleBottomInsetDp.coerceIn(0, 120) / 900f).coerceIn(0.08f, 0.25f)
+                    )
                 },
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { view -> view.player = null }

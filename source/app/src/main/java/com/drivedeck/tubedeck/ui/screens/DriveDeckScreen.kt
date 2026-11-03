@@ -9,6 +9,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -238,14 +239,14 @@ fun DriveDeckScreen(
             if (!playlistMode) {
                 // Adapt to *measured* width, not pixel resolution or device label.
                 // Phones must never squeeze three panels into 100-200dp columns.
-                item(key = "home-responsive-feeds") {
+                item(key = "home-three-feeds") {
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
-                        val threeWideColumns = maxWidth >= 900.dp &&
-                            deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
-                        val swipePanels = !threeWideColumns &&
-                            deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
+                        val layout = HomeLayoutPolicy.decide(
+                            availableWidthDp = maxWidth.value.toInt(),
+                            threeColumnTheme = deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
+                        )
 
                         @Composable
                         fun Feed(index: Int, feedModifier: Modifier, horizontalCards: Boolean) {
@@ -316,7 +317,7 @@ fun DriveDeckScreen(
                         }
 
                         when {
-                            threeWideColumns -> Row(
+                            layout == HomeLayoutPolicy.Layout.WIDE_COLUMNS -> Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -324,7 +325,7 @@ fun DriveDeckScreen(
                                     Feed(index, Modifier.weight(1f), horizontalCards = false)
                                 }
                             }
-                            swipePanels -> {
+                            layout == HomeLayoutPolicy.Layout.SWIPE_PANELS -> {
                                 // One readable panel per viewport; swipe left/right to move
                                 // History -> Relevant -> Trending. The next panel peeks in.
                                 val panelWidth = (maxWidth - 30.dp).coerceAtMost(620.dp)

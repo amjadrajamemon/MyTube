@@ -85,16 +85,13 @@ def audit(apk, args):
     if not good:
         problems.append("AAPT2 manifest/badging validation failed: " + data[-500:])
     package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", data)
-    min_sdk = re.search(r"sdkVersion:\s*'([^']+)'", data)
+    min_sdk = re.search(r"(?:minSdkVersion|sdkVersion):\s*'([^']+)'", data)
     target_sdk = re.search(r"targetSdkVersion:'([^']+)'", data)
     result["package"] = package.groups() if package else None
     result["min_sdk"] = min_sdk.group(1) if min_sdk else None
     result["target_sdk"] = target_sdk.group(1) if target_sdk else None
     if not package or package.groups() != ("com.aistudio.tubedeck.kxmvd", "103", "2.0.0"):
         problems.append("Unexpected package name or v2.0.0 manifest version")
-    if not min_sdk:
-        print("AAPT2 badging SDK metadata:", repr([line for line in data.splitlines()
-            if "sdk" in line.lower() or "version" in line.lower()][:18]))
     if not min_sdk or min_sdk.group(1) != "24":
         problems.append("Unexpected minSdk (expected Android API 24)")
     if not target_sdk or target_sdk.group(1) != "36":

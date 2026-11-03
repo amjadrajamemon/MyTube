@@ -133,6 +133,7 @@ fun SettingsScreen(
     var animatedCardPreviews by remember { mutableStateOf(currentSettings.animatedCardPreviews) }
     var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
     var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
+    var resumeAfterInterruptions by remember { mutableStateOf(currentSettings.resumeAfterInterruptions) }
     var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
     var subtitleBottomInsetDp by remember { mutableIntStateOf(currentSettings.subtitleBottomInsetDp.coerceIn(0, 120)) }
     var remoteNextKeyCode by remember { mutableIntStateOf(currentSettings.remoteNextKeyCode) }
@@ -652,6 +653,9 @@ fun SettingsScreen(
                     "Optional: tries YouTube's short animated WebP thumbnail after 1.1 seconds of focus. Uses no second video player; falls back to the static image. Disabled in Low Resource Mode or on older Android.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
+                ToggleRow("Ask to resume saved position after a restart or interruption", resumeAfterInterruptions) {
+                    resumeAfterInterruptions = it
+                }
                 ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
                     lowResourceMode = it
                 }
@@ -825,6 +829,7 @@ fun SettingsScreen(
                             animatedCardPreviews = animatedCardPreviews,
                             hideWatchedRecommendations = hideWatchedRecommendations,
                             lowResourceMode = lowResourceMode,
+                            resumeAfterInterruptions = resumeAfterInterruptions,
                             subtitleTextScale = subtitleTextScale,
                             subtitleBottomInsetDp = subtitleBottomInsetDp,
                             remoteNextKeyCode = remoteNextKeyCode,

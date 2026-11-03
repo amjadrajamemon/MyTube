@@ -397,6 +397,8 @@ class MainActivity : ComponentActivity() {
                 val playlistSearchStatus by repository.playlistSearchStatus.collectAsStateWithLifecycle()
                 val homeCountry by repository.homeCountry.collectAsStateWithLifecycle()
                 val homeTrendingStatus by repository.homeTrendingStatus.collectAsStateWithLifecycle()
+                val moreFeedsLoading by repository.moreFeedsLoading.collectAsStateWithLifecycle()
+                val moreFeedsExhausted by repository.moreFeedsExhausted.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val blockedAdsCount by repository.blockedAdsCount.collectAsStateWithLifecycle()
 
@@ -1161,6 +1163,9 @@ class MainActivity : ComponentActivity() {
                                     trendingStatus = homeTrendingStatus,
                                     viewStateKey = currentScreen.name,
                                     onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
+                                    onLoadMoreHomeFeed = { feed -> repository.loadMoreHomeFeed(feed) },
+                                    moreFeedsLoading = moreFeedsLoading,
+                                    moreFeedsExhausted = moreFeedsExhausted,
                                     onClearLiveSearch = { repository.clearLiveSearch() },
                                     onOpenVideo = { item ->
                                         val media = OfflineMedia(

@@ -133,6 +133,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.data.model.ViewingMode
+import com.drivedeck.tubedeck.data.model.ViewingModePolicy
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
 import com.drivedeck.tubedeck.data.model.PlaylistItem
@@ -141,6 +143,7 @@ import com.drivedeck.tubedeck.player.LiveDubEngine
 import com.drivedeck.tubedeck.player.LiveDubLanguages
 import com.drivedeck.tubedeck.player.LiveDubInputMode
 import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
+import com.drivedeck.tubedeck.player.NightAudioController
 import com.drivedeck.tubedeck.player.PlaybackEqualizerController
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
@@ -204,6 +207,9 @@ fun PlayerScreen(
     preferredPlaybackQualityHeight: Int = 0,
     preferredPlaybackSpeed: Float = 1.0f,
     seekIntervalSeconds: Int = 10,
+    viewingMode: ViewingMode = ViewingMode.NORMAL,
+    viewingDimPercent: Int = 55,
+    nightAudioEnabled: Boolean = false,
     initialPositionMs: Long = 0L,
     resumeGeneration: Int = 0,
     pauseGeneration: Int = 0,
@@ -212,6 +218,7 @@ fun PlayerScreen(
     onEnterPip: () -> Unit,
     onAudioOnly: () -> Unit = {},
     onPlaybackPreferenceChanged: (Float, Int, Int) -> Unit = { _, _, _ -> },
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit = { _, _, _ -> },
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
@@ -317,6 +324,10 @@ fun PlayerScreen(
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
             preferredPlaybackSpeed = preferredPlaybackSpeed,
             seekIntervalSeconds = seekIntervalSeconds,
+            viewingMode = viewingMode,
+            viewingDimPercent = viewingDimPercent,
+            nightAudioEnabled = nightAudioEnabled,
+            onViewingPreferencesChanged = onViewingPreferencesChanged,
             initialPositionMs = initialPositionMs,
             resumeGeneration = resumeGeneration,
             pauseGeneration = pauseGeneration,
@@ -553,6 +564,10 @@ fun NativeExoPlayer(
     preferredPlaybackQualityHeight: Int,
     preferredPlaybackSpeed: Float,
     seekIntervalSeconds: Int,
+    viewingMode: ViewingMode,
+    viewingDimPercent: Int,
+    nightAudioEnabled: Boolean,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit,
     initialPositionMs: Long,
     resumeGeneration: Int,
     pauseGeneration: Int,
@@ -658,6 +673,9 @@ fun NativeExoPlayer(
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showCaptionMenu by remember { mutableStateOf(false) }
+    var viewingMenuVisible by remember { mutableStateOf(false) }
+    var dimPreview by remember { mutableIntStateOf(viewingDimPercent.coerceIn(10, 85)) }
+    LaunchedEffect(viewingDimPercent) { dimPreview = viewingDimPercent.coerceIn(10, 85) }
     var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
     var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
@@ -691,6 +709,10 @@ fun NativeExoPlayer(
     var showEqualizer by rememberSaveable(media.id) { mutableStateOf(false) }
     val equalizerController = remember(media.id) { PlaybackEqualizerController(context.applicationContext) }
     var equalizerSnapshot by remember(media.id) { mutableStateOf(equalizerController.snapshot()) }
+    val nightAudioController = remember(media.id) { NightAudioController() }
+    var nightAudioActive by remember(media.id) { mutableStateOf(false) }
+    val latestNightAudioEnabled by rememberUpdatedState(nightAudioEnabled)
+    val nightAudioSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !carHeadUnit
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
@@ -1160,7 +1182,8 @@ fun NativeExoPlayer(
         DeckPlayerChrome.CYBER, DeckPlayerChrome.HUD
     )
     val largeTvControls = themeProfile.playerChrome == DeckPlayerChrome.TV_CLASSIC
-    val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
+    val compactPortrait = isPortrait && viewingMode != ViewingMode.CINEMA &&
+        !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
     // The spinner and central Play/Pause row must share the exact same offset.
     // More importantly, BOTH are positioned inside safeDrawing insets. The old
@@ -1472,6 +1495,9 @@ fun NativeExoPlayer(
             }
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(audioSessionId)
+                nightAudioActive = nightAudioController.apply(
+                    audioSessionId, latestNightAudioEnabled && nightAudioSupported
+                )
             }
             override fun onCues(cueGroup: CueGroup) {
                 val cue = cueGroup.cues
@@ -1594,6 +1620,7 @@ fun NativeExoPlayer(
             PlaybackHardwareButtonBridge.unregister(exoPlayer)
             exoPlayer.removeListener(listener)
             exoPlayer.removeAnalyticsListener(analytics)
+            nightAudioController.release()
             equalizerController.release()
             liveDubEngine.close()
             mediaSession.release()
@@ -1601,6 +1628,11 @@ fun NativeExoPlayer(
         }
     }
 
+    LaunchedEffect(nightAudioEnabled, nightAudioSupported, exoPlayer) {
+        nightAudioActive = nightAudioController.apply(
+            exoPlayer.audioSessionId, nightAudioEnabled && nightAudioSupported
+        )
+    }
     LaunchedEffect(media.id, media.mediaUri, manualRecoveryAttempts) {
         isPreparing = true
         isBuffering = false
@@ -1934,8 +1966,14 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(activity, isFullscreen) {
-        activity?.let { setFullscreen(it, isFullscreen) }
+    LaunchedEffect(activity, isFullscreen, viewingMode) {
+        activity?.let { setFullscreen(it, isFullscreen || viewingMode == ViewingMode.CINEMA) }
+    }
+    LaunchedEffect(viewingMode) {
+        if (viewingMode == ViewingMode.CINEMA) {
+            showPlaybackModeCards = false
+            controlsVisible = false
+        }
     }
 
     // TV Back first dismisses a visible player overlay, as it does in SmartTube.
@@ -2110,6 +2148,17 @@ fun NativeExoPlayer(
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { view -> view.player = null }
             )
+            }
+
+            // Decorative dimming sits over the video but below gestures and controls.
+            if (!inPictureInPicture) {
+                val videoDim = ViewingModePolicy.videoDim(viewingMode, dimPreview)
+                if (videoDim > 0f) {
+                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = videoDim)))
+                }
+                if (viewingMode == ViewingMode.NIGHT) {
+                    Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = 0.055f)))
+                }
             }
 
             if (gestureEnabled) {
@@ -2957,6 +3006,75 @@ fun NativeExoPlayer(
                                     )
                                 }
 
+
+                                Box {
+                                    IconButton(
+                                        onClick = { viewingMenuVisible = true; controlsVisible = true },
+                                        modifier = Modifier.size(controllerHeight)
+                                            .tvInputHighlight(RoundedCornerShape(8.dp))
+                                    ) {
+                                        Icon(Icons.Default.NightsStay,
+                                            "Lights Out, Cinema, Night and Night Audio",
+                                            tint = if (viewingMode != ViewingMode.NORMAL || nightAudioEnabled)
+                                                TubeDeckAccentCyan else Color.White,
+                                            modifier = Modifier.size(controllerIconSize))
+                                    }
+                                    DropdownMenu(
+                                        expanded = viewingMenuVisible,
+                                        onDismissRequest = {
+                                            onViewingPreferencesChanged(viewingMode, dimPreview, nightAudioEnabled)
+                                            viewingMenuVisible = false
+                                        }
+                                    ) {
+                                        Text("Viewing mode",
+                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 7.dp),
+                                            fontWeight = FontWeight.SemiBold)
+                                        ViewingMode.values().forEach { mode ->
+                                            DropdownMenuItem(
+                                                text = { Text(mode.label) },
+                                                leadingIcon = {
+                                                    if (viewingMode == mode) Icon(Icons.Default.Check, null)
+                                                },
+                                                onClick = {
+                                                    onViewingPreferencesChanged(mode, dimPreview, nightAudioEnabled)
+                                                    viewingMenuVisible = false
+                                                }
+                                            )
+                                        }
+                                        if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                                            Text("Dimming · $dimPreview%",
+                                                modifier = Modifier.padding(horizontal = 15.dp),
+                                                fontSize = 12.sp)
+                                            Slider(
+                                                value = dimPreview.toFloat(),
+                                                onValueChange = { dimPreview = it.toInt().coerceIn(10, 85) },
+                                                onValueChangeFinished = {
+                                                    onViewingPreferencesChanged(viewingMode, dimPreview, nightAudioEnabled)
+                                                },
+                                                valueRange = 10f..85f,
+                                                modifier = Modifier.width(240.dp).padding(horizontal = 14.dp)
+                                            )
+                                        }
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(if (!nightAudioSupported) "Night Audio · unavailable"
+                                                    else "Night Audio · " + (if (nightAudioEnabled) "On" else "Off"))
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Headphones, null) },
+                                            enabled = nightAudioSupported,
+                                            onClick = {
+                                                onViewingPreferencesChanged(viewingMode, dimPreview, !nightAudioEnabled)
+                                                viewingMenuVisible = false
+                                            }
+                                        )
+                                        if (nightAudioEnabled && nightAudioSupported && !nightAudioActive) {
+                                            Text("Audio effect pending or unsupported on this output",
+                                                modifier = Modifier.padding(horizontal = 15.dp),
+                                                fontSize = 10.sp)
+                                        }
+                                    }
+                                }
                                 IconButton(
                                     onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
                                     modifier = Modifier.size(controllerHeight)
@@ -3283,6 +3401,11 @@ fun NativeExoPlayer(
         PlayerSettingsDialog(
             captionsEnabled = captionsEnabled,
             hasCaptions = hasCaptions,
+            viewingMode = viewingMode,
+            viewingDimPercent = dimPreview,
+            nightAudioEnabled = nightAudioEnabled,
+            nightAudioAvailable = nightAudioSupported,
+            onViewingPreferencesChanged = onViewingPreferencesChanged,
             gestureEnabled = gestureEnabled,
             autoHideControls = autoHideControls,
             fullscreen = isFullscreen,
@@ -5247,6 +5370,11 @@ private fun NativeCommentRow(comment: YoutubeStreamResolver.NativeComment) {
 private fun PlayerSettingsDialog(
     captionsEnabled: Boolean,
     hasCaptions: Boolean,
+    viewingMode: ViewingMode,
+    viewingDimPercent: Int,
+    nightAudioEnabled: Boolean,
+    nightAudioAvailable: Boolean,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit,
     gestureEnabled: Boolean,
     autoHideControls: Boolean,
     fullscreen: Boolean,
@@ -5294,6 +5422,39 @@ private fun PlayerSettingsDialog(
                 Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text("Viewing mode", fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ViewingMode.values().forEach { mode ->
+                        FilterChip(
+                            selected = viewingMode == mode,
+                            onClick = { onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled) },
+                            label = { Text(mode.label) }
+                        )
+                    }
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · $viewingDimPercent%")
+                    Slider(
+                        value = viewingDimPercent.toFloat(),
+                        onValueChange = {
+                            onViewingPreferencesChanged(viewingMode, it.toInt(), nightAudioEnabled)
+                        },
+                        valueRange = 10f..85f
+                    )
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Night Audio", Modifier.weight(1f))
+                    Switch(
+                        checked = nightAudioEnabled,
+                        onCheckedChange = {
+                            onViewingPreferencesChanged(viewingMode, viewingDimPercent, it)
+                        },
+                        enabled = nightAudioAvailable
+                    )
+                }
+                if (!nightAudioAvailable) Text("Night Audio unavailable on this device", fontSize = 11.sp)
+                HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Gestures", Modifier.weight(1f))
                     Switch(gestureEnabled, onGestures)

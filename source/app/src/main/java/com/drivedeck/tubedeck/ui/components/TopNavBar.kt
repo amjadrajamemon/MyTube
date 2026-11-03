@@ -48,7 +48,8 @@ fun TopNavBar(
     recentSearches: List<String> = emptyList(),
     onRemoveRecentSearch: (String) -> Unit = {},
     onClearRecentSearches: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    includeStatusBarInset: Boolean = true
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
     val focusManager = LocalFocusManager.current

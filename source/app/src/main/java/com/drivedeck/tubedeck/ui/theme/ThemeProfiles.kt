@@ -89,6 +89,7 @@ object DeckThemeCatalog {
             subtitle = "Translucent-style dark glass · roomy spacing"),
         DeckThemeProfile("VLC Classic", 0xFF00E5FFL, 0xFF000000L,
             cornerRadiusDp = 0, contentGapDp = 5, navigationHeightDp = 60,
+            navigationPlacement = DeckNavigationPlacement.SIDE,
             geometry = DeckCardGeometry.SQUARE,
             homePresentation = DeckHomePresentation.AMOLED_INDEX,
             playerChrome = DeckPlayerChrome.VLC_COMPACT, navVisual = DeckNavVisual.ICONS,

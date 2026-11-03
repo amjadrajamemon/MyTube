@@ -3658,6 +3658,11 @@ private fun PlaybackContinuationCards(
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
+    relatedLoading: Boolean = false,
+    relatedError: Boolean = false,
+    firstFocus: FocusRequester? = null,
+    onClose: () -> Unit = {},
+    onRetry: () -> Unit = {},
     onPlayMedia: (OfflineMedia) -> Unit
 ) {
     val episodeCards = remember(episodeShelf, currentVideoId) {
@@ -3687,6 +3692,19 @@ private fun PlaybackContinuationCards(
         shadowElevation = 10.dp
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("More videos", color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier.then(
+                        if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier
+                    ).tvInputHighlight(RoundedCornerShape(8.dp))
+                ) { Text("Close", color = TubeDeckAccentCyan) }
+            }
             if (!showRelevantShelf && !showEpisodesShelf) {
                 Text(
                     "Relevant and Episodes rows are disabled in Settings",
@@ -3730,9 +3748,19 @@ private fun PlaybackContinuationCards(
                             }
                         }
                     }
+                } else if (relatedLoading) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Finding related videos…", color = TubeDeckTextSecondary)
+                    }
+                } else if (relatedError) {
+                    TextButton(onClick = onRetry) {
+                        Text("Recommendations unavailable · Retry", color = TubeDeckAccentCyan)
+                    }
                 } else {
                     Text(
-                        "No relevant cards available yet",
+                        "No related cards on this video",
                         color = TubeDeckTextSecondary,
                         fontSize = 10.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -4688,8 +4716,7 @@ private fun RelatedVideoCard(
             fontWeight = FontWeight.SemiBold,
             fontSize = 9.5.sp,
             lineHeight = 11.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            softWrap = true
         )
         Text(
             video.channelTitle,

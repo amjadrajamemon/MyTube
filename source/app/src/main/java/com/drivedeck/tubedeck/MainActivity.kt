@@ -1306,6 +1306,7 @@ class MainActivity : ComponentActivity() {
                                         animatedCardPreviews = settings.animatedCardPreviews,
                                         hideWatchedRecommendations = settings.hideWatchedRecommendations,
                                         lowResourceMode = settings.lowResourceMode,
+                                        resumeAfterInterruptions = settings.resumeAfterInterruptions,
                                         subtitleTextScale = settings.subtitleTextScale,
                                         subtitleBottomInsetDp = settings.subtitleBottomInsetDp,
                                         remoteNextKeyCode = settings.remoteNextKeyCode,

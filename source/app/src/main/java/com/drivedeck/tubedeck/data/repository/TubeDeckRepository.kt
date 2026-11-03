@@ -36,6 +36,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+    private val videoHistoryArchive = VideoHistoryArchive(context)
     private val _screenBlackoutEnabled = MutableStateFlow(prefs.getBoolean("screen_blackout_enabled", false))
     val screenBlackoutEnabled: StateFlow<Boolean> = _screenBlackoutEnabled.asStateFlow()
 
@@ -90,6 +91,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadHistory: StateFlow<List<DownloadTask>> = _downloadHistory.asStateFlow()
     private val _watchHistory = MutableStateFlow(loadWatchHistory())
     val watchHistory: StateFlow<List<HomeVideo>> = _watchHistory.asStateFlow()
+    private var historyLoadedCount = _watchHistory.value.size
+    private var historyMoreJob: Job? = null
     private val _recentSearches = MutableStateFlow(loadRecentSearches())
     val recentSearches: StateFlow<List<String>> = _recentSearches.asStateFlow()
     private val _homeSuggestions = MutableStateFlow(loadHomeSuggestions())
@@ -487,12 +490,22 @@ class TubeDeckRepository private constructor(private val context: Context) {
             thumbnailUrl = media.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
             watchedAt = System.currentTimeMillis()
         )
-        val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(40)
+        runCatching { videoHistoryArchive.upsert(item) }
+        val wasLoaded = _watchHistory.value.any { it.videoId == videoId }
+        val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(700)
+        if (!wasLoaded) historyLoadedCount++
         _watchHistory.value = next
-        saveHomeVideos("watch_history_json", next)
+        // Compact preference snapshot for legacy migrations; the SQLite archive
+        // holds the full paged history without a lifetime-entry limit.
+        saveHomeVideos("watch_history_json", next.take(40))
+        _moreFeedsExhausted.value = _moreFeedsExhausted.value - "History"
     }
 
     fun clearWatchHistory() {
+        historyMoreJob?.cancel()
+        historyLoadedCount = 0
+        runCatching { videoHistoryArchive.clear() }
+        _moreFeedsExhausted.value = _moreFeedsExhausted.value - "History"
         homeSuggestionsJob?.cancel()
         homeSuggestionsJob = null
         _watchHistory.value = emptyList()
@@ -716,6 +729,30 @@ class TubeDeckRepository private constructor(private val context: Context) {
      * When the provider has no next-page cursor, the UI shows an end-of-feed state.
      */
     fun loadMoreHomeFeed(feed: String) {
+        if (feed == "History") {
+            if (historyMoreJob?.isActive == true || feed in _moreFeedsExhausted.value) return
+            historyMoreJob = scope.launch {
+                _moreFeedsLoading.value = _moreFeedsLoading.value + feed
+                try {
+                    val batch = videoHistoryArchive.page(historyLoadedCount, 50)
+                    ensureActive()
+                    historyLoadedCount += batch.size
+                    val seen = _watchHistory.value.mapTo(hashSetOf()) { it.videoId }
+                    _watchHistory.value = (_watchHistory.value +
+                        batch.filter { it.videoId !in seen }).takeLast(700)
+                    if (batch.size < 50) {
+                        _moreFeedsExhausted.value = _moreFeedsExhausted.value + feed
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    // User can retry using Load More; avoid crashing on provider/OEM storage.
+                } finally {
+                    _moreFeedsLoading.value = _moreFeedsLoading.value - feed
+                }
+            }
+            return
+        }
         if (feed !in setOf("Relevant", "Trending")) return
         if (homePageJobs[feed]?.isActive == true || feed in homePageExhausted) return
         val country = _homeCountry.value
@@ -1656,7 +1693,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
         prefs.edit().putString(key, array.toString()).apply()
     }
 
-    private fun loadWatchHistory(): List<HomeVideo> = loadHomeVideos("watch_history_json")
+    private fun loadWatchHistory(): List<HomeVideo> {
+        val legacy = loadHomeVideos("watch_history_json")
+        return runCatching {
+            videoHistoryArchive.importLegacyIfEmpty(legacy)
+            videoHistoryArchive.page(0, 60)
+        }.getOrElse { legacy }
+    }
 
     private fun loadHomeSuggestions(): List<HomeVideo> = loadHomeVideos("home_suggestions_json")
 

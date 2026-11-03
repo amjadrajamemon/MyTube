@@ -1,4 +1,4 @@
-name: MyTube v1.9.7 Core Fixes ARM64 + Universal
+name: MyTube v2.0.0 Core Fixes ARM64 + Universal
 
 on:
   push:
@@ -34,8 +34,8 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 102' source/app/build.gradle.kts
-          grep -Fq 'versionName = "1.9.7"' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 103' source/app/build.gradle.kts
+          grep -Fq 'versionName = "2.0.0"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
           HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
@@ -82,6 +82,17 @@ jobs:
           ! grep -Fq 'always-reachable audio-only blackout shortcut' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'connection.disconnect()' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           test -f QUALITY_AUDIT_v1.9.7_2026-11-03.md
+          test -f source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/ThemeProfiles.kt
+          grep -Fq 'appearancePreset = activeAppearance.appearancePreset' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
+          grep -Fq 'TubeDeckSideRail(' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
+          grep -Fq 'LazyRow(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq 'LazyColumn(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
+          grep -Fq 'loadMoreHomeFeed(feed)' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
+          grep -Fq 'searchVideosPage(' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
+          test -f source/app/src/main/java/com/drivedeck/tubedeck/ui/components/VideoBookmarksDialog.kt
+          test -f source/app/src/main/java/com/drivedeck/tubedeck/ui/components/RemoteInputTrainingDialog.kt
+          test -f source/app/src/test/java/com/drivedeck/tubedeck/player/PlaybackErrorAdvisorTest.kt
+          test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/TvRemoteKeyLearningPolicyTest.kt
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -144,7 +155,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.9.7-Android-Lint
+          name: MyTube-v2.0.0-Android-Lint
           path: |
             source/app/build/reports/lint-results-arm64Debug.html
             source/app/build/reports/lint-results-arm64Debug.xml
@@ -174,11 +185,11 @@ jobs:
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
               if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/MyTube-v1.9.7-ARM64-debug.apk"
+              cp "$APK" "dist/MyTube-v2.0.0-ARM64-debug.apk"
             else
               unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/MyTube-v1.9.7-Universal-debug.apk"
+              cp "$APK" "dist/MyTube-v2.0.0-Universal-debug.apk"
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -187,7 +198,7 @@ jobs:
       - name: Upload installable dual-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.9.7-ARM64-and-Universal
+          name: MyTube-v2.0.0-ARM64-and-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -199,13 +210,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.9.7-stability-blackout-hardening-20261103"
+          TAG="v2.0.0-modern-tv-suite-20261103"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to overwrite previous binaries"
             exit 1
           fi
-          gh release create "$TAG" dist/MyTube-v1.9.7-ARM64-debug.apk dist/MyTube-v1.9.7-Universal-debug.apk dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/MyTube-v2.0.0-ARM64-debug.apk dist/MyTube-v2.0.0-Universal-debug.apk dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MyTube v1.9.7 – Stability, Audio Efficiency and Blackout UI Hardening (ARM64 + Universal)" \
-            --notes "Hardening release: removes the permanent bottom-right blackout icon from normal playback while keeping the fading toolbar eye; adds a dim Restore Video control only on the blackout mask (tap anywhere to wake); fixes repeat loops and end-of-track continuation in background audio, avoids periodic wakeups while audio is paused, always disconnects NewPipe HTTP connections, and handles missing TV ROM memory/power/connectivity services conservatively. All v1.9.6 D-pad/air-mouse/keyboard navigation, PiP close, History/Relevant/Trending Home and IPTV removal remain. APKs are signed with the pinned update-compatible identity and verified by unit tests plus APK signature/ABI checks. See QUALITY_AUDIT_v1.9.7_2026-11-03.md; real-device regressions and Android lint remain part of hardening."
+            --title "MyTube v2.0.0 – Modern TV Suite · Themes, Cards, Bookmarks & Paging (ARM64 + Universal)" \
+            --notes "MyTube v2.0.0 integrates ten genuinely different UI themes (ATV, Xtreamity, Android, Linux Desktop, Digital HUD, Cinema, Glass Midnight, AMOLED Black, Retro Neon and Focus Minimal), app-wide typography/navigation placement, permanent three-column Home with independent horizontal/vertical lazy scrolling, differentiated List/Tile cards with wrapped titles, real paged recommendations/trending, on-demand TV floating cards and fallback, customizable remotes, local video bookmarks with notes and QR handoff, private session, low resource mode, subtitle geometry, and playback diagnostics. Retains v1.9.7 stability, autoplay, blackout and IPTV removal fixes. Provider-authored timed i/end screen cards may be unavailable; device testing and lint reports remain necessary."

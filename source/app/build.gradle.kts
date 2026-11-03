@@ -149,6 +149,7 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.documentfile)
     implementation(libs.coil.compose)
+    implementation("io.coil-kt:coil-gif:2.7.0")
     implementation(libs.newpipe.extractor)
     implementation(libs.mlkit.translate)
     // Bundled (~0.9 MB) language identification keeps Live Dub auto-detect fully on-device.

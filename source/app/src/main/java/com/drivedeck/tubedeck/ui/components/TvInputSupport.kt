@@ -34,16 +34,18 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
     // Many inexpensive AOSP TV boxes advertise a touchscreen despite having
     // only an air mouse, mini keyboard, or D-pad attached. Detect those real,
     // external controllers rather than relying exclusively on Leanback flags.
-    val physicalRemote = if (largeDisplay) {
-        InputDevice.getDeviceIds().any { id ->
-            val device = InputDevice.getDevice(id)
-            device != null && !device.isVirtual && (
+    val physicalRemote = InputDevice.getDeviceIds().any { id ->
+        val device = InputDevice.getDevice(id)
+        device != null && !device.isVirtual && (
+            // Cheap TV boxes often report a misleading phone-sized dp width.
+            (device.sources and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
+            (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+            (largeDisplay && (
                 (device.sources and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE ||
-                (device.sources and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
                 device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
-            )
-        }
-    } else false
+            ))
+        )
+    }
     return mode == Configuration.UI_MODE_TYPE_TELEVISION ||
         pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
         (largeDisplay && !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) ||

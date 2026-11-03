@@ -157,6 +157,7 @@ import com.drivedeck.tubedeck.ui.components.TvPlayerKeyAction
 import com.drivedeck.tubedeck.ui.components.TvRemoteKeyLearningPolicy
 import com.drivedeck.tubedeck.ui.components.VideoBookmarksDialog
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
+import com.drivedeck.tubedeck.player.CreatorLinksPolicy
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -816,6 +817,9 @@ fun NativeExoPlayer(
     // Next/Previous buttons. Send both remote and pointer actions through one queue
     // selection path rather than seeking within that single source.
     val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val creatorDescriptionLinks = remember(resolved?.description) {
+        CreatorLinksPolicy.extract(resolved?.description.orEmpty())
+    }
     val readyRelated = resolved?.relatedVideos.orEmpty()
     val readyUnplayed = readyRelated.filter { it.videoId != sourceVideoId &&
         (!hideWatchedRecommendations || it.videoId !in playedVideoIds) }
@@ -2227,6 +2231,32 @@ fun NativeExoPlayer(
                     episodesLoading = continuationEpisodesLoading,
                     currentVideoId = currentVideoId,
                     relatedVideos = shelfRelated,
+                    creatorLinks = creatorDescriptionLinks,
+                    onCreatorLink = { link ->
+                        if (link.kind == CreatorLinksPolicy.Kind.VIDEO &&
+                            link.videoId != null
+                        ) {
+                            onPlayRelated?.invoke(
+                                OfflineMedia(
+                                    id = "creator-link-${link.videoId}-${System.nanoTime()}",
+                                    title = "Creator-linked video",
+                                    videoId = link.videoId,
+                                    thumbnailUrl = "https://i.ytimg.com/vi/${link.videoId}/hqdefault.jpg",
+                                    mediaUri = link.url
+                                )
+                            )
+                        } else {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW, Uri.parse(link.url)
+                                    )
+                                )
+                            }.onFailure {
+                                Toast.makeText(context, "Could not open creator link", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     episodeShelf = continuationEpisodeShelf,
                     showRelevantShelf = showRelevantShelf,
                     showEpisodesShelf = showEpisodesShelf,
@@ -3709,6 +3739,8 @@ private fun PlaybackContinuationCards(
     episodesLoading: Boolean,
     currentVideoId: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    creatorLinks: List<CreatorLinksPolicy.Link> = emptyList(),
+    onCreatorLink: (CreatorLinksPolicy.Link) -> Unit = {},
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
@@ -3826,6 +3858,41 @@ private fun PlaybackContinuationCards(
                 Spacer(Modifier.height(4.dp))
                 HorizontalDivider(color = TubeDeckBorder.copy(alpha = .48f))
                 Spacer(Modifier.height(2.dp))
+            }
+
+            if (creatorLinks.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .5f))
+                Text(
+                    "Links from this video's creator",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) {
+                    items(creatorLinks, key = { "creator-${it.url}" }) { link ->
+                        TextButton(
+                            onClick = { onCreatorLink(link) },
+                            modifier = Modifier.tvInputHighlight(RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(
+                                when (link.kind) {
+                                    CreatorLinksPolicy.Kind.VIDEO -> Icons.Default.PlayCircle
+                                    CreatorLinksPolicy.Kind.PLAYLIST -> Icons.Default.PlaylistPlay
+                                    CreatorLinksPolicy.Kind.CHANNEL -> Icons.Default.Person
+                                }, null, tint = TubeDeckAccentCyan,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(link.label, color = TubeDeckTextPrimary, fontSize = 10.sp)
+                        }
+                    }
+                }
             }
 
             if (showEpisodesShelf) {

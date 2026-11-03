@@ -1523,6 +1523,9 @@ fun DriveDeckTopHeader(
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val desktopCommand = profile.navVisual == DeckNavVisual.COMMAND && maxWidth >= 700.dp
+            val youtubeDesktop = profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP && maxWidth >= 680.dp
+            val youtubePhone = profile.navVisual == DeckNavVisual.YOUTUBE_MOBILE ||
+                (profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP && !youtubeDesktop)
             val zen = profile.navVisual == DeckNavVisual.MINIMAL
             val horizontalPadding = if (profile.navVisual == DeckNavVisual.COMPACT) 6.dp else 12.dp
             val search: @Composable (Modifier) -> Unit = { searchModifier ->
@@ -1539,7 +1542,44 @@ fun DriveDeckTopHeader(
                     modifier = searchModifier
                 )
             }
-            if (desktopCommand) {
+            if (youtubeDesktop) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(Icons.Default.Menu, contentDescription = null,
+                        tint = TubeDeckTextPrimary, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Default.SmartDisplay, contentDescription = null,
+                        tint = TubeDeckAccentCyan, modifier = Modifier.size(26.dp))
+                    Text("MyTube", color = TubeDeckTextPrimary,
+                        fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
+                    Spacer(Modifier.width(4.dp))
+                    search(Modifier.weight(1f))
+                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
+                    }
+                }
+            } else if (youtubePhone) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.SmartDisplay, contentDescription = null,
+                            tint = TubeDeckAccentCyan, modifier = Modifier.size(26.dp))
+                        Text("MyTube", color = TubeDeckTextPrimary,
+                            fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.weight(1f).padding(start = 5.dp))
+                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
+                        }
+                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                    }
+                    search(Modifier.fillMaxWidth())
+                }
+            } else if (desktopCommand) {
                 // A real desktop command strip: search and actions share the toolbar row.
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp),
@@ -1584,6 +1624,14 @@ fun DriveDeckTopHeader(
                             DeckPlayerChrome.CONSOLE -> Icons.Default.Terminal
                             DeckPlayerChrome.CLASSIC -> Icons.Default.PlayCircleFilled
                             DeckPlayerChrome.TV_CLASSIC -> Icons.Default.Tv
+                            DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> Icons.Default.SmartDisplay
+                            DeckPlayerChrome.PLEX -> Icons.Default.Movie
+                            DeckPlayerChrome.KODI -> Icons.Default.Theaters
+                            DeckPlayerChrome.MX_GESTURE -> Icons.Default.PlayCircleFilled
+                            DeckPlayerChrome.VLC_COMPACT -> Icons.Default.VideoLibrary
+                            DeckPlayerChrome.MATERIAL -> Icons.Default.SmartDisplay
+                            DeckPlayerChrome.APPLE_FLOAT -> Icons.Default.LiveTv
+                            DeckPlayerChrome.CYBER -> Icons.Default.Dashboard
                         }
                         Icon(headerIcon, null, tint = TubeDeckAccentCyan,
                             modifier = Modifier.size(if (profile.navVisual == DeckNavVisual.COMPACT) 24.dp else 30.dp))

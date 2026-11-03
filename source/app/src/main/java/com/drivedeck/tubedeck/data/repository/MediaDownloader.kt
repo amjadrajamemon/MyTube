@@ -52,6 +52,17 @@ internal object MediaDownloader {
         onProgress: (Progress) -> Unit
     ): OfflineMedia = withContext(Dispatchers.IO) {
         val app = context.applicationContext
+        // Check the actual Storage Access Framework destination before expensive
+        // extraction, downloading or muxing. A saved URI may be revoked or a USB
+        // folder may have disappeared after the user selected it.
+        val treeUri = settings.downloadTreeUri?.takeIf { it.isNotBlank() }
+            ?: error("Choose a download folder in Settings first")
+        val chosenTree = runCatching {
+            DocumentFile.fromTreeUri(app, Uri.parse(treeUri))
+        }.getOrNull()
+        require(chosenTree?.isDirectory == true && chosenTree.canWrite()) {
+            "Chosen download folder is unavailable or no longer writable; select it again in Settings"
+        }
         val resolved = YoutubeStreamResolver.resolveForDownload(app, task.url)
         require(resolved.durationSeconds > 0) {
             "Live or unbounded streams are not supported for offline downloads"
@@ -161,10 +172,6 @@ internal object MediaDownloader {
         val format = formatLabel(extension, task.mode == DownloadMode.AUDIO)
         val targetName = "${safeTitle}_${task.id}.$extension"
         val finalSize = completedStage.length()
-
-        val treeUri = settings.downloadTreeUri
-            ?.takeIf { it.isNotBlank() }
-            ?: error("Choose a download folder in Settings first")
 
         onProgress(
             Progress(

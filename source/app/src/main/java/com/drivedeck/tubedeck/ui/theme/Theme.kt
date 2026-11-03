@@ -51,8 +51,8 @@ fun TubeDeckTheme(
     val darkBackground = background.luminance() < 0.50f
     val onAccent = if (accent.luminance() > 0.55f) Color.Black else Color.White
 
-    val makeScheme = if (darkBackground) ::darkColorScheme else ::lightColorScheme
-    val scheme = makeScheme(
+    val scheme = if (darkBackground) {
+        darkColorScheme(
         primary = accent,
         onPrimary = onAccent,
         primaryContainer = TubeDeckSurfaceVariant,
@@ -72,7 +72,30 @@ fun TubeDeckTheme(
         outline = TubeDeckBorder,
         error = TubeDeckError,
         onError = primaryText
-    )
+        )
+    } else {
+        lightColorScheme(
+        primary = accent,
+        onPrimary = onAccent,
+        primaryContainer = TubeDeckSurfaceVariant,
+        onPrimaryContainer = accent,
+        secondary = TubeDeckAccentMint,
+        onSecondary = TubeDeckBackground,
+        secondaryContainer = TubeDeckSurfaceVariant,
+        onSecondaryContainer = TubeDeckAccentMint,
+        tertiary = TubeDeckAccentAmber,
+        onTertiary = TubeDeckBackground,
+        background = background,
+        onBackground = primaryText,
+        surface = TubeDeckSurface,
+        onSurface = primaryText,
+        surfaceVariant = TubeDeckSurfaceVariant,
+        onSurfaceVariant = TubeDeckTextSecondary,
+        outline = TubeDeckBorder,
+        error = TubeDeckError,
+        onError = primaryText
+        )
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {

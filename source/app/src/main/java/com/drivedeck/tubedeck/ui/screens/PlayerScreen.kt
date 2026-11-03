@@ -152,6 +152,8 @@ import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
+import com.drivedeck.tubedeck.ui.components.TvRemoteNavigationPolicy
+import com.drivedeck.tubedeck.ui.components.TvPlayerKeyAction
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -593,6 +595,7 @@ fun NativeExoPlayer(
     var tvControlsFocused by remember { mutableStateOf(false) }
     var tvPendingControlFocus by remember { mutableStateOf(false) }
     var tvPendingTopFocus by remember { mutableStateOf(false) }
+    var tvRestoreSurfaceFocus by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -1720,6 +1723,26 @@ fun NativeExoPlayer(
         activity?.let { setFullscreen(it, isFullscreen) }
     }
 
+    // TV Back first dismisses a visible player overlay, as it does in SmartTube.
+    // A subsequent Back is owned by the Activity and its PiP/exit state machine.
+    BackHandler(
+        enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
+            !showSettings && !showQuickActions && !showEqualizer &&
+            !showCaptionMenu && !showQualityMenu && !showComments &&
+            !showPlaybackModeCards
+    ) {
+        controlsVisible = false
+        tvRestoreSurfaceFocus = true
+    }
+
+    LaunchedEffect(controlsVisible, tvRestoreSurfaceFocus) {
+        if (!controlsVisible && tvRestoreSurfaceFocus) {
+            withFrameNanos { }
+            runCatching { tvSurfaceFocus.requestFocus() }
+            tvRestoreSurfaceFocus = false
+        }
+    }
+
     LaunchedEffect(media.id, tvNavigation) {
         if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
     }
@@ -1744,59 +1767,77 @@ fun NativeExoPlayer(
             if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
                 false
             } else {
-                when (key.nativeKeyEvent.keyCode) {
-                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> dispatchNextKey()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> dispatchPreviousKey()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                val decision = TvRemoteNavigationPolicy.decide(
+                    keyCode = key.nativeKeyEvent.keyCode,
+                    repeatCount = key.nativeKeyEvent.repeatCount,
+                    surfaceFocused = tvSurfaceFocused,
+                    controlsVisible = controlsVisible,
+                    modalVisible = showSettings || showQuickActions || showEqualizer ||
+                        showCaptionMenu || showQualityMenu || showPlaybackModeCards || showComments
+                )
+                fun showCenterControls() {
+                    controlsVisible = true
+                    tvPendingControlFocus = true
+                }
+                when (decision.action) {
+                    TvPlayerKeyAction.IGNORE -> false
+                    TvPlayerKeyAction.REVEAL_CENTER_CONTROLS -> {
+                        showCenterControls()
+                        true
+                    }
+                    TvPlayerKeyAction.REVEAL_TOP_CONTROLS -> {
+                        controlsVisible = true
+                        tvPendingTopFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.HIDE_CONTROLS -> {
+                        controlsVisible = false
+                        tvRestoreSurfaceFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.TOGGLE_CONTROLS -> {
+                        controlsVisible = !controlsVisible
+                        if (controlsVisible) tvPendingControlFocus = true
+                        else tvRestoreSurfaceFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.PLAY_PAUSE -> {
                         if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        controlsVisible = true
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { exoPlayer.play(); controlsVisible = true; true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
-                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> { exoPlayer.pause(); controlsVisible = true; true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
-                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD) 1 else -1
-                        exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
-                            .coerceIn(0L, duration.coerceAtLeast(0L)))
-                        controlsVisible = true
+                    TvPlayerKeyAction.PLAY -> {
+                        exoPlayer.play()
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
-                    AndroidKeyEvent.KEYCODE_ENTER,
-                    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
-                    AndroidKeyEvent.KEYCODE_BUTTON_A,
-                    AndroidKeyEvent.KEYCODE_SPACE -> {
-                        if (!tvSurfaceFocused) false else {
-                            controlsVisible = true
-                            tvPendingControlFocus = true
-                            true
-                        }
+                    TvPlayerKeyAction.PAUSE -> {
+                        exoPlayer.pause()
+                        true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_LEFT,
-                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (!tvSurfaceFocused) false else {
-                            val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
-                            exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
-                                .coerceIn(0L, duration.coerceAtLeast(0L)))
-                            controlsVisible = true
-                            true
-                        }
+                    TvPlayerKeyAction.STOP -> {
+                        exoPlayer.pause()
+                        onClose()
+                        true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN,
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                        if (!tvSurfaceFocused) false else {
-                            controlsVisible = true
-                            if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP) {
-                                tvPendingTopFocus = true
-                            } else {
-                                tvPendingControlFocus = true
-                            }
-                            true
-                        }
+                    TvPlayerKeyAction.NEXT -> dispatchNextKey()
+                    TvPlayerKeyAction.PREVIOUS -> dispatchPreviousKey()
+                    TvPlayerKeyAction.SEEK_BACKWARD,
+                    TvPlayerKeyAction.SEEK_FORWARD -> {
+                        val sign = if (decision.action == TvPlayerKeyAction.SEEK_FORWARD) 1L else -1L
+                        val seekMs = sign * decision.multiplier * seekIntervalSeconds * 1000L
+                        exoPlayer.seekTo(
+                            (exoPlayer.currentPosition + seekMs)
+                                .coerceIn(0L, duration.coerceAtLeast(0L))
+                        )
+                        // Seek while the overlay is hidden, then reveal the position
+                        // on the next OK/Down rather than stealing directional focus.
+                        true
                     }
-                    else -> false
+                    TvPlayerKeyAction.SEEK_PERCENT -> {
+                        if (duration > 0L) {
+                            exoPlayer.seekTo((duration * decision.percent / 100L).coerceIn(0L, duration))
+                        }
+                        true
+                    }
                 }
             }
         }

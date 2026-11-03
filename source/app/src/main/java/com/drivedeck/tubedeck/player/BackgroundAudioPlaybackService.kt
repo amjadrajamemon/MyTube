@@ -297,7 +297,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     val resolved = YoutubeStreamResolver.resolve(applicationContext, nextUrl)
                     YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
                 }
-                if (nextPlayable.isNullOrBlank() || sourceUrl != original) return@launch
+                if (sourceUrl != original) return@launch
+                if (nextPlayable.isNullOrBlank()) {
+                    if (player.playbackState == Player.STATE_ENDED) stopSelf()
+                    return@launch
+                }
 
                 player.pause()
                 BackgroundAudioController.markStopped(original)

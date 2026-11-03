@@ -1108,6 +1108,14 @@ fun NativeExoPlayer(
         DeckPlayerChrome.GLASS -> RoundedCornerShape(22.dp)
         DeckPlayerChrome.CLASSIC -> CircleShape
         DeckPlayerChrome.TV_CLASSIC -> RoundedCornerShape(4.dp)
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> CircleShape
+        DeckPlayerChrome.PLEX -> RoundedCornerShape(18.dp)
+        DeckPlayerChrome.KODI -> RoundedCornerShape(8.dp)
+        DeckPlayerChrome.MX_GESTURE -> RoundedCornerShape(25.dp)
+        DeckPlayerChrome.VLC_COMPACT -> RoundedCornerShape(2.dp)
+        DeckPlayerChrome.MATERIAL -> RoundedCornerShape(28.dp)
+        DeckPlayerChrome.APPLE_FLOAT -> RoundedCornerShape(26.dp)
+        DeckPlayerChrome.CYBER -> RoundedCornerShape(0.dp)
     }
     val playerOverlayOpacity = when (themeProfile.playerChrome) {
         DeckPlayerChrome.THEATER -> .50f
@@ -1116,10 +1124,22 @@ fun NativeExoPlayer(
         DeckPlayerChrome.ARCADE -> .46f
         DeckPlayerChrome.CLASSIC -> .35f
         DeckPlayerChrome.TV_CLASSIC -> .58f
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> .43f
+        DeckPlayerChrome.PLEX -> .50f
+        DeckPlayerChrome.KODI -> .29f
+        DeckPlayerChrome.MX_GESTURE -> .33f
+        DeckPlayerChrome.VLC_COMPACT -> .60f
+        DeckPlayerChrome.MATERIAL -> .40f
+        DeckPlayerChrome.APPLE_FLOAT -> .18f
+        DeckPlayerChrome.CYBER -> .61f
     }
     val playerButtonColor = when (themeProfile.playerChrome) {
-        DeckPlayerChrome.THEATER -> Color.White
-        DeckPlayerChrome.HUD -> TubeDeckAccentMint
+        DeckPlayerChrome.THEATER, DeckPlayerChrome.PLEX,
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP,
+        DeckPlayerChrome.APPLE_FLOAT -> Color.White
+        DeckPlayerChrome.HUD, DeckPlayerChrome.CYBER -> TubeDeckAccentMint
+        DeckPlayerChrome.VLC_COMPACT -> Color(0xFFFF9800)
+        DeckPlayerChrome.MATERIAL -> Color(0xFF6750A4)
         else -> TubeDeckAccentCyan
     }
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
@@ -2478,7 +2498,9 @@ fun NativeExoPlayer(
                     Row(
                         Modifier.fillMaxWidth().align(Alignment.TopCenter)
                             .then(if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
-                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE)
+                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CYBER ||
+                                themeProfile.playerChrome == DeckPlayerChrome.VLC_COMPACT)
                                 Modifier.background(Color.Black.copy(alpha = .72f))
                             else Modifier)
                             .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -2496,13 +2518,18 @@ fun NativeExoPlayer(
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                             Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "${if (autoQuality) "Auto • ${selectedHeight}p" else qualityLabel} • ${playbackSpeed}x • ${resizeModeLabel(resizeMode)}${if (liveDubEnabled) " • Dub ${LiveDubLanguages.label(dubTargetCode)}" else ""}",
-                                color = Color.White.copy(alpha = .72f),
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CYBER ||
+                                themeProfile.playerChrome == DeckPlayerChrome.VLC_COMPACT) {
+                                Text(
+                                    "${if (autoQuality) "Auto • ${selectedHeight}p" else qualityLabel} • ${playbackSpeed}x • ${resizeModeLabel(resizeMode)}${if (liveDubEnabled) " • Dub ${LiveDubLanguages.label(dubTargetCode)}" else ""}",
+                                    color = Color.White.copy(alpha = .72f),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         IconButton(onClick = ::rotatePlayer) {
                             Icon(Icons.Default.ScreenRotation, "Rotate portrait/landscape", tint = Color.White)

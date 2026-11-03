@@ -7,6 +7,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.drivedeck.tubedeck.MainActivity
+import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
+import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import androidx.core.app.ServiceCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -100,6 +102,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var recoveryAttempts = 0
     private var resolveJob: kotlinx.coroutines.Job? = null
     private var nextAudioLookupInProgress = false
+    private val nextSession = AudioNextSessionPolicy()
 
     override fun onCreate() {
         super.onCreate()
@@ -131,6 +134,12 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             playWhenReady = false
             addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    // Snapshot promptly on pause/resume rather than polling twice per second.
+                    if (sourceUrl.isNotBlank()) {
+                        BackgroundAudioController.markPosition(
+                            sourceUrl, player.currentPosition.coerceAtLeast(0L)
+                        )
+                    }
                     if (isPlaying && startupPending) {
                         startupPending = false
                         BackgroundAudioController.markStarted(sourceUrl, currentTitle, currentArtwork)
@@ -151,6 +160,21 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_READY) recoveryAttempts = 0
+                    if (state == Player.STATE_ENDED) {
+                        // A foreground audio session must never remain an idle zombie.
+                        // Honor the user's continuation mode just like native video.
+                        when (TubeDeckRepository.get(applicationContext)
+                            .settings.value.playbackContinuationMode) {
+                            PlaybackContinuationMode.AUTO_NEXT -> {
+                                if (!skipBackgroundAudioNext()) stopSelf()
+                            }
+                            PlaybackContinuationMode.LOOP_CURRENT -> {
+                                player.seekTo(0L)
+                                player.play()
+                            }
+                            PlaybackContinuationMode.EPISODES -> stopSelf()
+                        }
+                    }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -196,8 +220,14 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             .build()
         serviceScope.launch {
             while (isActive) {
-                BackgroundAudioController.markPosition(sourceUrl, player.currentPosition.coerceAtLeast(0L))
-                delay(500L)
+                if (sourceUrl.isNotBlank() && player.playbackState != Player.STATE_IDLE) {
+                    BackgroundAudioController.markPosition(
+                        sourceUrl, player.currentPosition.coerceAtLeast(0L)
+                    )
+                }
+                // Position is only needed for Return to Video and the notification.
+                // Don't keep a sleeping TV box awake at 2 Hz while paused.
+                delay(if (player.isPlaying) 2_000L else 5_000L)
             }
         }
     }
@@ -215,18 +245,23 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         val searchHint = currentTitle
         serviceScope.launch {
             try {
-                val cached = YoutubeStreamResolver.peekForHandoff(original)
-                val suggested = cached?.relatedVideos?.firstOrNull {
-                    it.videoId.isNotBlank() && it.videoId != YoutubeUrls.videoId(original)
-                }
                 val currentVideoId = YoutubeUrls.videoId(original).orEmpty()
+                val cached = YoutubeStreamResolver.peekForHandoff(original)
+                val suggestedCandidates = cached?.relatedVideos.orEmpty()
+                val suggestedId = nextSession.firstUnplayed(
+                    currentVideoId, suggestedCandidates.map { it.videoId }
+                )
+                val suggested = suggestedCandidates.firstOrNull { it.videoId == suggestedId }
+
                 val watchNext = if (suggested == null) {
                     runCatching {
                         withTimeoutOrNull(8_000L) {
-                            YoutubeWatchNextClient.resolve(original, currentVideoId)
-                                .relatedVideos.firstOrNull {
-                                    it.videoId.isNotBlank() && it.videoId != currentVideoId
-                                }
+                            val candidates = YoutubeWatchNextClient.resolve(original, currentVideoId)
+                                .relatedVideos
+                            val selected = nextSession.firstUnplayed(
+                                currentVideoId, candidates.map { it.videoId }
+                            )
+                            candidates.firstOrNull { it.videoId == selected }
                         }
                     }.getOrNull()
                 } else null
@@ -234,9 +269,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     searchHint.isNotBlank() && searchHint != "Now Playing"
                 ) {
                     withTimeoutOrNull(8_000L) {
-                        YoutubeStreamResolver.searchVideos(searchHint, 12).firstOrNull {
-                            it.videoId.isNotBlank() && it.videoId != currentVideoId
-                        }
+                        val candidates = YoutubeStreamResolver.searchVideos(searchHint, 12)
+                        val selected = nextSession.firstUnplayed(
+                            currentVideoId, candidates.map { it.videoId }
+                        )
+                        candidates.firstOrNull { it.videoId == selected }
                     }
                 } else null
                 val nextUrl = suggested?.url
@@ -244,7 +281,12 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     ?: searchNext?.url
                 val nextTitle = suggested?.title ?: watchNext?.title ?: searchNext?.title
                 val nextArtwork = suggested?.thumbnailUrl ?: watchNext?.thumbnailUrl ?: searchNext?.thumbnailUrl
-                if (nextUrl.isNullOrBlank() || sourceUrl != original) return@launch
+                if (nextUrl.isNullOrBlank()) {
+                    // End of queue: don't strand an ended ExoPlayer/foreground service.
+                    if (player.playbackState == Player.STATE_ENDED) stopSelf()
+                    return@launch
+                }
+                if (sourceUrl != original) return@launch
 
                 val nextPlayable = withContext(Dispatchers.IO) {
                     val resolved = YoutubeStreamResolver.resolve(applicationContext, nextUrl)
@@ -255,6 +297,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 player.pause()
                 BackgroundAudioController.markStopped(original)
                 sourceUrl = nextUrl
+                nextSession.recordPlayed(YoutubeUrls.videoId(nextUrl).orEmpty())
                 currentTitle = nextTitle.orEmpty().ifBlank { "YouTube audio" }
                 currentArtwork = nextArtwork
                 // The existing foreground session and audio focus remain active.
@@ -290,6 +333,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             player.stop()
             val directUrl = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
             sourceUrl = intent.getStringExtra(EXTRA_SOURCE_URL).orEmpty()
+            nextSession.startExplicitPlayback(YoutubeUrls.videoId(sourceUrl).orEmpty())
             if (sourceUrl.isNotBlank() && BackgroundAudioController.startup.isCurrent(requestId)) {
                 currentTitle = intent.getStringExtra(EXTRA_TITLE)
                     .orEmpty()

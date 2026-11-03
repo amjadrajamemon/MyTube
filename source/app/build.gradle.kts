@@ -163,6 +163,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Only the pure Java QR encoder; no ZXing camera/activity/permission dependency.
+    implementation("com.google.zxing:core:3.5.3")
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

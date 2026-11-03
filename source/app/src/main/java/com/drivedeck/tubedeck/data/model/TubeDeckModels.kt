@@ -122,7 +122,8 @@ data class TubeDeckSettings(
     val showRelevantShelf: Boolean = true,
     val showEpisodesShelf: Boolean = true,
     // Next-generation TV improvements are opt-in where extra work is involved.
-    val floatingCardsMode: String = "Manual", // Off, Manual, Last 15 seconds
+    val floatingCardsMode: String = "Manual",
+    val animatedCardPreviews: Boolean = false, // Off, Manual, Last 15 seconds
     val hideWatchedRecommendations: Boolean = true,
     val lowResourceMode: Boolean = false,
     val subtitleTextScale: Float = 1.0f,

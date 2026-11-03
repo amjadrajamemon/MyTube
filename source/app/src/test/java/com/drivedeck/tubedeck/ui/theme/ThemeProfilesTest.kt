@@ -20,6 +20,39 @@ class ThemeProfilesTest {
             ).joinToString("/")
         }
         assertEquals("Each theme must have its own structure, controls and player signature", themes.size, signatures.toSet().size)
+        assertEquals("Every theme must provide its own native player control profile",
+            themes.size, themes.map { it.playerChrome }.toSet().size)
+        assertTrue(themes.all { it.subtitle.length < 140 })
+
+    }
+
+    @Test
+    fun knownReferenceExperiencesHaveDistinctPlayerChrome() {
+        val required = listOf(
+            "SmartTube Pro", "YouTube Standard", "YouTube Desktop",
+            "Plex Cinema", "Kodi Arctic", "MX Player Pro", "VLC Classic",
+            "Android Material 3", "Apple TV Inspired", "Xtreamity IPTV",
+            "Linux Desktop", "Cyberpunk Digital", "ATV"
+        )
+        val themes = required.map { DeckThemeCatalog.get(it) }
+        assertEquals(required, themes.map { it.name })
+        assertEquals(required.size, themes.map { it.playerChrome }.toSet().size)
+        assertEquals(required.size, themes.map { it.homePresentation }.toSet().size)
+    }
+
+    @Test
+    fun oldPresetNamesResolveToTheirReplacementLayouts() {
+        val examples = mapOf(
+            "Glass Midnight" to "Kodi Arctic",
+            "Cinema" to "Plex Cinema",
+            "Retro Neon" to "MX Player Pro",
+            "Android" to "Android Material 3",
+            "Digital HUD" to "Cyberpunk Digital",
+            "SmartTube TV" to "SmartTube Pro"
+        )
+        examples.forEach { (oldName, newName) ->
+            assertEquals(newName, DeckThemeCatalog.get(oldName).name)
+        }
     }
 
     @Test

@@ -216,8 +216,8 @@ jobs:
           set -euo pipefail
           TAG="v2.0.0-modern-tv-suite-20261103"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $TAG already exists; refusing to overwrite previous binaries"
-            exit 1
+            echo "::notice::Release $TAG already exists. Keeping published APKs unchanged; updated developer builds are available as GitHub Actions artifacts for this run."
+            exit 0
           fi
           gh release create "$TAG" dist/MyTube-v2.0.0-ARM64-debug.apk dist/MyTube-v2.0.0-Universal-debug.apk dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \

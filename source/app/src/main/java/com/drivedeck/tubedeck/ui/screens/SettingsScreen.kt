@@ -382,23 +382,14 @@ fun SettingsScreen(
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
                 HorizontalDivider()
-                ToggleRow("Force Android TV remote / air-mouse mode", forceTvNavigation) {
+                ToggleRow("Force TV remote mode (fallback)", forceTvNavigation) {
                     forceTvNavigation = it
                 }
-                Text(
-                    "Enable on generic TV boxes if MyTube does not recognize the remote, air mouse, or physical keyboard. Supports native TV search and focus navigation without changing phone/car defaults.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
                 TextButton(onClick = { showRemoteTraining = true }) {
                     Icon(Icons.Default.Keyboard, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Learn TV remote buttons and keyboard keys")
                 }
-                Text(
-                    "The mapping is applied after saving Settings. System Home, Back, volume and D-pad direction keys are protected from remapping.",
-                    color = TubeDeckTextSecondary, fontSize = 11.sp
-                )
                 ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
                 Text(
                     "Use YouTube's desktop Home, search and watch pages with Standard and Theater views. Downloads and MyTube settings remain accessible. YouTube may restrict Google sign-in inside WebView.",
@@ -427,13 +418,8 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "XY AUTO car player") {
-                ToggleRow("XY AUTO compatibility", xyAutoCompatibilityMode) { xyAutoCompatibilityMode = it }
-                Text(
-                    "Use if native playback returns to search on your car unit. Prefers software decoding and lower video quality. Save settings before playing.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            SettingsCard(title = "Car player compatibility") {
+                ToggleRow("Force XY AUTO compatibility (fallback)", xyAutoCompatibilityMode) { xyAutoCompatibilityMode = it }
                 TextButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("MyTube playback report", PlaybackDiagnostics.report(context)))

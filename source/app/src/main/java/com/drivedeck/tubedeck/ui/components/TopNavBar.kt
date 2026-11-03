@@ -57,7 +57,7 @@ fun TopNavBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding(),
+            .then(if (includeStatusBarInset) Modifier.statusBarsPadding() else Modifier),
         color = TubeDeckSurface,
         tonalElevation = 8.dp
     ) {

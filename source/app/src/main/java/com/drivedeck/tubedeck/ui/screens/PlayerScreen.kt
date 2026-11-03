@@ -154,6 +154,9 @@ import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.components.TvRemoteNavigationPolicy
 import com.drivedeck.tubedeck.ui.components.TvPlayerKeyAction
+import com.drivedeck.tubedeck.ui.components.TvRemoteKeyLearningPolicy
+import com.drivedeck.tubedeck.ui.components.VideoBookmarksDialog
+import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -178,6 +181,13 @@ fun PlayerScreen(
     sideBySideEpisodeFeeds: Boolean = true,
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
+    floatingCardsMode: String = "Manual",
+    hideWatchedRecommendations: Boolean = true,
+    lowResourceMode: Boolean = false,
+    subtitleTextScale: Float = 1.0f,
+    subtitleBottomInsetDp: Int = 0,
+    remoteNextKeyCode: Int = 0,
+    remotePreviousKeyCode: Int = 0,
     playerControllerScale: Float = 1.20f,
     equalizerTextScale: Float = 1.25f,
     playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
@@ -543,8 +553,9 @@ fun NativeExoPlayer(
     val context = LocalContext.current
     val activity = context as? Activity
     val carHeadUnit = xyAutoCompatibilityMode
-    val resourceLimits = remember(context, carHeadUnit) {
-        PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
+    val resourceLimits = remember(context, carHeadUnit, lowResourceMode) {
+        if (lowResourceMode) PlaybackResourcePolicy.choose(true, 160, 2, true)
+        else PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
     }
     val latestForegroundPlaybackAllowed by rememberUpdatedState(foregroundPlaybackAllowed)
     val configuration = LocalConfiguration.current
@@ -591,6 +602,7 @@ fun NativeExoPlayer(
     val tvSurfaceFocus = remember { FocusRequester() }
     val tvPlayPauseFocus = remember { FocusRequester() }
     val tvTopBackFocus = remember { FocusRequester() }
+    val tvCardsFocus = remember { FocusRequester() }
     var tvSurfaceFocused by remember { mutableStateOf(false) }
     var tvControlsFocused by remember { mutableStateOf(false) }
     var tvPendingControlFocus by remember { mutableStateOf(false) }
@@ -616,6 +628,15 @@ fun NativeExoPlayer(
     var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
     var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var showBookmarks by remember(media.id) { mutableStateOf(false) }
+    var cardsDismissedThisVideo by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendations by remember(media.id) {
+        mutableStateOf<List<YoutubeStreamResolver.RelatedVideo>>(emptyList())
+    }
+    var fallbackRecommendationsLoading by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendationsAttempted by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendationsError by remember(media.id) { mutableStateOf(false) }
+    var manualRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
@@ -716,11 +737,25 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading) {
-        if (showPlaybackModeCards && !continuationEpisodesLoading) {
-            delay(10_000L)
+    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading, tvNavigation) {
+        // Keep TV cards open while a remote user navigates them.
+        if (showPlaybackModeCards && !continuationEpisodesLoading && !tvNavigation) {
+            delay(15_000L)
             showPlaybackModeCards = false
+            cardsDismissedThisVideo = true
         }
+    }
+    LaunchedEffect(showPlaybackModeCards, tvNavigation) {
+        if (tvNavigation && showPlaybackModeCards) {
+            delay(100)
+            runCatching { tvCardsFocus.requestFocus() }
+        }
+    }
+    LaunchedEffect(currentPosition, duration, firstFrameRendered, floatingCardsMode) {
+        if (floatingCardsMode == "Last 15 seconds" && firstFrameRendered &&
+            duration > 30_000L && currentPosition >= duration - 15_000L &&
+            !cardsDismissedThisVideo && !showPlaybackModeCards && !inPictureInPicture
+        ) showPlaybackModeCards = true
     }
 
     LaunchedEffect(continuationModeHint) {
@@ -781,6 +816,50 @@ fun NativeExoPlayer(
     // Next/Previous buttons. Send both remote and pointer actions through one queue
     // selection path rather than seeking within that single source.
     val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val readyRelated = resolved?.relatedVideos.orEmpty()
+    val availableRelated = if (readyRelated.isNotEmpty()) readyRelated else fallbackRecommendations
+    val shelfRelated = availableRelated.asSequence()
+        .filter { it.videoId != sourceVideoId &&
+            (!hideWatchedRecommendations || it.videoId !in playedVideoIds)
+        }.distinctBy { it.videoId }
+        .take(if (lowResourceMode) 6 else 12).toList()
+
+    // Do no extra network work until the user opens the cards.
+    LaunchedEffect(showPlaybackModeCards, media.id, readyRelated.size) {
+        if (!showPlaybackModeCards || floatingCardsMode == "Off" ||
+            sourceVideoId.isBlank() || readyRelated.isNotEmpty() ||
+            fallbackRecommendationsAttempted
+        ) return@LaunchedEffect
+        fallbackRecommendationsAttempted = true
+        fallbackRecommendationsLoading = true
+        fallbackRecommendationsError = false
+        try {
+            val items = withTimeoutOrNull(9_000L) {
+                YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId).relatedVideos
+            }.orEmpty()
+            fallbackRecommendations = items.asSequence()
+                .filter { it.videoId.matches(Regex("[A-Za-z0-9_-]{11}")) }
+                .distinctBy { it.videoId }
+                .take(if (lowResourceMode) 6 else 16)
+                .map { item ->
+                    YoutubeStreamResolver.RelatedVideo(
+                        videoId = item.videoId,
+                        title = item.title,
+                        url = "https://www.youtube.com/watch?v=${item.videoId}",
+                        thumbnailUrl = item.thumbnailUrl,
+                        channelTitle = item.uploader,
+                        durationSeconds = item.durationSeconds
+                    )
+                }.toList()
+            fallbackRecommendationsError = fallbackRecommendations.isEmpty()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            fallbackRecommendationsError = true
+        } finally {
+            fallbackRecommendationsLoading = false
+        }
+    }
     val episodeList = continuationEpisodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
     val episodeIndex = episodeList.indexOfFirst { it.videoId == sourceVideoId }
     val nextEpisode = if (episodeIndex in 0 until episodeList.lastIndex) {
@@ -1567,8 +1646,8 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos, autoLoadUpNext) {
-        if (!firstFrameRendered || !autoLoadUpNext) return@LaunchedEffect
+    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos, autoLoadUpNext, lowResourceMode) {
+        if (!firstFrameRendered || !autoLoadUpNext || lowResourceMode) return@LaunchedEffect
         // Up Next prefetch is optional because even post-first-frame extraction can compete for
         // network/CPU on modest devices. When disabled in Settings no related item is prewarmed.
         resolved?.relatedVideos.orEmpty()

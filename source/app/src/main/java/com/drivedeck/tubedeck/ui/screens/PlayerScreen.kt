@@ -35,6 +35,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -5663,7 +5664,25 @@ private fun FadeVisibility(
     visible: Boolean,
     content: @Composable () -> Unit
 ) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+    val motion = LocalDeckThemeProfile.current.motionStyle
+    val duration = when (motion) {
+        DeckMotionStyle.INSTANT -> 0
+        DeckMotionStyle.SNAP -> 90
+        DeckMotionStyle.GLIDE -> 240
+        DeckMotionStyle.PULSE -> 165
+    }
+    val entrance = if (motion == DeckMotionStyle.PULSE) {
+        fadeIn(animationSpec = tween(durationMillis = duration)) +
+            slideInVertically(
+                initialOffsetY = { height -> height / 9 },
+                animationSpec = tween(durationMillis = duration)
+            )
+    } else fadeIn(animationSpec = tween(durationMillis = duration))
+    AnimatedVisibility(
+        visible = visible,
+        enter = entrance,
+        exit = fadeOut(animationSpec = tween(durationMillis = duration))
+    ) {
         content()
     }
 }

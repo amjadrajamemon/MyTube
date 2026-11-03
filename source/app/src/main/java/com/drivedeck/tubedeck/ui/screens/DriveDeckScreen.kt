@@ -980,7 +980,7 @@ fun DriveDeckTopHeader(
     autoFocus: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // First composition should focus the Home feed rather than opening the IME.
+    val profile = LocalDeckThemeProfile.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
@@ -992,38 +992,86 @@ fun DriveDeckTopHeader(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = TubeDeckSurface,
-        tonalElevation = 8.dp
+        tonalElevation = if (profile.navVisual == DeckNavVisual.ICONS) 0.dp else 8.dp
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PlayCircleFilled, null, tint = Color.Red, modifier = Modifier.size(30.dp))
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    "MyTube",
-                    color = TubeDeckTextPrimary,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier.weight(1f)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val desktopCommand = profile.navVisual == DeckNavVisual.COMMAND && maxWidth >= 700.dp
+            val zen = profile.navVisual == DeckNavVisual.MINIMAL
+            val horizontalPadding = if (profile.navVisual == DeckNavVisual.COMPACT) 6.dp else 12.dp
+            val search: @Composable (Modifier) -> Unit = { searchModifier ->
+                SearchAssistField(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange,
+                    onSearch = onSearch,
+                    recentSearches = recentSearches,
+                    onRemoveRecentSearch = onRemoveRecentSearch,
+                    onClearRecentSearches = onClearRecentSearches,
+                    placeholder = searchPlaceholder,
+                    showRecentChips = false,
+                    autoFocus = autoFocus,
+                    modifier = searchModifier
                 )
-                GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                IconButton(onClick = onOpenDownloads, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Default.FileDownload, contentDescription = "Downloads", tint = TubeDeckTextPrimary)
+            }
+            if (desktopCommand) {
+                // A real desktop command strip: search and actions share the toolbar row.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Terminal, "Command workspace",
+                        tint = TubeDeckAccentCyan, modifier = Modifier.size(27.dp))
+                    Text("MyTube", color = TubeDeckTextPrimary,
+                        fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    search(Modifier.weight(1f))
+                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckAccentCyan)
+                    }
+                }
+            } else if (zen) {
+                // Content-first header: search is dominant; secondary actions stay compact.
+                Column(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 5.dp)) {
+                    search(Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("MyTube", color = TubeDeckTextSecondary,
+                            fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckTextSecondary)
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = horizontalPadding,
+                        vertical = if (profile.navVisual == DeckNavVisual.COMPACT) 4.dp else 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val headerIcon = when (profile.playerChrome) {
+                            DeckPlayerChrome.HUD -> Icons.Default.Dashboard
+                            DeckPlayerChrome.ARCADE -> Icons.Default.SportsEsports
+                            DeckPlayerChrome.THEATER -> Icons.Default.Movie
+                            DeckPlayerChrome.GLASS -> Icons.Default.PlayCircleFilled
+                            DeckPlayerChrome.CONSOLE -> Icons.Default.Terminal
+                            DeckPlayerChrome.CLASSIC -> Icons.Default.PlayCircleFilled
+                        }
+                        Icon(headerIcon, null, tint = TubeDeckAccentCyan,
+                            modifier = Modifier.size(if (profile.navVisual == DeckNavVisual.COMPACT) 24.dp else 30.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("MyTube", color = TubeDeckTextPrimary,
+                            fontSize = if (profile.navVisual == DeckNavVisual.COMPACT) 17.sp else 21.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.weight(1f))
+                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckTextPrimary)
+                        }
+                    }
+                    search(Modifier.fillMaxWidth())
                 }
             }
-
-            SearchAssistField(
-                query = searchQuery,
-                onQueryChange = onSearchQueryChange,
-                onSearch = onSearch,
-                recentSearches = recentSearches,
-                onRemoveRecentSearch = onRemoveRecentSearch,
-                onClearRecentSearches = onClearRecentSearches,
-                placeholder = searchPlaceholder,
-                showRecentChips = false,
-                autoFocus = autoFocus,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }
-

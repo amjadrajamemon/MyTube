@@ -817,7 +817,9 @@ fun NativeExoPlayer(
     // selection path rather than seeking within that single source.
     val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
     val readyRelated = resolved?.relatedVideos.orEmpty()
-    val availableRelated = if (readyRelated.isNotEmpty()) readyRelated else fallbackRecommendations
+    val readyUnplayed = readyRelated.filter { it.videoId != sourceVideoId &&
+        (!hideWatchedRecommendations || it.videoId !in playedVideoIds) }
+    val availableRelated = if (readyUnplayed.isNotEmpty()) readyUnplayed else fallbackRecommendations
     val shelfRelated = availableRelated.asSequence()
         .filter { it.videoId != sourceVideoId &&
             (!hideWatchedRecommendations || it.videoId !in playedVideoIds)
@@ -825,9 +827,9 @@ fun NativeExoPlayer(
         .take(if (lowResourceMode) 6 else 12).toList()
 
     // Do no extra network work until the user opens the cards.
-    LaunchedEffect(showPlaybackModeCards, media.id, readyRelated.size) {
+    LaunchedEffect(showPlaybackModeCards, media.id, readyUnplayed.size, fallbackRecommendationsAttempted) {
         if (!showPlaybackModeCards || floatingCardsMode == "Off" ||
-            sourceVideoId.isBlank() || readyRelated.isNotEmpty() ||
+            sourceVideoId.isBlank() || readyUnplayed.isNotEmpty() ||
             fallbackRecommendationsAttempted
         ) return@LaunchedEffect
         fallbackRecommendationsAttempted = true
@@ -2690,6 +2692,36 @@ fun NativeExoPlayer(
                                     )
                                 }
 
+                                if (floatingCardsMode != "Off") {
+                                    IconButton(
+                                        onClick = {
+                                            showPlaybackModeCards = true
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.size(controllerHeight)
+                                            .tvInputHighlight(RoundedCornerShape(8.dp))
+                                    ) {
+                                        Icon(
+                                            Icons.Default.VideoLibrary,
+                                            "More video cards",
+                                            tint = TubeDeckAccentCyan,
+                                            modifier = Modifier.size(controllerIconSize)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { showBookmarks = true; controlsVisible = true },
+                                    modifier = Modifier.size(controllerHeight)
+                                        .tvInputHighlight(RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        Icons.Default.BookmarkAdd,
+                                        "Bookmark current video moment",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+
                                 IconButton(
                                     onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
                                     modifier = Modifier.size(controllerHeight)
@@ -2825,6 +2857,7 @@ fun NativeExoPlayer(
             }
 
             if (resolveError != null) {
+                val advice = PlaybackErrorAdvisor.analyze(resolveError.orEmpty())
                 Surface(
                     color = Color.Black.copy(alpha = .92f),
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
@@ -2835,7 +2868,18 @@ fun NativeExoPlayer(
                         Spacer(Modifier.height(8.dp))
                         Text("Native stream unavailable", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
-                        Text(resolveError.orEmpty(), color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                        Text(advice.message, color = Color.White.copy(alpha = .95f), fontSize = 13.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Text(advice.suggestion, color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(resolveError.orEmpty().take(180), color = Color.White.copy(alpha = .55f), fontSize = 10.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { manualRecoveryAttempts += 1 },
+                                enabled = manualRecoveryAttempts < 3
+                            ) { Text("Retry stream") }
+                            TextButton(onClick = { showBookmarks = true }) { Text("Saved moments") }
+                        }
                         Spacer(Modifier.height(12.dp))
                         if (YoutubeUrls.videoId(media.mediaUri) != null) {
                             Text("The web player may work for this video.", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
@@ -2882,6 +2926,16 @@ fun NativeExoPlayer(
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         }
+    }
+
+    if (showBookmarks) {
+        VideoBookmarksDialog(
+            videoId = YoutubeUrls.videoId(media.mediaUri).orEmpty(),
+            videoTitle = resolved?.title?.ifBlank { media.title } ?: media.title,
+            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+            onSeek = { ms -> exoPlayer.seekTo(ms.coerceIn(0L, duration.coerceAtLeast(0L))) },
+            onDismiss = { showBookmarks = false }
+        )
     }
 
     if (showQuickActions) {

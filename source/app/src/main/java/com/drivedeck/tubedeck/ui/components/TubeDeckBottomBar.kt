@@ -1,5 +1,7 @@
 package com.drivedeck.tubedeck.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -239,11 +241,22 @@ private fun DeckNavItem(
         DeckNavVisual.MINIMAL -> Color.Transparent
         DeckNavVisual.ICONS -> TubeDeckAccentCyan.copy(alpha = .08f)
     }
+    // Motion only runs on a real selection change; never schedules idle frames.
+    val animatedSelection by animateColorAsState(
+        targetValue = selectedBackground,
+        animationSpec = tween(durationMillis = when (profile.motionStyle) {
+            DeckMotionStyle.INSTANT -> 0
+            DeckMotionStyle.SNAP -> 80
+            DeckMotionStyle.GLIDE -> 260
+            DeckMotionStyle.PULSE -> 165
+        }),
+        label = "Theme navigation selection"
+    )
     Box(
         modifier = modifier
             .padding(horizontal = if (commandTop) 2.dp else 0.dp)
             .clip(shape)
-            .background(selectedBackground)
+            .background(animatedSelection)
             .tvInputHighlight(shape)
             .clickable(onClick = onClick)
             .padding(horizontal = if (commandTop) 3.dp else 0.dp, vertical = 4.dp)

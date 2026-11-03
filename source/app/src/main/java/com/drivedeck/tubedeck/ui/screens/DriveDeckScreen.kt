@@ -519,6 +519,106 @@ fun DriveDeckScreen(
     }
 }
 
+/** Independent SmartTube-style horizontal video shelf for touch and TV D-pad. */
+@Composable
+private fun SmartTubeBrowseRail(
+    title: String, videos: List<HomeVideo>,
+    onOpenVideo: (HomeVideo) -> Unit, listView: Boolean,
+    firstItemFocus: FocusRequester? = null,
+    focusVideoId: String? = null,
+    onVideoFocused: (HomeVideo) -> Unit = {},
+    onMore: () -> Unit, canLoadMore: Boolean, moreLoading: Boolean,
+    onRefresh: () -> Unit = {}, actionLabel: String = "Refresh"
+) {
+    val state = rememberLazyListState()
+    val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
+    LaunchedEffect(focusIndex) { if (focusIndex >= 0) state.scrollToItem(focusIndex) }
+    val lastVisible by remember(state) {
+        derivedStateOf { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    }
+    var lastRequestedSize by remember(title) { mutableIntStateOf(-1) }
+    LaunchedEffect(lastVisible, videos.size, canLoadMore, moreLoading) {
+        if (canLoadMore && !moreLoading && videos.isNotEmpty() &&
+            lastVisible >= videos.size - 2 && lastRequestedSize != videos.size) {
+            lastRequestedSize = videos.size
+            onMore()
+        }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, modifier = Modifier.weight(1f),
+                color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = onRefresh, modifier = Modifier.size(34.dp)) {
+                Icon(if (actionLabel == "Clear history") Icons.Default.DeleteOutline
+                    else Icons.Default.Refresh, contentDescription = "$actionLabel · $title",
+                    tint = TubeDeckTextSecondary, modifier = Modifier.size(18.dp))
+            }
+        }
+        if (videos.isEmpty()) {
+            Text("No videos in this section", color = TubeDeckTextSecondary,
+                fontSize = 12.sp, modifier = Modifier.padding(start = 14.dp, bottom = 10.dp))
+        } else {
+            LazyRow(
+                state = state,
+                modifier = Modifier.fillMaxWidth().height(if (listView) 142.dp else 238.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                itemsIndexed(videos, key = { index, video -> "${video.videoId}-$index" }) { _, video ->
+                    val focused = video.videoId == focusVideoId
+                    val card = Modifier
+                        .width(if (listView) 315.dp else 225.dp)
+                        .then(if (focused && firstItemFocus != null)
+                            Modifier.focusRequester(firstItemFocus) else Modifier)
+                        .onFocusChanged { if (it.isFocused) onVideoFocused(video) }
+                        .tvInputHighlight(RoundedCornerShape(3.dp))
+                        .clickable { onVideoFocused(video); onOpenVideo(video) }
+                    if (listView) {
+                        Row(card, verticalAlignment = Alignment.Top) {
+                            VideoThumbnail(video, Modifier.width(128.dp).aspectRatio(16f / 9f))
+                            Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                Text(video.title, color = TubeDeckTextPrimary,
+                                    fontSize = 12.sp, lineHeight = 15.sp,
+                                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(6.dp))
+                                Text(video.channelTitle, color = TubeDeckTextSecondary,
+                                    fontSize = 10.sp, maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    } else {
+                        Column(card) {
+                            VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                            Spacer(Modifier.height(6.dp))
+                            Text(video.title, color = TubeDeckTextPrimary,
+                                fontSize = 12.sp, lineHeight = 16.sp,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text(video.channelTitle, color = TubeDeckTextSecondary,
+                                fontSize = 10.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (canLoadMore) item(key = "more-$title") {
+                    Box(Modifier.width(96.dp).fillParentMaxHeight(),
+                        contentAlignment = Alignment.Center) {
+                        if (moreLoading) CircularProgressIndicator(
+                            Modifier.size(24.dp), strokeWidth = 2.dp
+                        ) else TextButton(onClick = {
+                            lastRequestedSize = videos.size; onMore()
+                        }) { Text("More") }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * A theme's introduction is deliberately composed differently for terminals,
  * dashboards, cinema, arcade and editorial views. It is not a color swatch.

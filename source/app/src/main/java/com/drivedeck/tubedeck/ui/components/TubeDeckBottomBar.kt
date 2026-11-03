@@ -23,6 +23,29 @@ import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.ActiveScreen
 import com.drivedeck.tubedeck.ui.theme.*
 
+private fun deckNavigationIcons(style: DeckNavVisual): List<ImageVector> = when (style) {
+    DeckNavVisual.COMMAND -> listOf(
+        Icons.Default.Dashboard, Icons.Default.ViewList, Icons.Default.CloudDownload,
+        Icons.Default.FolderOpen, Icons.Default.Tune
+    )
+    DeckNavVisual.MINIMAL -> listOf(
+        Icons.Default.Explore, Icons.Default.PlayCircleOutline, Icons.Default.Download,
+        Icons.Default.Folder, Icons.Default.Settings
+    )
+    DeckNavVisual.COMPACT -> listOf(
+        Icons.Default.GridView, Icons.Default.QueueMusic, Icons.Default.GetApp,
+        Icons.Default.Folder, Icons.Default.Build
+    )
+    DeckNavVisual.ICONS -> listOf(
+        Icons.Default.Home, Icons.Default.PlaylistPlay, Icons.Default.Download,
+        Icons.Default.FolderOpen, Icons.Default.Settings
+    )
+    DeckNavVisual.PILL -> listOf(
+        Icons.Default.Home, Icons.Default.QueueMusic, Icons.Default.Download,
+        Icons.Default.Folder, Icons.Default.Settings
+    )
+}
+
 @Composable
 fun TubeDeckBottomBar(
     currentScreen: ActiveScreen,
@@ -32,6 +55,7 @@ fun TubeDeckBottomBar(
     modifier: Modifier = Modifier
 ) {
     val profile = LocalDeckThemeProfile.current
+    val icons = deckNavigationIcons(profile.navVisual)
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -63,7 +87,7 @@ fun TubeDeckBottomBar(
         ) {
             // 1. HOME (Renamed from Deck)
             DeckNavItem(
-                icon = Icons.Default.Home,
+                icon = icons[0],
                 label = "Home",
                 isSelected = currentScreen == ActiveScreen.HOME,
                 onClick = { onNavigate(ActiveScreen.HOME) },
@@ -73,7 +97,7 @@ fun TubeDeckBottomBar(
 
             // 2. MIXES/PLAYLIST (Renamed from Mixes)
             DeckNavItem(
-                icon = Icons.Default.QueueMusic,
+                icon = icons[1],
                 label = "Mixes/Playlist",
                 isSelected = currentScreen == ActiveScreen.MIXES,
                 onClick = { onNavigate(ActiveScreen.MIXES) },
@@ -83,6 +107,7 @@ fun TubeDeckBottomBar(
 
             // 3. CENTER: DOWNLOADS
             CenterDownloadsButton(
+                icon = icons[2],
                 isSelected = currentScreen == ActiveScreen.DOWNLOADS,
                 badgeCount = activeDownloadCount,
                 onClick = { onNavigate(ActiveScreen.DOWNLOADS) },
@@ -91,7 +116,7 @@ fun TubeDeckBottomBar(
 
             // 4. VAULT
             DeckNavItem(
-                icon = Icons.Default.Folder,
+                icon = icons[3],
                 label = "Vault",
                 isSelected = currentScreen == ActiveScreen.OFFLINE_VAULT,
                 onClick = { onNavigate(ActiveScreen.OFFLINE_VAULT) },
@@ -101,7 +126,7 @@ fun TubeDeckBottomBar(
 
             // 5. SETTINGS
             DeckNavItem(
-                icon = Icons.Default.Settings,
+                icon = icons[4],
                 label = "Settings",
                 isSelected = currentScreen == ActiveScreen.SETTINGS,
                 onClick = { onNavigate(ActiveScreen.SETTINGS) },
@@ -114,11 +139,13 @@ fun TubeDeckBottomBar(
 
 @Composable
 private fun CenterDownloadsButton(
+    icon: ImageVector,
     isSelected: Boolean,
     badgeCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val profile = LocalDeckThemeProfile.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -132,8 +159,8 @@ private fun CenterDownloadsButton(
         Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
+                    .size(if (profile.navVisual == DeckNavVisual.COMPACT) 34.dp else 42.dp)
+                    .clip(if (profile.navVisual == DeckNavVisual.COMMAND) RoundedCornerShape(5.dp) else CircleShape)
                     .background(
                         Brush.radialGradient(
                             listOf(
@@ -145,12 +172,12 @@ private fun CenterDownloadsButton(
                     .border(
                         1.5.dp,
                         if (isSelected) TubeDeckAccentCyanGlow else TubeDeckAccentCyan.copy(alpha = 0.5f),
-                        CircleShape
+                        if (profile.navVisual == DeckNavVisual.COMMAND) RoundedCornerShape(5.dp) else CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.Download,
+                    icon,
                     contentDescription = "Downloads",
                     tint = if (isSelected) TubeDeckBackground else TubeDeckAccentCyan,
                     modifier = Modifier.size(22.dp)
@@ -195,33 +222,56 @@ private fun DeckNavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val profile = LocalDeckThemeProfile.current
+    val commandTop = profile.navVisual == DeckNavVisual.COMMAND &&
+        profile.navigationPlacement == DeckNavigationPlacement.TOP
+    val iconOnly = profile.navVisual == DeckNavVisual.ICONS
+    val shape = when (profile.navVisual) {
+        DeckNavVisual.COMMAND, DeckNavVisual.COMPACT -> RoundedCornerShape(4.dp)
+        DeckNavVisual.ICONS -> RoundedCornerShape(0.dp)
+        DeckNavVisual.MINIMAL -> RoundedCornerShape(8.dp)
+        DeckNavVisual.PILL -> RoundedCornerShape(24.dp)
+    }
+    val selectedBackground = if (!isSelected) Color.Transparent else when (profile.navVisual) {
+        DeckNavVisual.PILL -> TubeDeckAccentCyan.copy(alpha = .20f)
+        DeckNavVisual.COMMAND -> TubeDeckAccentCyan.copy(alpha = .12f)
+        DeckNavVisual.COMPACT -> TubeDeckAccentCyan.copy(alpha = .17f)
+        DeckNavVisual.MINIMAL -> Color.Transparent
+        DeckNavVisual.ICONS -> TubeDeckAccentCyan.copy(alpha = .08f)
+    }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .tvInputHighlight(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(vertical = 4.dp)
+            .padding(horizontal = if (commandTop) 2.dp else 0.dp)
+            .clip(shape)
+            .background(selectedBackground)
+            .tvInputHighlight(shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (commandTop) 3.dp else 0.dp, vertical = 4.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary,
-                modifier = Modifier.size(20.dp)
-            )
-
-            Text(
-                text = label,
-                fontSize = 10.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary,
-                maxLines = 1
-            )
+        val iconTint = if (isSelected) TubeDeckAccentCyan else TubeDeckTextSecondary
+        val iconSize = when (profile.navVisual) {
+            DeckNavVisual.COMPACT -> 18.dp
+            DeckNavVisual.ICONS -> 25.dp
+            DeckNavVisual.MINIMAL -> 17.dp
+            else -> 20.dp
+        }
+        if (commandTop) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icon(icon, contentDescription = label, tint = iconTint, modifier = Modifier.size(iconSize))
+                Text(label, color = iconTint, fontSize = 10.sp,
+                    maxLines = 1, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+            }
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(if (iconOnly) 0.dp else 2.dp)) {
+                Icon(icon, contentDescription = label, tint = iconTint, modifier = Modifier.size(iconSize))
+                if (!iconOnly) Text(label, color = iconTint,
+                    fontSize = if (profile.navVisual == DeckNavVisual.COMPACT) 9.sp else 10.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1)
+            }
         }
     }
 }
@@ -238,15 +288,20 @@ fun TubeDeckSideRail(
     modifier: Modifier = Modifier
 ) {
     val profile = LocalDeckThemeProfile.current
+    val icons = deckNavigationIcons(profile.navVisual)
     val destinations = listOf(
-        Triple(ActiveScreen.HOME, "Home", Icons.Default.Home),
-        Triple(ActiveScreen.MIXES, "Mixes", Icons.Default.QueueMusic),
-        Triple(ActiveScreen.DOWNLOADS, "Downloads", Icons.Default.Download),
-        Triple(ActiveScreen.OFFLINE_VAULT, "Vault", Icons.Default.Folder),
-        Triple(ActiveScreen.SETTINGS, "Settings", Icons.Default.Settings)
+        Triple(ActiveScreen.HOME, "Home", icons[0]),
+        Triple(ActiveScreen.MIXES, "Mixes", icons[1]),
+        Triple(ActiveScreen.DOWNLOADS, "Downloads", icons[2]),
+        Triple(ActiveScreen.OFFLINE_VAULT, "Vault", icons[3]),
+        Triple(ActiveScreen.SETTINGS, "Settings", icons[4])
     )
     NavigationRail(
-        modifier = modifier.width(if (profile.name == "ATV") 98.dp else 78.dp)
+        modifier = modifier.width(when (profile.navVisual) {
+            DeckNavVisual.COMPACT -> 72.dp
+            DeckNavVisual.COMMAND -> 94.dp
+            else -> if (profile.name == "ATV") 98.dp else 78.dp
+        })
             .fillMaxHeight().border(1.dp, TubeDeckBorder),
         containerColor = TubeDeckSurface,
         contentColor = TubeDeckTextPrimary,

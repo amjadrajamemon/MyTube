@@ -1099,6 +1099,26 @@ fun NativeExoPlayer(
         if (privateSession) showResumePrompt = false
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
+    val themeProfile = LocalDeckThemeProfile.current
+    val playerButtonShape = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.CONSOLE, DeckPlayerChrome.HUD -> RoundedCornerShape(5.dp)
+        DeckPlayerChrome.ARCADE -> RoundedCornerShape(1.dp)
+        DeckPlayerChrome.THEATER -> RoundedCornerShape(15.dp)
+        DeckPlayerChrome.GLASS -> RoundedCornerShape(22.dp)
+        DeckPlayerChrome.CLASSIC -> CircleShape
+    }
+    val playerOverlayOpacity = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.THEATER -> .50f
+        DeckPlayerChrome.GLASS -> .22f
+        DeckPlayerChrome.HUD, DeckPlayerChrome.CONSOLE -> .58f
+        DeckPlayerChrome.ARCADE -> .46f
+        DeckPlayerChrome.CLASSIC -> .35f
+    }
+    val playerButtonColor = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.THEATER -> Color.White
+        DeckPlayerChrome.HUD -> TubeDeckAccentMint
+        else -> TubeDeckAccentCyan
+    }
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
     // The spinner and central Play/Pause row must share the exact same offset.
@@ -2393,7 +2413,7 @@ fun NativeExoPlayer(
                 ) {
                     Surface(
                         color = Color.Black.copy(alpha = .68f),
-                        shape = CircleShape,
+                        shape = playerButtonShape,
                         tonalElevation = 8.dp,
                         shadowElevation = 8.dp,
                         modifier = Modifier
@@ -2449,11 +2469,16 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .onFocusChanged { tvControlsFocused = it.hasFocus }
-                        .background(Color.Black.copy(alpha = .35f))
+                        .background(Color.Black.copy(alpha = playerOverlayOpacity))
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
                     Row(
-                        Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 6.dp),
+                        Modifier.fillMaxWidth().align(Alignment.TopCenter)
+                            .then(if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE)
+                                Modifier.background(Color.Black.copy(alpha = .72f))
+                            else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
@@ -2521,7 +2546,7 @@ fun NativeExoPlayer(
                             IconButton(
                                 onClick = { onPreviousItem?.invoke() },
                                 enabled = onPreviousItem != null,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(playerButtonShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipPrevious,
@@ -2533,9 +2558,10 @@ fun NativeExoPlayer(
 
                             Surface(
                                 onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
-                                shape = CircleShape,
-                                color = TubeDeckAccentCyan,
-                                modifier = Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter).tvInputHighlight(CircleShape)
+                                shape = playerButtonShape,
+                                color = playerButtonColor,
+                                modifier = Modifier.focusRequester(tvPlayPauseFocus)
+                                    .size(centerControlDiameter).tvInputHighlight(playerButtonShape)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(

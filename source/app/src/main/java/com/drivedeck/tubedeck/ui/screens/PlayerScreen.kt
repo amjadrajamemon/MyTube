@@ -1107,6 +1107,7 @@ fun NativeExoPlayer(
         DeckPlayerChrome.THEATER -> RoundedCornerShape(15.dp)
         DeckPlayerChrome.GLASS -> RoundedCornerShape(22.dp)
         DeckPlayerChrome.CLASSIC -> CircleShape
+        DeckPlayerChrome.TV_CLASSIC -> RoundedCornerShape(4.dp)
     }
     val playerOverlayOpacity = when (themeProfile.playerChrome) {
         DeckPlayerChrome.THEATER -> .50f
@@ -1114,6 +1115,7 @@ fun NativeExoPlayer(
         DeckPlayerChrome.HUD, DeckPlayerChrome.CONSOLE -> .58f
         DeckPlayerChrome.ARCADE -> .46f
         DeckPlayerChrome.CLASSIC -> .35f
+        DeckPlayerChrome.TV_CLASSIC -> .58f
     }
     val playerButtonColor = when (themeProfile.playerChrome) {
         DeckPlayerChrome.THEATER -> Color.White

@@ -35,6 +35,7 @@ import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.DownloadMode
+import com.drivedeck.tubedeck.data.model.ViewingMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
@@ -109,6 +110,9 @@ fun SettingsScreen(
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
+    var viewingMode by remember { mutableStateOf(currentSettings.viewingMode) }
+    var viewingDimPercent by remember { mutableIntStateOf(currentSettings.viewingDimPercent.coerceIn(10, 85)) }
+    var nightAudioEnabled by remember { mutableStateOf(currentSettings.nightAudioEnabled) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
     var blockVideoAds by remember { mutableStateOf(currentSettings.blockVideoAds) }
@@ -586,6 +590,42 @@ fun SettingsScreen(
                 QualityGrid(selectedQuality = playlistQuality, onSelect = { playlistQuality = it }, qualities = qualities)
             }
 
+            SettingsCard(title = "Viewing & Night Audio") {
+                Text("Viewing mode", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ViewingMode.values().forEach { mode ->
+                        FilterChip(
+                            selected = viewingMode == mode,
+                            onClick = { viewingMode = mode },
+                            label = { Text(mode.label) }
+                        )
+                    }
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · $viewingDimPercent%", color = TubeDeckTextPrimary)
+                    Slider(
+                        value = viewingDimPercent.toFloat(),
+                        onValueChange = { viewingDimPercent = it.toInt().coerceIn(10, 85) },
+                        valueRange = 10f..85f
+                    )
+                }
+                Text(
+                    "Cinema focuses the player and hides surrounding distractions. Lights Out dims video; Night adds a warm low-light tint. Full Blackout stays separate.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider()
+                ToggleRow("Night Audio · soften peaks and lift quiet speech", nightAudioEnabled) {
+                    nightAudioEnabled = it
+                }
+                Text(
+                    "Native player only. Uses session-scoped Android compression on supported devices; never overrides system volume. May be unavailable on car units or some TV firmware.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+            }
+
             SettingsCard(title = "Playback") {
                 ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
                 HorizontalDivider()
@@ -774,6 +814,9 @@ fun SettingsScreen(
                             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
                             preferredPlaybackSpeed = preferredPlaybackSpeed,
                             seekIntervalSeconds = seekIntervalSeconds,
+                            viewingMode = viewingMode,
+                            viewingDimPercent = viewingDimPercent.coerceIn(10, 85),
+                            nightAudioEnabled = nightAudioEnabled,
                             autoRotatePlayback = autoRotatePlayback,
                             homeSuggestionsEnabled = homeSuggestionsEnabled,
                             homeHistoryEnabled = homeHistoryEnabled,

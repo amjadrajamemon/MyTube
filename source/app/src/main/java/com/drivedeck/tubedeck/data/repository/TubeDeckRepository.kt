@@ -810,7 +810,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     suspend fun fetchDownloadChoices(url: String): DownloadChoices {
-        val media = YoutubeStreamResolver.resolve(context, url)
+        // The dialog must use the same extractor policy as the actual download job.
+        // NewPipe can fail to list formats even while yt-dlp can still download them;
+        // gating the Start button on NewPipe alone made working videos undownloadable.
+        val media = YoutubeStreamResolver.resolveForDownload(context, url)
         return DownloadChoices(
             media.downloadOptions.map { it.label }.distinct(),
             media.audioOptions.isNotEmpty()

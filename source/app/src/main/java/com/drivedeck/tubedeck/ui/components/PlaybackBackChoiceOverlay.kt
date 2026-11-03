@@ -21,6 +21,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,18 +48,29 @@ fun PlaybackBackChoiceOverlay(
     pipLabel: String = "PiP",
     modifier: Modifier = Modifier
 ) {
+    val tvNavigation = isTvLikeNavigationDevice(LocalContext.current)
+    val closeFocusRequester = remember { FocusRequester() }
     var visible by remember { mutableStateOf(true) }
+    LaunchedEffect(tvNavigation) {
+        if (tvNavigation) {
+            delay(120)
+            runCatching { closeFocusRequester.requestFocus() }
+        }
+    }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(durationMillis = 280),
         label = "playback_choice_alpha"
     )
 
-    LaunchedEffect(Unit) {
-        delay(4_500L)
-        visible = false
-        delay(300L)
-        onTimeout()
+    LaunchedEffect(tvNavigation) {
+        // Never dismiss the TV exit menu before a remote user can choose an action.
+        if (!tvNavigation) {
+            delay(4_500L)
+            visible = false
+            delay(300L)
+            onTimeout()
+        }
     }
 
     Surface(
@@ -75,6 +89,7 @@ fun PlaybackBackChoiceOverlay(
         ) {
             OutlinedButton(
                 onClick = onCloseVideo,
+                modifier = Modifier.focusRequester(closeFocusRequester).tvInputHighlight(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckError)
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close")

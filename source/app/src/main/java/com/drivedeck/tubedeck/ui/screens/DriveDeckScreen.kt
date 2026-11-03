@@ -246,6 +246,7 @@ fun DriveDeckScreen(
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
+                        val availableWidth = maxWidth
                         val layout = HomeLayoutPolicy.decide(
                             availableWidthDp = maxWidth.value.toInt(),
                             threeColumnTheme = deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
@@ -348,7 +349,7 @@ fun DriveDeckScreen(
                             DeckHomePresentation.IPTV_DASHBOARD -> Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                if (maxWidth >= 840.dp) {
+                                if (availableWidth >= 840.dp) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         repeat(3) { index ->
                                             Feed(index, Modifier.weight(1f), horizontalCards = false)
@@ -378,7 +379,7 @@ fun DriveDeckScreen(
                             DeckHomePresentation.HUD_CONSOLE -> Column(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                if (maxWidth >= 760.dp) {
+                                if (availableWidth >= 760.dp) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Feed(0, Modifier.weight(1f), horizontalCards = false)
                                         Feed(1, Modifier.weight(1f), horizontalCards = false)
@@ -1403,6 +1404,7 @@ fun DriveDeckTopHeader(
                             DeckPlayerChrome.GLASS -> Icons.Default.PlayCircleFilled
                             DeckPlayerChrome.CONSOLE -> Icons.Default.Terminal
                             DeckPlayerChrome.CLASSIC -> Icons.Default.PlayCircleFilled
+                            DeckPlayerChrome.TV_CLASSIC -> Icons.Default.Tv
                         }
                         Icon(headerIcon, null, tint = TubeDeckAccentCyan,
                             modifier = Modifier.size(if (profile.navVisual == DeckNavVisual.COMPACT) 24.dp else 30.dp))

@@ -93,12 +93,22 @@ fun DriveDeckScreen(
     onClearHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var listView by rememberSaveable(viewStateKey) { mutableStateOf(true) }
+    val deckTheme = LocalDeckThemeProfile.current
+    var listView by rememberSaveable(viewStateKey, deckTheme.name) {
+        mutableStateOf(deckTheme.geometry == DeckCardGeometry.COMPACT ||
+            deckTheme.geometry == DeckCardGeometry.TERMINAL)
+    }
     // Each feed can independently switch between vertical and horizontal scrolling.
     // The global List/Tile selector also changes the actual card composition.
-    var historyHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
-    var relevantHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
-    var trendingHorizontal by rememberSaveable(viewStateKey) { mutableStateOf(false) }
+    var historyHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
+        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+    }
+    var relevantHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
+        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+    }
+    var trendingHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
+        mutableStateOf(deckTheme.geometry == DeckCardGeometry.CINEMA)
+    }
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val firstVideoFocus = remember { FocusRequester() }
@@ -497,7 +507,8 @@ private fun PlaylistThumbnail(playlist: PlaylistCandidate, modifier: Modifier) {
         AsyncImage(
             model = playlist.thumbnailUrl,
             contentDescription = playlist.title,
-            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+            modifier = Modifier.fillMaxSize()
+                .clip(RoundedCornerShape(LocalDeckThemeProfile.current.cornerRadiusDp.dp)),
             contentScale = ContentScale.Crop
         )
         Surface(
@@ -549,6 +560,13 @@ private fun HomeFeedColumn(
     onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
     val state = rememberLazyListState()
+    val profile = LocalDeckThemeProfile.current
+    val cardShape = RoundedCornerShape(profile.cornerRadiusDp.dp)
+    val imageRatio = when(profile.geometry) {
+        DeckCardGeometry.CINEMA -> 2.25f
+        DeckCardGeometry.TERMINAL -> 1.6f
+        else -> 16f / 9f
+    }
     val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
     LaunchedEffect(horizontal, focusIndex) {
         if (focusIndex >= 0) state.scrollToItem(focusIndex)
@@ -566,10 +584,13 @@ private fun HomeFeedColumn(
             onLoadMore()
         }
     }
-    Surface(color = TubeDeckSurface, shape = RoundedCornerShape(12.dp), modifier = modifier) {
+    Surface(color = TubeDeckSurface, shape = cardShape, modifier = modifier) {
         Column(
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(
+                horizontal = (profile.contentGapDp / 2).dp,
+                vertical = profile.contentGapDp.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy((profile.contentGapDp / 2).dp)
         ) {
             Row(Modifier.fillMaxWidth().heightIn(min = 38.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -610,8 +631,8 @@ private fun HomeFeedColumn(
                     val itemModifier = width
                         .then(if (focused && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
                         .onFocusChanged { if (it.isFocused) onVideoFocused(video) }
-                        .clip(RoundedCornerShape(10.dp))
-                        .tvInputHighlight(RoundedCornerShape(10.dp))
+                        .clip(cardShape)
+                        .tvInputHighlight(cardShape)
                         .clickable {
                             onVideoFocused(video)
                             onOpenVideo(video)
@@ -619,7 +640,9 @@ private fun HomeFeedColumn(
                         .padding(3.dp)
                     if (listView) {
                         Row(itemModifier, verticalAlignment = Alignment.Top) {
-                            VideoThumbnail(video, Modifier.width(72.dp).aspectRatio(16f / 9f))
+                            VideoThumbnail(video,
+                                Modifier.width(if (profile.geometry == DeckCardGeometry.COMPACT) 62.dp else 77.dp)
+                                    .aspectRatio(imageRatio))
                             Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
                                     fontSize = 11.sp, lineHeight = 14.sp, softWrap = true)
@@ -628,7 +651,7 @@ private fun HomeFeedColumn(
                         }
                     } else {
                         Column(itemModifier) {
-                            VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                            VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(imageRatio))
                             Spacer(Modifier.height(5.dp))
                             Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp, lineHeight = 15.sp, softWrap = true)
@@ -641,18 +664,25 @@ private fun HomeFeedColumn(
                 if (horizontal) {
                     LazyRow(
                         state = state,
-                        modifier = Modifier.fillMaxWidth().height(if (listView) 190.dp else 330.dp),
+                        modifier = Modifier.fillMaxWidth().height(
+                            if (listView) 234.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 398.dp else 362.dp
+                        ),
                         contentPadding = PaddingValues(end = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
-                            HomeCard(video, Modifier.width(if (listView) 215.dp else 232.dp))
+                            HomeCard(video, Modifier.width(
+                                if (listView) 235.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 263.dp else 230.dp
+                            ))
                         }
                     }
                 } else {
                     LazyColumn(
                         state = state,
-                        modifier = Modifier.fillMaxWidth().height(if (listView) 480.dp else 600.dp),
+                        modifier = Modifier.fillMaxWidth().height(
+                            if (profile.navigationPlacement == DeckNavigationPlacement.SIDE) 660.dp
+                            else if (listView) 520.dp else 640.dp
+                        ),
                         verticalArrangement = Arrangement.spacedBy(if (listView) 6.dp else 14.dp)
                     ) {
                         itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
@@ -876,7 +906,8 @@ private fun VideoThumbnail(video: HomeVideo, modifier: Modifier) {
         AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = video.title,
-            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+            modifier = Modifier.fillMaxSize()
+                .clip(RoundedCornerShape(LocalDeckThemeProfile.current.cornerRadiusDp.dp)),
             contentScale = ContentScale.Crop
         )
         if (video.durationText.isNotBlank()) {

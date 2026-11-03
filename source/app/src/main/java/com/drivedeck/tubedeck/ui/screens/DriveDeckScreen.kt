@@ -448,6 +448,69 @@ fun DriveDeckScreen(
                                 Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
                                 Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
                             }
+                            DeckHomePresentation.SMARTTUBE_TV -> Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                // Independent TV-first browse experience with compact dark
+                                // horizontal rails, clear section headers and D-pad focus.
+                                Text(
+                                    "MYTUBE  /  TV",
+                                    color = TubeDeckTextSecondary,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 2.dp)
+                                )
+                                SmartTubeBrowseRail(
+                                    "Recommended",
+                                    if (suggestionsEnabled) suggestedVideos else emptyList(),
+                                    onOpenVideo,
+                                    listView,
+                                    firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = "Relevant"
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onMore = { onLoadMoreHomeFeed("Relevant") },
+                                    canLoadMore = "Relevant" !in moreFeedsExhausted,
+                                    moreLoading = "Relevant" in moreFeedsLoading,
+                                    onRefresh = onRefreshFeed
+                                )
+                                SmartTubeBrowseRail(
+                                    "History",
+                                    if (historyEnabled) watchHistory else emptyList(),
+                                    onOpenVideo,
+                                    listView,
+                                    firstItemFocus = if (focusFeed == "History" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "History") focusVideoId else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = "History"
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onMore = { onLoadMoreHomeFeed("History") },
+                                    canLoadMore = "History" !in moreFeedsExhausted,
+                                    moreLoading = "History" in moreFeedsLoading,
+                                    onRefresh = onClearHistory,
+                                    actionLabel = "Clear history"
+                                )
+                                SmartTubeBrowseRail(
+                                    "Trending · ${countryCode.uppercase(Locale.ROOT)}",
+                                    if (trendingEnabled) trendingVideos else emptyList(),
+                                    onOpenVideo,
+                                    listView,
+                                    firstItemFocus = if (focusFeed == "Trending" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Trending") focusVideoId else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = "Trending"
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onMore = { onLoadMoreHomeFeed("Trending") },
+                                    canLoadMore = "Trending" !in moreFeedsExhausted,
+                                    moreLoading = "Trending" in moreFeedsLoading,
+                                    onRefresh = onRefreshFeed
+                                )
+                            }
                         }
                     }
                 }

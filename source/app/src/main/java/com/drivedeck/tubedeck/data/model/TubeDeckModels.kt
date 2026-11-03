@@ -121,6 +121,14 @@ data class TubeDeckSettings(
     val equalizerTextScale: Float = 1.25f,
     val showRelevantShelf: Boolean = true,
     val showEpisodesShelf: Boolean = true,
+    // Next-generation TV improvements are opt-in where extra work is involved.
+    val floatingCardsMode: String = "Manual", // Off, Manual, Last 15 seconds
+    val hideWatchedRecommendations: Boolean = true,
+    val lowResourceMode: Boolean = false,
+    val subtitleTextScale: Float = 1.0f,
+    val subtitleBottomInsetDp: Int = 0,
+    val remoteNextKeyCode: Int = 0,
+    val remotePreviousKeyCode: Int = 0,
 
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",

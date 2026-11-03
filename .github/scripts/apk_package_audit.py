@@ -146,7 +146,7 @@ def main():
         lines.extend(["", "### Caveats"])
         lines.extend("- " + note for note in item["notes"])
     (args.out_dir / "APK_PACKAGE_FORENSICS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n".join(lines[:12]))
+    print("\n".join(lines))
     return 0 if all(item["package_audit_passed"] for item in results) else 1
 
 if __name__ == "__main__":

@@ -1119,7 +1119,7 @@ private fun HomeFeedColumn(
                     val heading = when (profile.homePresentation) {
                         DeckHomePresentation.DESKTOP_TABLE -> "> ${title.uppercase(Locale.ROOT)} /"
                         DeckHomePresentation.HUD_CONSOLE -> "▸ ${title.uppercase(Locale.ROOT)} · ${videos.size}"
-                        DeckHomePresentation.ARCADE_GALLERY -> "★ ${title.uppercase(Locale.ROOT)}"
+                        DeckHomePresentation.ARCADE_GALLERY -> title.uppercase(Locale.ROOT)
                         DeckHomePresentation.IPTV_DASHBOARD -> "${title.uppercase(Locale.ROOT)}  •  ${videos.size}"
                         DeckHomePresentation.AMOLED_INDEX -> title.uppercase(Locale.ROOT)
                         DeckHomePresentation.MINIMAL_EDITORIAL -> "${title}."

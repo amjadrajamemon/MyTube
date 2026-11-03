@@ -439,6 +439,79 @@ fun DriveDeckScreen(
                                 Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
                                 Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
                             }
+                            DeckHomePresentation.YOUTUBE_STANDARD -> Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                YouTubeFeedGrid(
+                                    videos = if (suggestionsEnabled) suggestedVideos else emptyList(),
+                                    onOpenVideo = onOpenVideo,
+                                    desktop = false,
+                                    listView = listView,
+                                    firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = "Relevant"
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onMore = { onLoadMoreHomeFeed("Relevant") },
+                                    canLoadMore = "Relevant" !in moreFeedsExhausted,
+                                    moreLoading = "Relevant" in moreFeedsLoading
+                                )
+                                SmartTubeBrowseRail(
+                                    "History", if (historyEnabled) watchHistory else emptyList(),
+                                    onOpenVideo, listView,
+                                    onMore = { onLoadMoreHomeFeed("History") },
+                                    canLoadMore = "History" !in moreFeedsExhausted,
+                                    moreLoading = "History" in moreFeedsLoading,
+                                    onRefresh = onClearHistory, actionLabel = "Clear history"
+                                )
+                                SmartTubeBrowseRail(
+                                    "Trending", if (trendingEnabled) trendingVideos else emptyList(),
+                                    onOpenVideo, listView,
+                                    onMore = { onLoadMoreHomeFeed("Trending") },
+                                    canLoadMore = "Trending" !in moreFeedsExhausted,
+                                    moreLoading = "Trending" in moreFeedsLoading,
+                                    onRefresh = onRefreshFeed
+                                )
+                            }
+                            DeckHomePresentation.YOUTUBE_DESKTOP -> Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(18.dp)
+                            ) {
+                                YouTubeFeedGrid(
+                                    videos = if (suggestionsEnabled) suggestedVideos else emptyList(),
+                                    onOpenVideo = onOpenVideo,
+                                    desktop = true,
+                                    listView = listView,
+                                    firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = "Relevant"
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onMore = { onLoadMoreHomeFeed("Relevant") },
+                                    canLoadMore = "Relevant" !in moreFeedsExhausted,
+                                    moreLoading = "Relevant" in moreFeedsLoading
+                                )
+                                SmartTubeBrowseRail(
+                                    "Your history", if (historyEnabled) watchHistory else emptyList(),
+                                    onOpenVideo, listView,
+                                    onMore = { onLoadMoreHomeFeed("History") },
+                                    canLoadMore = "History" !in moreFeedsExhausted,
+                                    moreLoading = "History" in moreFeedsLoading,
+                                    onRefresh = onClearHistory, actionLabel = "Clear history"
+                                )
+                                SmartTubeBrowseRail(
+                                    "Trending", if (trendingEnabled) trendingVideos else emptyList(),
+                                    onOpenVideo, listView,
+                                    onMore = { onLoadMoreHomeFeed("Trending") },
+                                    canLoadMore = "Trending" !in moreFeedsExhausted,
+                                    moreLoading = "Trending" in moreFeedsLoading,
+                                    onRefresh = onRefreshFeed
+                                )
+                            }
+
                             DeckHomePresentation.SMARTTUBE_TV -> Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(20.dp)
@@ -498,6 +571,112 @@ fun DriveDeckScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Full-screen, measured-width video discovery grid for YouTube-style modes. */
+@Composable
+private fun YouTubeFeedGrid(
+    videos: List<HomeVideo>,
+    onOpenVideo: (HomeVideo) -> Unit,
+    desktop: Boolean,
+    listView: Boolean,
+    firstItemFocus: FocusRequester?,
+    focusVideoId: String?,
+    onVideoFocused: (HomeVideo) -> Unit,
+    onMore: () -> Unit,
+    canLoadMore: Boolean,
+    moreLoading: Boolean
+) {
+    val state = rememberLazyGridState()
+    val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
+    LaunchedEffect(focusIndex) {
+        if (focusIndex >= 0) state.scrollToItem(focusIndex)
+    }
+    val lastVisible by remember(state) {
+        derivedStateOf { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    }
+    var lastRequestedSize by remember(desktop) { mutableIntStateOf(-1) }
+    LaunchedEffect(lastVisible, videos.size, moreLoading, canLoadMore) {
+        if (canLoadMore && !moreLoading && videos.isNotEmpty() &&
+            lastVisible >= videos.size - 3 && lastRequestedSize != videos.size) {
+            lastRequestedSize = videos.size
+            onMore()
+        }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = when {
+                listView -> 1
+                !desktop && maxWidth < 600.dp -> 1
+                maxWidth >= 1250.dp -> 5
+                maxWidth >= 950.dp -> 4
+                maxWidth >= 720.dp -> 3
+                else -> 2
+            }
+            val height = if (desktop) 790.dp else 870.dp
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxWidth().height(height),
+                state = state,
+                contentPadding = PaddingValues(horizontal = if (desktop) 12.dp else 6.dp),
+                verticalArrangement = Arrangement.spacedBy(if (desktop) 18.dp else 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                gridItemsIndexed(videos, key = { index, video -> "${video.videoId}-$index" }) { _, video ->
+                    val focused = video.videoId == focusVideoId
+                    val card = Modifier.fillMaxWidth()
+                        .then(if (focused && firstItemFocus != null)
+                            Modifier.focusRequester(firstItemFocus) else Modifier)
+                        .tvInputHighlight(RoundedCornerShape(10.dp))
+                        .clickable { onVideoFocused(video); onOpenVideo(video) }
+                        .padding(bottom = 8.dp)
+                    if (listView) {
+                        Row(card, verticalAlignment = Alignment.Top) {
+                            VideoThumbnail(video, Modifier.width(132.dp).aspectRatio(16f / 9f))
+                            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                Text(video.title, color = TubeDeckTextPrimary,
+                                    fontSize = 13.sp, lineHeight = 17.sp,
+                                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(5.dp))
+                                Text(video.channelTitle, color = TubeDeckTextSecondary,
+                                    fontSize = 11.sp, maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    } else {
+                        Column(card) {
+                            VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                            Spacer(Modifier.height(7.dp))
+                            Text(video.title, color = TubeDeckTextPrimary,
+                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                                lineHeight = 17.sp, maxLines = 2,
+                                overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(5.dp))
+                            Text(video.channelTitle, color = TubeDeckTextSecondary,
+                                fontSize = 11.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+        if (canLoadMore) {
+            if (moreLoading) {
+                Box(Modifier.fillMaxWidth().height(38.dp),
+                    contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            } else {
+                TextButton(
+                    onClick = { lastRequestedSize = videos.size; onMore() },
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) { Text("Show more") }
             }
         }
     }

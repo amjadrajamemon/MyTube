@@ -13,10 +13,10 @@ enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
 /** Real screen structures instead of palette-only variations. */
 enum class DeckHomePresentation {
     THREE_COLUMN, IPTV_DASHBOARD, STACKED_SHELVES, DESKTOP_TABLE, HUD_CONSOLE,
-    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL
+    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL, SMARTTUBE_TV
 }
-enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD }
-enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND }
+enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD, TV_CLASSIC }
+enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND, TV_CLASSIC }
 enum class DeckMotionStyle { INSTANT, SNAP, GLIDE, PULSE }
 
 data class DeckThemeProfile(
@@ -109,7 +109,15 @@ object DeckThemeCatalog {
             homePresentation = DeckHomePresentation.MINIMAL_EDITORIAL,
             playerChrome = DeckPlayerChrome.CLASSIC, navVisual = DeckNavVisual.MINIMAL,
             motionStyle = DeckMotionStyle.INSTANT,
-            subtitle = "Paper-like spacious interface · quiet controls")
+            subtitle = "Paper-like spacious interface · quiet controls"),
+        DeckThemeProfile("SmartTube TV", 0xFF18A9B5L, 0xFF0D0D0DL,
+            fontScale = 1.09f, cornerRadiusDp = 3, contentGapDp = 10,
+            navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 72,
+            geometry = DeckCardGeometry.SQUARE,
+            homePresentation = DeckHomePresentation.SMARTTUBE_TV,
+            playerChrome = DeckPlayerChrome.TV_CLASSIC, navVisual = DeckNavVisual.TV_CLASSIC,
+            motionStyle = DeckMotionStyle.SNAP,
+            subtitle = "TV-first sidebar · full-width video rails · focused playback")
     )
 
     fun get(name: String): DeckThemeProfile =

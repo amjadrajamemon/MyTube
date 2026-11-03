@@ -932,14 +932,14 @@ class MainActivity : ComponentActivity() {
                                 OutlinedButton(
                                     onClick = {
                                         NativePipSessionBridge.request(
-                                            nativePipSessionId, NativePipSessionBridge.Action.SHOW_CHOOSER
+                                            nativePipSessionId.orEmpty(), NativePipSessionBridge.Action.SHOW_CHOOSER
                                         )
                                     }
                                 ) { Text("Expand") }
                                 Button(
                                     onClick = {
                                         NativePipSessionBridge.request(
-                                            nativePipSessionId, NativePipSessionBridge.Action.CLOSE
+                                            nativePipSessionId.orEmpty(), NativePipSessionBridge.Action.CLOSE
                                         )
                                     },
                                     modifier = Modifier.tvInputHighlight()

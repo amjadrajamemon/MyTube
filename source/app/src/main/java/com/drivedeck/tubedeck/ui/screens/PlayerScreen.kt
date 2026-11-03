@@ -145,7 +145,6 @@ import com.drivedeck.tubedeck.player.PlaybackEqualizerController
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
-import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
 import com.drivedeck.tubedeck.player.PlaylistQueuePolicy

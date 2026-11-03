@@ -256,7 +256,7 @@ fun DriveDeckScreen(
                             title = "History",
                             horizontal = historyHorizontal,
                             onToggleOrientation = { historyHorizontal = !historyHorizontal },
-                            loadMoreEnabled = false,
+                            loadMoreEnabled = "History" !in moreFeedsExhausted,
                             moreLoading = "History" in moreFeedsLoading,
                             onLoadMore = { onLoadMoreHomeFeed("History") },
                             videos = if (historyEnabled) watchHistory else emptyList(),

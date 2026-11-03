@@ -98,20 +98,9 @@ fun DriveDeckScreen(
         mutableStateOf(deckTheme.geometry == DeckCardGeometry.COMPACT ||
             deckTheme.geometry == DeckCardGeometry.TERMINAL)
     }
-    // Each feed can independently switch between vertical and horizontal scrolling.
-    // The global List/Tile selector also changes the actual card composition.
-    var historyHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
-            deckTheme.geometry == DeckCardGeometry.CINEMA)
-    }
-    var relevantHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
-            deckTheme.geometry == DeckCardGeometry.CINEMA)
-    }
-    var trendingHorizontal by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.homePresentation == DeckHomePresentation.CINEMA_STRIPS ||
-            deckTheme.geometry == DeckCardGeometry.CINEMA)
-    }
+    // Navigation is gesture-driven: phone users swipe between Home feed panels,
+    // while theme-specific stacked shelves use horizontal video rails.
+    // No per-feed orientation toggle is necessary.
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val firstVideoFocus = remember { FocusRequester() }
@@ -247,88 +236,117 @@ fun DriveDeckScreen(
                 }
             }
             if (!playlistMode) {
-                // The permanent first-page layout consists of three equal Home columns.
-                // Search history is hidden until Search receives focus.
-                item(key = "home-three-feeds") {
-                    // Three equal columns on a real TV canvas; preserve all three
-                    // shelves on phones/rotated devices by stacking instead of
-                    // compressing titles and toolbar actions into unreadable strips.
+                // Adapt to *measured* width, not pixel resolution or device label.
+                // Phones must never squeeze three panels into 100-200dp columns.
+                item(key = "home-responsive-feeds") {
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
-                        val triple = deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN &&
-                            maxWidth >= 570.dp
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            maxItemsInEachRow = if (triple) 3 else 1,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                        HomeFeedColumn(
-                            title = "History",
-                            horizontal = historyHorizontal,
-                            onToggleOrientation = { historyHorizontal = !historyHorizontal },
-                            loadMoreEnabled = "History" !in moreFeedsExhausted,
-                            moreLoading = "History" in moreFeedsLoading,
-                            onLoadMore = { onLoadMoreHomeFeed("History") },
-                            videos = if (historyEnabled) watchHistory else emptyList(),
-                            onOpenVideo = onOpenVideo,
-                            listView = listView,
-                            enabled = historyEnabled,
-                            action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
-                            onAction = onClearHistory,
-                            firstItemFocus = if (focusFeed == "History" && tvNavigation) firstVideoFocus else null,
-                            focusVideoId = if (focusFeed == "History") focusVideoId else null,
-                            onVideoFocused = { video ->
-                                selectedHomeFeed = "History"
-                                selectedHomeVideoId = video.videoId
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        HomeFeedColumn(
-                            title = "Relevant",
-                            horizontal = relevantHorizontal,
-                            onToggleOrientation = { relevantHorizontal = !relevantHorizontal },
-                            moreLoading = "Relevant" in moreFeedsLoading,
-                            loadMoreEnabled = "Relevant" !in moreFeedsExhausted,
-                            onLoadMore = { onLoadMoreHomeFeed("Relevant") },
-                            videos = if (suggestionsEnabled) suggestedVideos else emptyList(),
-                            onOpenVideo = onOpenVideo,
-                            listView = listView,
-                            enabled = suggestionsEnabled,
-                            action = if (suggestionsEnabled) "Refresh" else null,
-                            onAction = onRefreshFeed,
-                            firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
-                            focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
-                            onVideoFocused = { video ->
-                                selectedHomeFeed = "Relevant"
-                                selectedHomeVideoId = video.videoId
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        HomeFeedColumn(
-                            title = "Trending",
-                            horizontal = trendingHorizontal,
-                            onToggleOrientation = { trendingHorizontal = !trendingHorizontal },
-                            moreLoading = "Trending" in moreFeedsLoading,
-                            loadMoreEnabled = "Trending" !in moreFeedsExhausted,
-                            onLoadMore = { onLoadMoreHomeFeed("Trending") },
-                            subtitle = countryCode,
-                            videos = if (trendingEnabled) trendingVideos else emptyList(),
-                            onOpenVideo = onOpenVideo,
-                            listView = listView,
-                            enabled = trendingEnabled,
-                            loading = trendingStatus == "Loading",
-                            action = if (trendingEnabled) "Refresh" else null,
-                            onAction = onRefreshFeed,
-                            firstItemFocus = if (focusFeed == "Trending" && tvNavigation) firstVideoFocus else null,
-                            focusVideoId = if (focusFeed == "Trending") focusVideoId else null,
-                            onVideoFocused = { video ->
-                                selectedHomeFeed = "Trending"
-                                selectedHomeVideoId = video.videoId
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
+                        val threeWideColumns = maxWidth >= 900.dp &&
+                            deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
+                        val swipePanels = !threeWideColumns &&
+                            deckTheme.homePresentation == DeckHomePresentation.THREE_COLUMN
+
+                        @Composable
+                        fun Feed(index: Int, feedModifier: Modifier, horizontalCards: Boolean) {
+                            when (index) {
+                                0 -> HomeFeedColumn(
+                                    title = "History",
+                                    horizontal = horizontalCards,
+                                    loadMoreEnabled = "History" !in moreFeedsExhausted,
+                                    moreLoading = "History" in moreFeedsLoading,
+                                    onLoadMore = { onLoadMoreHomeFeed("History") },
+                                    videos = if (historyEnabled) watchHistory else emptyList(),
+                                    onOpenVideo = onOpenVideo,
+                                    listView = listView,
+                                    enabled = historyEnabled,
+                                    action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
+                                    onAction = onClearHistory,
+                                    firstItemFocus = if (focusFeed == "History" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "History") focusVideoId else null,
+                                    onVideoFocused = { video ->
+                                        selectedHomeFeed = "History"
+                                        selectedHomeVideoId = video.videoId
+                                    },
+                                    modifier = feedModifier
+                                )
+                                1 -> HomeFeedColumn(
+                                    title = "Relevant",
+                                    horizontal = horizontalCards,
+                                    moreLoading = "Relevant" in moreFeedsLoading,
+                                    loadMoreEnabled = "Relevant" !in moreFeedsExhausted,
+                                    onLoadMore = { onLoadMoreHomeFeed("Relevant") },
+                                    videos = if (suggestionsEnabled) suggestedVideos else emptyList(),
+                                    onOpenVideo = onOpenVideo,
+                                    listView = listView,
+                                    enabled = suggestionsEnabled,
+                                    action = if (suggestionsEnabled) "Refresh" else null,
+                                    onAction = onRefreshFeed,
+                                    firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
+                                    onVideoFocused = { video ->
+                                        selectedHomeFeed = "Relevant"
+                                        selectedHomeVideoId = video.videoId
+                                    },
+                                    modifier = feedModifier
+                                )
+                                else -> HomeFeedColumn(
+                                    title = "Trending",
+                                    horizontal = horizontalCards,
+                                    moreLoading = "Trending" in moreFeedsLoading,
+                                    loadMoreEnabled = "Trending" !in moreFeedsExhausted,
+                                    onLoadMore = { onLoadMoreHomeFeed("Trending") },
+                                    subtitle = countryCode,
+                                    videos = if (trendingEnabled) trendingVideos else emptyList(),
+                                    onOpenVideo = onOpenVideo,
+                                    listView = listView,
+                                    enabled = trendingEnabled,
+                                    loading = trendingStatus == "Loading",
+                                    action = if (trendingEnabled) "Refresh" else null,
+                                    onAction = onRefreshFeed,
+                                    firstItemFocus = if (focusFeed == "Trending" && tvNavigation) firstVideoFocus else null,
+                                    focusVideoId = if (focusFeed == "Trending") focusVideoId else null,
+                                    onVideoFocused = { video ->
+                                        selectedHomeFeed = "Trending"
+                                        selectedHomeVideoId = video.videoId
+                                    },
+                                    modifier = feedModifier
+                                )
+                            }
+                        }
+
+                        when {
+                            threeWideColumns -> Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.weight(1f), horizontalCards = false)
+                                }
+                            }
+                            swipePanels -> {
+                                // One readable panel per viewport; swipe left/right to move
+                                // History -> Relevant -> Trending. The next panel peeks in.
+                                val panelWidth = (maxWidth - 30.dp).coerceAtMost(620.dp)
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    items(3) { index ->
+                                        Feed(index, Modifier.width(panelWidth), horizontalCards = false)
+                                    }
+                                }
+                            }
+                            else -> Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Stacked and cinema themes use direct horizontal video swipes.
+                                repeat(3) { index ->
+                                    Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                            }
                         }
                     }
                 }
@@ -542,8 +560,9 @@ private fun PlaylistThumbnail(playlist: PlaylistCandidate, modifier: Modifier) {
 }
 
 /**
- * Three permanent Home feeds; each independently supports a vertical list or
- * horizontal carousel. The layouts are deliberately different:
+ * Three Home feeds support swipeable panels on narrow THREE_COLUMN themes,
+ * readable TV columns on wide canvases, and horizontal video rails in shelf
+ * themes. The layouts are deliberately different:
  * List = compact thumbnail to the left, full wrapped title on the right;
  * Tile = large thumbnail above the full wrapped title.
  *
@@ -559,7 +578,6 @@ private fun HomeFeedColumn(
     listView: Boolean,
     enabled: Boolean,
     horizontal: Boolean,
-    onToggleOrientation: () -> Unit,
     loadMoreEnabled: Boolean,
     moreLoading: Boolean,
     onLoadMore: () -> Unit,
@@ -605,42 +623,29 @@ private fun HomeFeedColumn(
             ),
             verticalArrangement = Arrangement.spacedBy((profile.contentGapDp / 2).dp)
         ) {
-            // Header text owns its entire first row: no more two-line or
-            // clipped History / Relevant / Trending beside two toolbar buttons.
             Column(Modifier.fillMaxWidth().heightIn(min = 45.dp)) {
-                Text(
-                    title, color = TubeDeckTextPrimary, fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, maxLines = 1,
-                    softWrap = false, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            subtitle, modifier = Modifier.weight(1f),
-                            color = TubeDeckTextSecondary, fontSize = 9.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                    } else Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onToggleOrientation, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            if (horizontal) Icons.Default.ViewDay else Icons.Default.SwapHoriz,
-                            contentDescription = if (horizontal) "$title: switch to vertical scroll" else "$title: switch to horizontal scroll",
-                            tint = TubeDeckAccentCyan, modifier = Modifier.size(17.dp)
-                        )
-                    }
+                    Text(
+                        title, color = TubeDeckTextPrimary, fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 1,
+                        softWrap = false, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     if (action != null) {
-                        IconButton(onClick = onAction, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = onAction, modifier = Modifier.size(36.dp)) {
                             Icon(
                                 if (action == "Clear") Icons.Default.DeleteSweep else Icons.Default.Refresh,
-                                "$action $title", tint = TubeDeckAccentCyan, modifier = Modifier.size(17.dp)
+                                "$action $title", tint = TubeDeckAccentCyan, modifier = Modifier.size(19.dp)
                             )
                         }
                     }
+                }
+                if (!subtitle.isNullOrBlank()) {
+                    Text(subtitle, color = TubeDeckTextSecondary, fontSize = 10.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             if (!enabled) {
@@ -667,12 +672,14 @@ private fun HomeFeedColumn(
                     if (listView) {
                         Row(itemModifier, verticalAlignment = Alignment.Top) {
                             VideoThumbnail(video,
-                                Modifier.width(if (profile.geometry == DeckCardGeometry.COMPACT) 62.dp else 77.dp)
+                                Modifier.width(if (horizontal) 112.dp else if (profile.geometry == DeckCardGeometry.COMPACT) 62.dp else 77.dp)
                                     .aspectRatio(imageRatio))
                             Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
-                                    fontSize = 11.sp, lineHeight = 14.sp, softWrap = true)
-                                Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 9.sp, softWrap = true)
+                                    fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3,
+                                     overflow = TextOverflow.Ellipsis)
+                                Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp,
+                                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     } else {
@@ -680,9 +687,11 @@ private fun HomeFeedColumn(
                             VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(imageRatio))
                             Spacer(Modifier.height(5.dp))
                             Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp, lineHeight = 15.sp, softWrap = true)
+                                fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3,
+                                     overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.height(3.dp))
-                            Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp, softWrap = true)
+                            Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp,
+                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                             VideoViews(video.viewCount)
                         }
                     }
@@ -691,14 +700,14 @@ private fun HomeFeedColumn(
                     LazyRow(
                         state = state,
                         modifier = Modifier.fillMaxWidth().height(
-                            if (listView) 234.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 398.dp else 362.dp
+                            if (listView) 160.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 302.dp else 278.dp
                         ),
                         contentPadding = PaddingValues(end = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
                             HomeCard(video, Modifier.width(
-                                if (listView) 235.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 263.dp else 230.dp
+                                if (listView) 305.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 263.dp else 230.dp
                             ))
                         }
                     }

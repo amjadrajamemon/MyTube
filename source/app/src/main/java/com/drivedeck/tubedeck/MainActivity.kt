@@ -1332,6 +1332,17 @@ class MainActivity : ComponentActivity() {
                                         preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                                         preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                                         seekIntervalSeconds = settings.seekIntervalSeconds,
+                                        viewingMode = settings.viewingMode,
+                                        viewingDimPercent = settings.viewingDimPercent,
+                                        nightAudioEnabled = settings.nightAudioEnabled,
+                                        onViewingPreferencesChanged = { mode, dim, nightAudio ->
+                                            val latest = repository.settings.value
+                                            repository.updateSettings(latest.copy(
+                                                viewingMode = mode,
+                                                viewingDimPercent = dim.coerceIn(10, 85),
+                                                nightAudioEnabled = nightAudio
+                                            ))
+                                        },
                                         autoRotatePlayback = settings.autoRotatePlayback,
                                         onClose = {
                                             playingMedia = null

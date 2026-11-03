@@ -2,6 +2,8 @@ package com.drivedeck.tubedeck.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +29,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.HomeVideo
@@ -85,19 +89,32 @@ fun DriveDeckScreen(
     val context = LocalContext.current
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val firstVideoFocus = remember { FocusRequester() }
-    var initialHomeFocusSet by rememberSaveable(viewStateKey) { mutableStateOf(false) }
-    val focusFeed = when {
-        historyEnabled && watchHistory.isNotEmpty() -> "History"
-        suggestionsEnabled && suggestedVideos.isNotEmpty() -> "Relevant"
-        trendingEnabled && trendingVideos.isNotEmpty() -> "Trending"
-        else -> null
+    // Remember actual selection, not merely that focus was initialized. The
+    // SaveableStateProvider in MainActivity restores this when returning from video.
+    var selectedHomeFeed by rememberSaveable(viewStateKey) { mutableStateOf("") }
+    var selectedHomeVideoId by rememberSaveable(viewStateKey) { mutableStateOf("") }
+    val feeds = listOf(
+        "History" to if (historyEnabled) watchHistory else emptyList(),
+        "Relevant" to if (suggestionsEnabled) suggestedVideos else emptyList(),
+        "Trending" to if (trendingEnabled) trendingVideos else emptyList()
+    )
+    val selectedIsAvailable = feeds.any { (feed, videos) ->
+        feed == selectedHomeFeed && videos.any { it.videoId == selectedHomeVideoId }
     }
-    LaunchedEffect(tvNavigation, playlistMode, focusFeed) {
-        if (tvNavigation && !playlistMode && !initialHomeFocusSet && focusFeed != null) {
-            // Wait for LazyColumn's cards before giving a remote an actionable focus.
-            delay(160)
-            if (runCatching { firstVideoFocus.requestFocus() }.isSuccess) {
-                initialHomeFocusSet = true
+    val chosenFeedAndVideo = if (selectedIsAvailable) {
+        selectedHomeFeed to selectedHomeVideoId
+    } else {
+        feeds.firstOrNull { it.second.isNotEmpty() }?.let { it.first to it.second.first().videoId }
+    }
+    val focusFeed = chosenFeedAndVideo?.first
+    val focusVideoId = chosenFeedAndVideo?.second
+
+    LaunchedEffect(tvNavigation, playlistMode, focusFeed != null) {
+        if (tvNavigation && !playlistMode && focusFeed != null) {
+            // First frame may precede feed data or the LazyColumn item mount.
+            repeat(4) {
+                delay(80)
+                if (runCatching { firstVideoFocus.requestFocus() }.isSuccess) return@LaunchedEffect
             }
         }
     }
@@ -196,6 +213,11 @@ fun DriveDeckScreen(
                             action = if (historyEnabled && watchHistory.isNotEmpty()) "Clear" else null,
                             onAction = onClearHistory,
                             firstItemFocus = if (focusFeed == "History" && tvNavigation) firstVideoFocus else null,
+                            focusVideoId = if (focusFeed == "History") focusVideoId else null,
+                            onVideoFocused = { video ->
+                                selectedHomeFeed = "History"
+                                selectedHomeVideoId = video.videoId
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         HomeFeedColumn(
@@ -207,6 +229,11 @@ fun DriveDeckScreen(
                             action = if (suggestionsEnabled) "Refresh" else null,
                             onAction = onRefreshFeed,
                             firstItemFocus = if (focusFeed == "Relevant" && tvNavigation) firstVideoFocus else null,
+                            focusVideoId = if (focusFeed == "Relevant") focusVideoId else null,
+                            onVideoFocused = { video ->
+                                selectedHomeFeed = "Relevant"
+                                selectedHomeVideoId = video.videoId
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         HomeFeedColumn(
@@ -220,6 +247,11 @@ fun DriveDeckScreen(
                             action = if (trendingEnabled) "Refresh" else null,
                             onAction = onRefreshFeed,
                             firstItemFocus = if (focusFeed == "Trending" && tvNavigation) firstVideoFocus else null,
+                            focusVideoId = if (focusFeed == "Trending") focusVideoId else null,
+                            onVideoFocused = { video ->
+                                selectedHomeFeed = "Trending"
+                                selectedHomeVideoId = video.videoId
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -448,8 +480,11 @@ private fun HomeFeedColumn(
     loading: Boolean = false,
     action: String? = null,
     onAction: () -> Unit = {},
-    firstItemFocus: FocusRequester? = null
+    firstItemFocus: FocusRequester? = null,
+    focusVideoId: String? = null,
+    onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
+    val focusScrollScope = rememberCoroutineScope()
     Surface(
         color = TubeDeckSurface,
         shape = RoundedCornerShape(12.dp),
@@ -506,13 +541,26 @@ private fun HomeFeedColumn(
                     Text("No videos yet", color = TubeDeckTextSecondary, fontSize = 10.sp)
                 }
             } else {
-                videos.forEachIndexed { index, video ->
+                videos.forEachIndexed { _, video ->
+                    val bringIntoView = remember(video.videoId) { BringIntoViewRequester() }
                     Column(
                         modifier = Modifier.fillMaxWidth()
-                            .then(if (index == 0 && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
+                            .then(if (video.videoId == focusVideoId && firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier)
+                            .bringIntoViewRequester(bringIntoView)
+                            .onFocusChanged { focus ->
+                                if (focus.isFocused) {
+                                    onVideoFocused(video)
+                                    focusScrollScope.launch {
+                                        runCatching { bringIntoView.bringIntoView() }
+                                    }
+                                }
+                            }
                             .clip(RoundedCornerShape(9.dp))
                             .tvInputHighlight(RoundedCornerShape(9.dp))
-                            .clickable { onOpenVideo(video) }
+                            .clickable {
+                                onVideoFocused(video)
+                                onOpenVideo(video)
+                            }
                     ) {
                         VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                         Spacer(Modifier.height(4.dp))

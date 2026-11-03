@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -50,7 +49,7 @@ import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.components.SearchAssistField
-import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.rememberAdaptiveTvNavigation
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
@@ -107,8 +106,7 @@ fun DriveDeckScreen(
     // Navigation is gesture-driven: phone users swipe between Home feed panels,
     // while theme-specific stacked shelves use horizontal video rails.
     // No per-feed orientation toggle is necessary.
-    val context = LocalContext.current
-    val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
+    val tvNavigation = rememberAdaptiveTvNavigation()
     val firstVideoFocus = remember { FocusRequester() }
     val searchResultFocus = remember { FocusRequester() }
     var selectedSearchVideoId by rememberSaveable(viewStateKey) { mutableStateOf("") }
@@ -350,7 +348,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.IPTV_DASHBOARD -> Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                ThemeDashboardBanner("CHANNEL DASHBOARD", "MYTUBE / SOURCE COLLECTION")
                                 if (maxWidth >= 840.dp) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         repeat(3) { index ->
@@ -365,7 +362,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.STACKED_SHELVES -> Column(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                ThemeDashboardBanner("Discover", "Your library and personalized recommendations")
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
                                 }
@@ -374,7 +370,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.DESKTOP_TABLE -> Column(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                ThemeDashboardBanner("MYTUBE://WORKSPACE", "LIBRARY  /  DISCOVERY  /  TRENDING")
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
                                 }
@@ -383,7 +378,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.HUD_CONSOLE -> Column(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                ThemeDashboardBanner("MEDIA COMMAND CENTER", "FEED STATUS / LIVE MONITOR")
                                 if (maxWidth >= 760.dp) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Feed(0, Modifier.weight(1f), horizontalCards = false)
@@ -400,7 +394,7 @@ fun DriveDeckScreen(
                                 verticalArrangement = Arrangement.spacedBy(18.dp)
                             ) {
                                 suggestedVideos.firstOrNull()?.let { video ->
-                                    HomeSpotlight(video, "NOW SHOWING", onOpenVideo)
+                                    HomeSpotlight(video, "Featured", onOpenVideo)
                                 }
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
@@ -410,9 +404,8 @@ fun DriveDeckScreen(
                             DeckHomePresentation.GLASS_CAROUSEL -> Column(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                ThemeDashboardBanner("Explore MyTube", "Swipe to discover what matters to you")
                                 suggestedVideos.firstOrNull()?.let { video ->
-                                    HomeSpotlight(video, "FEATURED FOR YOU", onOpenVideo)
+                                    HomeSpotlight(video, "Featured", onOpenVideo)
                                 }
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = true)
@@ -422,7 +415,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.AMOLED_INDEX -> Column(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                ThemeDashboardBanner("Library", "PURE BLACK  /  NO DISTRACTIONS")
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
                                 }
@@ -431,7 +423,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.ARCADE_GALLERY -> Column(
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                ThemeDashboardBanner("SELECT YOUR STAGE", "PLAYER ONE  /  VIDEO ARCADE")
                                 repeat(3) { index ->
                                     Feed(index, Modifier.fillMaxWidth(), horizontalCards = false)
                                 }
@@ -440,7 +431,6 @@ fun DriveDeckScreen(
                             DeckHomePresentation.MINIMAL_EDITORIAL -> Column(
                                 verticalArrangement = Arrangement.spacedBy(24.dp)
                             ) {
-                                ThemeDashboardBanner("Watch something wonderful.", "A quieter place to discover")
                                 suggestedVideos.firstOrNull()?.let { video ->
                                     HomeSpotlight(video, "EDITOR'S PICK", onOpenVideo)
                                 }
@@ -454,13 +444,6 @@ fun DriveDeckScreen(
                             ) {
                                 // Independent TV-first browse experience with compact dark
                                 // horizontal rails, clear section headers and D-pad focus.
-                                Text(
-                                    "MYTUBE  /  TV",
-                                    color = TubeDeckTextSecondary,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 2.dp)
-                                )
                                 SmartTubeBrowseRail(
                                     "Recommended",
                                     if (suggestionsEnabled) suggestedVideos else emptyList(),
@@ -615,54 +598,6 @@ private fun SmartTubeBrowseRail(
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * A theme's introduction is deliberately composed differently for terminals,
- * dashboards, cinema, arcade and editorial views. It is not a color swatch.
- */
-@Composable
-private fun ThemeDashboardBanner(title: String, subtitle: String) {
-    val profile = LocalDeckThemeProfile.current
-    val presentation = profile.homePresentation
-    val terminal = presentation == DeckHomePresentation.DESKTOP_TABLE ||
-        presentation == DeckHomePresentation.HUD_CONSOLE
-    val editorial = presentation == DeckHomePresentation.MINIMAL_EDITORIAL
-    val arcade = presentation == DeckHomePresentation.ARCADE_GALLERY
-    val bare = presentation == DeckHomePresentation.AMOLED_INDEX || editorial
-    Surface(
-        color = if (bare) TubeDeckBackground else TubeDeckSurfaceVariant,
-        shape = RoundedCornerShape(if (bare || terminal) 0.dp else profile.cornerRadiusDp.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            Modifier.padding(
-                horizontal = if (editorial) 14.dp else 10.dp,
-                vertical = if (editorial) 24.dp else if (terminal) 8.dp else 12.dp
-            )
-        ) {
-            Text(
-                text = if (terminal) "▶ $title" else if (arcade) "★ $title" else title,
-                color = if (arcade || terminal) TubeDeckAccentCyan else TubeDeckTextPrimary,
-                fontWeight = if (editorial) FontWeight.Normal else FontWeight.ExtraBold,
-                fontSize = when {
-                    editorial -> 29.sp
-                    presentation == DeckHomePresentation.AMOLED_INDEX -> 27.sp
-                    terminal -> 15.sp
-                    else -> 20.sp
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(if (editorial) 10.dp else 3.dp))
-            Text(
-                subtitle,
-                color = TubeDeckTextSecondary,
-                fontSize = if (editorial) 13.sp else 10.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }

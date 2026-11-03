@@ -1142,6 +1142,18 @@ fun NativeExoPlayer(
         DeckPlayerChrome.MATERIAL -> Color(0xFF6750A4)
         else -> TubeDeckAccentCyan
     }
+    // Controls change hierarchy and placement with the experience,
+    // not just accent colors. Playback state always stays on the same ExoPlayer.
+    val cinematicPlayer = themeProfile.playerChrome in setOf(
+        DeckPlayerChrome.PLEX, DeckPlayerChrome.KODI, DeckPlayerChrome.THEATER,
+        DeckPlayerChrome.GLASS, DeckPlayerChrome.APPLE_FLOAT
+    )
+    val gesturePlayer = themeProfile.playerChrome == DeckPlayerChrome.MX_GESTURE
+    val technicalPlayer = themeProfile.playerChrome in setOf(
+        DeckPlayerChrome.VLC_COMPACT, DeckPlayerChrome.CONSOLE,
+        DeckPlayerChrome.CYBER, DeckPlayerChrome.HUD
+    )
+    val largeTvControls = themeProfile.playerChrome == DeckPlayerChrome.TV_CLASSIC
     val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
     // The spinner and central Play/Pause row must share the exact same offset.
@@ -2554,11 +2566,44 @@ fun NativeExoPlayer(
                         }
                     }
 
-                    if (!compactPortrait && (onDownloadVideo != null || onDownloadPlaylist != null)) {
+                    if (!compactPortrait && (onDownloadVideo != null || onDownloadPlaylist != null) &&
+                        !cinematicPlayer) {
                         Box(
                             modifier = Modifier.align(Alignment.TopEnd).padding(top = 54.dp, end = 8.dp)
                         ) {
                             DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
+                        }
+                    }
+
+                    if (gesturePlayer && !compactPortrait) {
+                        Surface(
+                            color = Color.Black.copy(alpha = .78f),
+                            shape = RoundedCornerShape(22.dp),
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                                .padding(end = 8.dp, bottom = 65.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                IconButton(
+                                    onClick = {
+                                        exoPlayer.seekTo((currentPosition - 10_000L).coerceAtLeast(0L))
+                                    },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Replay10, "Back 10 seconds", tint = Color.White)
+                                }
+                                IconButton(
+                                    onClick = { exoPlayer.seekTo(currentPosition + 10_000L) },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Forward10, "Forward 10 seconds", tint = Color.White)
+                                }
+                                IconButton(
+                                    onClick = { showSettings = true },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Tune, "Playback tools", tint = Color.White)
+                                }
+                            }
                         }
                     }
 
@@ -2571,7 +2616,9 @@ fun NativeExoPlayer(
                             Modifier.align(Alignment.Center)
                                 .offset(y = centerPlayYOffset),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
+                            horizontalArrangement = Arrangement.spacedBy(
+                                if (compactPortrait) 12.dp else if (largeTvControls) 24.dp else 20.dp
+                            )
                         ) {
                             IconButton(
                                 onClick = { onPreviousItem?.invoke() },
@@ -2623,8 +2670,31 @@ fun NativeExoPlayer(
                         Modifier.fillMaxWidth()
                             .align(Alignment.BottomCenter)
                             .then(if (compactPortrait) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars))
-                            .padding(horizontal = 10.dp, vertical = 1.dp)
+                            .then(
+                                if (cinematicPlayer) Modifier.background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = .85f)
+                                        )
+                                    )
+                                ) else if (technicalPlayer) Modifier
+                                    .background(Color.Black.copy(alpha = .82f))
+                                else Modifier
+                            )
+                            .padding(horizontal = if (cinematicPlayer) 17.dp else 10.dp,
+                                vertical = if (cinematicPlayer) 12.dp else 1.dp)
                     ) {
+                        if (cinematicPlayer) {
+                            Text(
+                                media.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = if (compactPortrait) 12.sp else 16.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
                         // Keep only frequent playback controls beside the seek bar. Playback speed,
                         // dubbing and Equalizer live under the top-right Player settings gear.
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2935,6 +3005,7 @@ fun NativeExoPlayer(
                             )
                         }
                         CompactSeekBar(
+                            chrome = themeProfile.playerChrome,
                             progress = scrubFraction
                                 ?: if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
                             chapterFractions = resolved?.chapters.orEmpty()
@@ -5608,6 +5679,7 @@ private fun SeekPreviewThumbnail(
 
 @Composable
 private fun CompactSeekBar(
+    chrome: DeckPlayerChrome,
     progress: Float,
     chapterFractions: List<Float> = emptyList(),
     sponsorRanges: List<Pair<Float, Float>> = emptyList(),
@@ -5615,6 +5687,21 @@ private fun CompactSeekBar(
     onSeekFinished: (Float) -> Unit
 ) {
     val normalized = progress.coerceIn(0f, 1f)
+    val seekAccent = when (chrome) {
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> Color(0xFFFF0033)
+        DeckPlayerChrome.VLC_COMPACT -> Color(0xFFFF9800)
+        DeckPlayerChrome.PLEX -> Color(0xFFE9AC37)
+        DeckPlayerChrome.MATERIAL -> Color(0xFF6750A4)
+        DeckPlayerChrome.APPLE_FLOAT -> Color.White
+        DeckPlayerChrome.MX_GESTURE -> Color(0xFF0088FF)
+        DeckPlayerChrome.CYBER -> TubeDeckAccentMint
+        else -> TubeDeckAccentCyan
+    }
+    val seekStroke = when (chrome) {
+        DeckPlayerChrome.PLEX, DeckPlayerChrome.KODI, DeckPlayerChrome.MX_GESTURE -> 5.dp
+        DeckPlayerChrome.VLC_COMPACT, DeckPlayerChrome.CONSOLE -> 2.dp
+        else -> 3.dp
+    }
     Canvas(
         modifier = Modifier.fillMaxWidth()
             .height(20.dp)
@@ -5674,15 +5761,15 @@ private fun CompactSeekBar(
             )
         }
         drawLine(
-            color = TubeDeckAccentCyan,
+            color = seekAccent,
             start = Offset(0f, y),
             end = Offset(activeX, y),
-            strokeWidth = 3.dp.toPx(),
+            strokeWidth = seekStroke.toPx(),
             cap = StrokeCap.Round
         )
         drawCircle(
-            color = TubeDeckAccentCyan,
-            radius = 4.5.dp.toPx(),
+            color = seekAccent,
+            radius = (if (chrome == DeckPlayerChrome.MX_GESTURE) 6.5.dp else 4.5.dp).toPx(),
             center = Offset(activeX, y)
         )
     }

@@ -1,4 +1,4 @@
-name: MyTube v1.9.6 Core Fixes ARM64 + Universal
+name: MyTube v1.9.7 Core Fixes ARM64 + Universal
 
 on:
   push:
@@ -34,7 +34,7 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 101' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 102' source/app/build.gradle.kts
           grep -Fq 'versionName = "1.9.6"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
@@ -55,6 +55,14 @@ jobs:
           grep -Fq 'bringIntoViewRequester' "$HOME"
           grep -Fq 'TvRemoteNavigationPolicy.decide' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/TvRemoteNavigationPolicyTest.kt
+          test -f source/app/src/test/java/com/drivedeck/tubedeck/player/AudioNextSessionPolicyTest.kt
+          grep -Fq 'AudioNextSessionPolicy()' source/app/src/main/java/com/drivedeck/tubedeck/player/BackgroundAudioPlaybackService.kt
+          grep -Fq 'positionSnapshotJob' source/app/src/main/java/com/drivedeck/tubedeck/player/BackgroundAudioPlaybackService.kt
+          grep -Fq 'Restore video from blackout' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
+          grep -Fq 'enableScreenBlackout(); controlsVisible = false' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          ! grep -Fq 'always-reachable audio-only blackout shortcut' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'connection.disconnect()' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
+          test -f QUALITY_AUDIT_v1.9.7_2026-11-03.md
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -109,6 +117,22 @@ jobs:
       - name: Run ARM64 and universal unit tests
         run: gradle -p source testArm64DebugUnitTest testUniversalDebugUnitTest --no-parallel --max-workers=2 --stacktrace
 
+      - name: Run Android lint audit (non-blocking; review findings)
+        continue-on-error: true
+        run: gradle -p source lintArm64Debug --no-parallel --max-workers=2 --stacktrace
+
+      - name: Upload Android lint report when available
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTube-v1.9.7-Android-Lint
+          path: |
+            source/app/build/reports/lint-results-arm64Debug.html
+            source/app/build/reports/lint-results-arm64Debug.xml
+            source/app/build/reports/lint-results-arm64Debug.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Compile ARM64 APK
         run: gradle -p source assembleArm64Debug --no-parallel --max-workers=2 --stacktrace
 
@@ -131,11 +155,11 @@ jobs:
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
               if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/MyTube-v1.9.6-ARM64-debug.apk"
+              cp "$APK" "dist/MyTube-v1.9.7-ARM64-debug.apk"
             else
               unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/MyTube-v1.9.6-Universal-debug.apk"
+              cp "$APK" "dist/MyTube-v1.9.7-Universal-debug.apk"
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -144,7 +168,7 @@ jobs:
       - name: Upload installable dual-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v1.9.6-ARM64-and-Universal
+          name: MyTube-v1.9.7-ARM64-and-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -156,13 +180,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.9.6-tv-navigation-parity-20261103"
+          TAG="v1.9.7-stability-blackout-hardening-20261103"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists; refusing to overwrite previous binaries"
             exit 1
           fi
-          gh release create "$TAG" dist/MyTube-v1.9.6-ARM64-debug.apk dist/MyTube-v1.9.6-Universal-debug.apk dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/MyTube-v1.9.7-ARM64-debug.apk dist/MyTube-v1.9.7-Universal-debug.apk dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MyTube v1.9.6 – TV Remote Navigation, Keyboard and Focus Restoration (ARM64 + Universal)" \
-            --notes "Fixes Next/Autoplay recommendation loops, enables immediate tap-to-wake from blackout, adds an explicit Close to the PiP menu, a TV-focusable Close mini-player control, unified D-pad/air-mouse/keyboard navigation, deterministic seek shortcuts, TV Back/STOP, and exact Home/Search focused-card restoration, while retaining permanent History, Relevant and Trending Home feeds, and removes both unused IPTV add-ons. Debug-signed with the pre-existing pinned MyTube signing identity. Build results include unit test and ABI/signature verification. Physical device and live YouTube regression tests are still recommended."
+            --title "MyTube v1.9.7 – Stability, Audio Efficiency and Blackout UI Hardening (ARM64 + Universal)" \
+            --notes "Hardening release: removes the permanent bottom-right blackout icon from normal playback while keeping the fading toolbar eye; adds a dim Restore Video control only on the blackout mask (tap anywhere to wake); fixes repeat loops and end-of-track continuation in background audio, avoids periodic wakeups while audio is paused, always disconnects NewPipe HTTP connections, and handles missing TV ROM memory/power/connectivity services conservatively. All v1.9.6 D-pad/air-mouse/keyboard navigation, PiP close, History/Relevant/Trending Home and IPTV removal remain. APKs are signed with the pinned update-compatible identity and verified by unit tests plus APK signature/ABI checks. See QUALITY_AUDIT_v1.9.7_2026-11-03.md; real-device regressions and Android lint remain part of hardening."

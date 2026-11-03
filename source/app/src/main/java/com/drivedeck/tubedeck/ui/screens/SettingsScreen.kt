@@ -303,12 +303,6 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "These themes change global typography, card proportions, corner shapes, navigation placement and density—not only the palette. Linux/Digital use a top menu; ATV/Xtreamity use a TV side rail. All preserve History, Relevant and Trending.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
                     "Text size · ${(fontScale * 100).toInt()}%",
                     color = TubeDeckTextPrimary,
                     fontSize = 12.sp,

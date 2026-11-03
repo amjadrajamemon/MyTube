@@ -128,6 +128,12 @@ class NativePlayerActivity : ComponentActivity() {
     // androidx.core. OEM head units sometimes send media keys only to this hook.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_MEDIA_STOP && isPipMode && !closingPlayer
+        ) {
+            closePlaybackCompletely()
+            return true
+        }
         if (playerActive && !closingPlayer &&
             com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
         ) return true
@@ -908,6 +914,12 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         if (isPipMode) {
+            // On TV a single Back on the focused mini-player must close it,
+            // rather than repeatedly hiding the task without stopping playback.
+            if (com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice(this)) {
+                closePlaybackCompletely()
+                return
+            }
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             when (PlaybackParentPipBackPolicy.onBack(rapidCount, showPlaybackExitChoices)) {

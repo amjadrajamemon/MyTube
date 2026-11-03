@@ -126,6 +126,7 @@ data class TubeDeckSettings(
     val animatedCardPreviews: Boolean = false, // Off, Manual, Last 15 seconds
     val hideWatchedRecommendations: Boolean = true,
     val lowResourceMode: Boolean = false,
+    val resumeAfterInterruptions: Boolean = true,
     val subtitleTextScale: Float = 1.0f,
     val subtitleBottomInsetDp: Int = 0,
     val remoteNextKeyCode: Int = 0,

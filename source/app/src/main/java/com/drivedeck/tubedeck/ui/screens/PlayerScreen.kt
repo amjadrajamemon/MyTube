@@ -588,9 +588,11 @@ fun NativeExoPlayer(
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val tvSurfaceFocus = remember { FocusRequester() }
     val tvPlayPauseFocus = remember { FocusRequester() }
+    val tvTopBackFocus = remember { FocusRequester() }
     var tvSurfaceFocused by remember { mutableStateOf(false) }
     var tvControlsFocused by remember { mutableStateOf(false) }
     var tvPendingControlFocus by remember { mutableStateOf(false) }
+    var tvPendingTopFocus by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -1722,12 +1724,16 @@ fun NativeExoPlayer(
         if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
     }
 
-    LaunchedEffect(controlsVisible, tvPendingControlFocus) {
-        // The overlay can be absent after auto-hide. Wait until Compose has mounted
-        // the control before invoking FocusRequester, avoiding TV-only crashes.
-        if (controlsVisible && tvPendingControlFocus) {
-            tvPlayPauseFocus.requestFocus()
+    LaunchedEffect(controlsVisible, tvPendingControlFocus, tvPendingTopFocus) {
+        // Do not dispatch a D-pad focus request until the control overlay is attached.
+        if (controlsVisible && (tvPendingControlFocus || tvPendingTopFocus)) {
+            withFrameNanos { }
+            runCatching {
+                if (tvPendingTopFocus) tvTopBackFocus.requestFocus()
+                else tvPlayPauseFocus.requestFocus()
+            }
             tvPendingControlFocus = false
+            tvPendingTopFocus = false
         }
     }
 
@@ -1782,7 +1788,11 @@ fun NativeExoPlayer(
                     AndroidKeyEvent.KEYCODE_DPAD_UP -> {
                         if (!tvSurfaceFocused) false else {
                             controlsVisible = true
-                            tvPendingControlFocus = true
+                            if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP) {
+                                tvPendingTopFocus = true
+                            } else {
+                                tvPendingControlFocus = true
+                            }
                             true
                         }
                     }
@@ -2169,11 +2179,14 @@ fun NativeExoPlayer(
                         Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            liveDubEngine.stop()
-                            exoPlayer.pause()
-                            onClose()
-                        }) {
+                        IconButton(
+                            onClick = {
+                                liveDubEngine.stop()
+                                exoPlayer.pause()
+                                onClose()
+                            },
+                            modifier = Modifier.focusRequester(tvTopBackFocus).tvInputHighlight(CircleShape)
+                        ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {

@@ -1,6 +1,7 @@
 package com.drivedeck.tubedeck.data.repository
 
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * Finalize a completed download into app-private storage without a SAF picker.
@@ -18,11 +19,15 @@ internal object LocalDownloadCommit {
         }
 
         if (destination.exists()) {
-            check(destination.isFile && destination.length() == expectedBytes) {
+            check(
+                destination.isFile &&
+                    destination.length() == expectedBytes &&
+                    sha256(source).contentEquals(sha256(destination))
+            ) {
                 "A different file already exists at the completed download destination"
             }
-            // The previous attempt committed media but process death prevented
-            // saving the catalog. Reuse its completed file without overwriting it.
+            // Reuse an identical completed output after process death between
+            // saving media and recording it in the offline catalog.
             return destination
         }
 
@@ -50,5 +55,18 @@ internal object LocalDownloadCommit {
             "Incomplete completed download file"
         }
         return destination
+    }
+
+    private fun sha256(file: File): ByteArray {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(128 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest()
     }
 }

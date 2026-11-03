@@ -175,6 +175,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putFloat("equalizerTextScale", next.equalizerTextScale.coerceIn(1.0f, 1.8f))
             putBoolean("showRelevantShelf", next.showRelevantShelf)
             putBoolean("showEpisodesShelf", next.showEpisodesShelf)
+            putBoolean("animatedCardPreviews", next.animatedCardPreviews)
             putString("floatingCardsMode", next.floatingCardsMode.takeIf {
                 it in setOf("Off", "Manual", "Last 15 seconds")
             } ?: "Manual")
@@ -245,6 +246,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
         showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),
         showEpisodesShelf = prefs.getBoolean("showEpisodesShelf", true),
+        animatedCardPreviews = prefs.getBoolean("animatedCardPreviews", false),
         floatingCardsMode = prefs.getString("floatingCardsMode", "Manual")
             ?.takeIf { it in setOf("Off", "Manual", "Last 15 seconds") } ?: "Manual",
         hideWatchedRecommendations = prefs.getBoolean("hideWatchedRecommendations", true),

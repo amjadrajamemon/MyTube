@@ -39,6 +39,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 
 /**
  * Foreground MediaSession playback for Audio-only and user-initiated Home transitions.
@@ -92,6 +93,8 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaSession? = null
+    private val nightAudioController = NightAudioController()
+    private var nightAudioSettingsJob: Job? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var sourceUrl: String = ""
@@ -135,6 +138,13 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             .build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    val settings = TubeDeckRepository.get(applicationContext).settings.value
+                    nightAudioController.apply(
+                        audioSessionId,
+                        settings.nightAudioEnabled && !CarHeadUnitPolicy.isCarHeadUnit(applicationContext)
+                    )
+                }
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     // Snapshots are event-driven when paused, so a sleeping TV box
                     // has no periodically waking coroutine during audio pause.
@@ -211,6 +221,17 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 }
             })
         }
+        // Keep opt-in night compression across audio-only transitions and setting changes.
+        // No effect is created if the setting is disabled or the vendor car ROM is excluded.
+        nightAudioSettingsJob = serviceScope.launch {
+            TubeDeckRepository.get(applicationContext).settings.collect { settings ->
+                nightAudioController.apply(
+                    player.audioSessionId,
+                    settings.nightAudioEnabled && !CarHeadUnitPolicy.isCarHeadUnit(applicationContext)
+                )
+            }
+        }
+
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(returnToVideoPendingIntent())
             .setCallback(object : MediaSession.Callback {
@@ -491,6 +512,9 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        nightAudioSettingsJob?.cancel()
+        nightAudioSettingsJob = null
+        nightAudioController.release()
         positionSnapshotJob?.cancel()
         positionSnapshotJob = null
         BackgroundAudioController.startup.fail(requestId, "Audio playback stopped before it was ready")

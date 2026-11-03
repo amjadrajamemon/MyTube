@@ -260,8 +260,8 @@ fun SettingsScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(54.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .height(94.dp)
+                                    .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
                                     .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
                                         appearancePreset = preset.name
@@ -274,7 +274,7 @@ fun SettingsScreen(
                                     .border(
                                         width = if (selected) 2.dp else 1.dp,
                                         color = if (selected) Color(preset.accentArgb.toInt()) else TubeDeckBorder,
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = RoundedCornerShape(preset.cornerRadiusDp.dp)
                                     ),
                                 color = Color(preset.backgroundArgb.toInt())
                             ) {
@@ -285,14 +285,32 @@ fun SettingsScreen(
                                     Text(
                                         preset.name,
                                         color = Color(preset.textArgb.toInt()),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = preset.fontFamily
                                     )
-                                    Box(
-                                        Modifier.size(13.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(Color(preset.accentArgb.toInt()))
+                                    Text(
+                                        preset.subtitle,
+                                        color = Color(preset.textArgb.toInt()),
+                                        fontFamily = preset.fontFamily,
+                                        fontSize = 9.sp,
+                                        lineHeight = 11.sp,
+                                        maxLines = 3,
+                                        modifier = Modifier.weight(1f, fill = false)
                                     )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            Modifier.size(width = 28.dp, height = 5.dp)
+                                                .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
+                                                .background(Color(preset.accentArgb.toInt()))
+                                        )
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(
+                                            preset.navigationPlacement.name.lowercase().replaceFirstChar { it.uppercase() },
+                                            color = Color(preset.textArgb.toInt()),
+                                            fontSize = 8.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -301,6 +319,12 @@ fun SettingsScreen(
                 }
 
                 Spacer(Modifier.height(10.dp))
+                Text(
+                    "These themes change global typography, card proportions, corner shapes, navigation placement and density—not only the palette. Linux/Digital use a top menu; ATV/Xtreamity use a TV side rail. All preserve History, Relevant and Trending.",
+                    color = TubeDeckTextSecondary,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     "Text size · ${(fontScale * 100).toInt()}%",
                     color = TubeDeckTextPrimary,
@@ -311,7 +335,7 @@ fun SettingsScreen(
                     value = fontScale,
                     onValueChange = {
                         fontScale = it.coerceIn(0.80f, 1.35f)
-                        appearancePreset = "Custom"
+                        // Keep the selected layout/font preset when the user fine-tunes text size.
                         previewApplied = false
                     },
                     valueRange = 0.80f..1.35f,
@@ -817,26 +841,7 @@ fun SettingsScreen(
 }
 
 
-private data class AppearancePreset(
-    val name: String,
-    val accentArgb: Long,
-    val backgroundArgb: Long,
-    val textArgb: Long = 0xFFFFFFFFL,
-    val fontScale: Float = 1.0f
-)
-
-private val appearancePresets = listOf(
-    AppearancePreset("Glass Midnight", 0xFF00D2FFL, 0xFF080B11L),
-    AppearancePreset("Glass Slate", 0xFF7DD3FCL, 0xFF10151DL),
-    AppearancePreset("Neon Cyan", 0xFF00F5FFL, 0xFF02070AL),
-    AppearancePreset("Neon Purple", 0xFFD946EFL, 0xFF0A0614L),
-    AppearancePreset("Neon Lime", 0xFF39FF14L, 0xFF050806L),
-    AppearancePreset("Ocean Deep", 0xFF00B4D8L, 0xFF03111DL),
-    AppearancePreset("Ocean Teal", 0xFF2DD4BFL, 0xFF041716L),
-    AppearancePreset("HD Graphite", 0xFF60A5FAL, 0xFF0B0D10L),
-    AppearancePreset("HD Crimson", 0xFFFF4D6DL, 0xFF12070AL),
-    AppearancePreset("AMOLED Black", 0xFF00E5FFL, 0xFF000000L)
-)
+private val appearancePresets = DeckThemeCatalog.presets
 
 @Composable
 private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) -> Unit) {

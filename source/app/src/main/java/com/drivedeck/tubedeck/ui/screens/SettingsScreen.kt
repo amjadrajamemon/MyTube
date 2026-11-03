@@ -587,10 +587,17 @@ fun SettingsScreen(
 
             SettingsCard(title = "Download folder") {
                 Text(
-                    "Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "No folder selected"}",
+                    "Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "MyTube app storage (default)"}",
                     color = Color.White,
                     fontSize = 12.sp
                 )
+                if (downloadTreeUri == null) {
+                    Text(
+                        "Downloads work without selecting a folder. Files can be moved or copied from MyTube's Downloads screen; uninstalling may remove files in app storage.",
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
                 OutlinedButton(onClick = { folderPicker.launch(null) }) {
                     Text(if (downloadTreeUri == null) "Choose folder" else "Change folder")
                 }

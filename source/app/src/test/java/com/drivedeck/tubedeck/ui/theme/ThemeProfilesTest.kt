@@ -6,9 +6,9 @@ import org.junit.Test
 
 class ThemeProfilesTest {
     @Test
-    fun tenPresetsHaveTenDifferentLayoutAndControlSignatures() {
+    fun allPresetsHaveDifferentLayoutsNavigationAndPlayers() {
         val themes = DeckThemeCatalog.presets
-        assertEquals(10, themes.size)
+        assertEquals(13, themes.size)
         val signatures = themes.map { theme ->
             listOf(
                 theme.homePresentation.name,
@@ -19,7 +19,7 @@ class ThemeProfilesTest {
                 theme.motionStyle.name
             ).joinToString("/")
         }
-        assertEquals("No two themes should be mere recolors", themes.size, signatures.toSet().size)
+        assertEquals("Each theme must have its own structure, controls and player signature", themes.size, signatures.toSet().size)
     }
 
     @Test

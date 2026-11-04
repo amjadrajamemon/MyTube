@@ -689,8 +689,34 @@ fun NativeExoPlayer(
     var showQualityMenu by remember { mutableStateOf(false) }
     var showCaptionMenu by remember { mutableStateOf(false) }
     var viewingMenuVisible by remember { mutableStateOf(false) }
-    var dimPreview by remember { mutableIntStateOf(viewingDimPercent.coerceIn(10, 85)) }
-    LaunchedEffect(viewingDimPercent) { dimPreview = viewingDimPercent.coerceIn(10, 85) }
+    // Selection must take effect on the very first tap. A repository update alone
+    // can be delayed by the outer player host's lifecycle/state collection.
+    var activeViewingMode by remember(media.id) { mutableStateOf(viewingMode) }
+    var dimPreview by remember(media.id) { mutableIntStateOf(viewingDimPercent.coerceIn(10, 85)) }
+    var activeNightAudio by remember(media.id) { mutableStateOf(nightAudioEnabled) }
+    var viewingModeAcknowledgement by remember(media.id) { mutableStateOf(false) }
+    LaunchedEffect(viewingMode, viewingDimPercent, nightAudioEnabled) {
+        activeViewingMode = viewingMode
+        dimPreview = viewingDimPercent.coerceIn(10, 85)
+        activeNightAudio = nightAudioEnabled
+    }
+    fun applyViewingMode(mode: ViewingMode, dim: Int, nightAudio: Boolean) {
+        val safeDim = dim.coerceIn(10, 85)
+        // Update the actual player first, then persist to the repository.
+        activeViewingMode = mode
+        dimPreview = safeDim
+        activeNightAudio = nightAudio
+        viewingModeAcknowledgement = true
+        PlaybackDiagnostics.record(context, "viewing_mode",
+            "native=${mode.name}; dim=${safeDim}; audio=${nightAudio}")
+        onViewingPreferencesChanged(mode, safeDim, nightAudio)
+    }
+    LaunchedEffect(viewingModeAcknowledgement, viewingMenuVisible) {
+        if (viewingModeAcknowledgement && !viewingMenuVisible) {
+            delay(2400L)
+            viewingModeAcknowledgement = false
+        }
+    }
     var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
     var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
@@ -737,7 +763,7 @@ fun NativeExoPlayer(
     var equalizerSnapshot by remember(media.id) { mutableStateOf(equalizerController.snapshot()) }
     val nightAudioController = remember(media.id) { NightAudioController() }
     var nightAudioActive by remember(media.id) { mutableStateOf(false) }
-    val latestNightAudioEnabled by rememberUpdatedState(nightAudioEnabled)
+    val latestNightAudioEnabled by rememberUpdatedState(activeNightAudio)
     val nightAudioSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !carHeadUnit
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
@@ -1213,7 +1239,7 @@ fun NativeExoPlayer(
         DeckPlayerChrome.CYBER, DeckPlayerChrome.HUD
     )
     val largeTvControls = themeProfile.playerChrome == DeckPlayerChrome.TV_CLASSIC
-    val compactPortrait = isPortrait && viewingMode != ViewingMode.CINEMA &&
+    val compactPortrait = isPortrait && activeViewingMode != ViewingMode.CINEMA &&
         !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
     // The spinner and central Play/Pause row must share the exact same offset.
@@ -1688,9 +1714,9 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(nightAudioEnabled, nightAudioSupported, exoPlayer) {
+    LaunchedEffect(activeNightAudio, nightAudioSupported, exoPlayer) {
         nightAudioActive = nightAudioController.apply(
-            exoPlayer.audioSessionId, nightAudioEnabled && nightAudioSupported
+            exoPlayer.audioSessionId, activeNightAudio && nightAudioSupported
         )
     }
     LaunchedEffect(media.id, media.mediaUri, manualRecoveryAttempts) {
@@ -2026,11 +2052,11 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(activity, isFullscreen, viewingMode) {
-        activity?.let { setFullscreen(it, isFullscreen || viewingMode == ViewingMode.CINEMA) }
+    LaunchedEffect(activity, isFullscreen, activeViewingMode) {
+        activity?.let { setFullscreen(it, isFullscreen || activeViewingMode == ViewingMode.CINEMA) }
     }
-    LaunchedEffect(viewingMode) {
-        if (viewingMode == ViewingMode.CINEMA) {
+    LaunchedEffect(activeViewingMode) {
+        if (activeViewingMode == ViewingMode.CINEMA) {
             showPlaybackModeCards = false
             controlsVisible = false
         }
@@ -2186,17 +2212,17 @@ fun NativeExoPlayer(
                 Modifier.fillMaxSize().background(Color.Black)
             }
         ) {
-            // Compose dim/tint layers are not guaranteed to appear above a
-            // SurfaceView on Android TV. TextureView composites in the same layer.
-            // Reuse the existing faster SurfaceView when the mode is Normal.
-            key(carHeadUnit, viewingMode != ViewingMode.NORMAL) {
+            // Keep the SAME TextureView attached across every viewing-mode
+            // change. Recreating AndroidView caused OEM video/compositing failures.
+            // Direct alpha on the TextureView is independent of Compose Z ordering.
+            key(carHeadUnit) {
             AndroidView(
                 factory = { ctx ->
                     val view = if (carHeadUnit) {
                         LayoutInflater.from(ctx).inflate(R.layout.mytube_car_player_view, null, false) as PlayerView
-                    } else if (viewingMode != ViewingMode.NORMAL) {
+                    } else {
                         LayoutInflater.from(ctx).inflate(R.layout.mytube_viewing_player_view, null, false) as PlayerView
-                    } else PlayerView(ctx)
+                    }
                     PlaybackDiagnostics.record(ctx, "video_surface", view.videoSurfaceView?.javaClass?.simpleName.orEmpty())
                     view.apply {
                         player = exoPlayer
@@ -2209,6 +2235,13 @@ fun NativeExoPlayer(
                 update = { view ->
                     view.player = exoPlayer
                     view.resizeMode = resizeMode
+                    // Actual native video brightness. Unlike a Compose sibling overlay,
+                    // a TextureView's alpha reliably affects the decoder picture.
+                    // We leave subtitles and playback controls unaffected.
+                    val dim = ViewingModePolicy.videoDim(
+                        activeViewingMode, dimPreview, inPictureInPicture
+                    )
+                    view.videoSurfaceView?.alpha = (1f - dim).coerceIn(0.25f, 1f)
                     view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
                     view.subtitleView?.setFixedTextSize(
                         android.util.TypedValue.COMPLEX_UNIT_SP,
@@ -2223,14 +2256,26 @@ fun NativeExoPlayer(
             )
             }
 
-            // Decorative dimming sits over the video but below gestures and controls.
-            if (!inPictureInPicture) {
-                val videoDim = ViewingModePolicy.videoDim(viewingMode, dimPreview)
-                if (videoDim > 0f) {
-                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = videoDim)))
-                }
-                if (viewingMode == ViewingMode.NIGHT) {
-                    Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = 0.055f)))
+            // Night additionally warms the picture. Brightness itself is applied
+            // to the TextureView above, not twice through a fragile overlay.
+            if (!inPictureInPicture && activeViewingMode == ViewingMode.NIGHT) {
+                Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = .08f)))
+            }
+            if (viewingModeAcknowledgement && !viewingMenuVisible && !inPictureInPicture) {
+                Surface(
+                    color = Color.Black.copy(alpha = .76f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(top = 14.dp)
+                ) {
+                    Text(
+                        text = "Viewing mode: ${activeViewingMode.label}",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
                 }
             }
 
@@ -2842,7 +2887,7 @@ fun NativeExoPlayer(
                                     Icon(
                                         Icons.Default.NightsStay,
                                         "Lights Out / Cinema / Night viewing modes",
-                                        tint = if (viewingMode != ViewingMode.NORMAL || nightAudioEnabled)
+                                        tint = if (activeViewingMode != ViewingMode.NORMAL || activeNightAudio)
                                             TubeDeckAccentCyan else Color.White,
                                         modifier = Modifier.size(controllerIconSize)
                                     )
@@ -3427,14 +3472,13 @@ fun NativeExoPlayer(
 
     if (viewingMenuVisible) {
         PlayerViewingModesDialog(
-            viewingMode = viewingMode,
+            viewingMode = activeViewingMode,
             dimPercent = dimPreview,
-            nightAudioEnabled = nightAudioEnabled,
+            nightAudioEnabled = activeNightAudio,
             nightAudioAvailable = nightAudioSupported,
             nightAudioActive = nightAudioActive,
             onChange = { mode, dim, night ->
-                dimPreview = dim.coerceIn(10, 85)
-                onViewingPreferencesChanged(mode, dimPreview, night)
+                applyViewingMode(mode, dim, night)
             },
             onDismiss = { viewingMenuVisible = false }
         )
@@ -3444,11 +3488,11 @@ fun NativeExoPlayer(
         PlayerSettingsDialog(
             captionsEnabled = captionsEnabled,
             hasCaptions = hasCaptions,
-            viewingMode = viewingMode,
+            viewingMode = activeViewingMode,
             viewingDimPercent = dimPreview,
-            nightAudioEnabled = nightAudioEnabled,
+            nightAudioEnabled = activeNightAudio,
             nightAudioAvailable = nightAudioSupported,
-            onViewingPreferencesChanged = onViewingPreferencesChanged,
+            onViewingPreferencesChanged = ::applyViewingMode,
             gestureEnabled = gestureEnabled,
             autoHideControls = autoHideControls,
             fullscreen = isFullscreen,

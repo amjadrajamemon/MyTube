@@ -651,19 +651,37 @@ fun SettingsScreen(
 
             SettingsCard(title = "Viewing & Night Audio") {
                 Text("Viewing mode", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     ViewingMode.values().forEach { mode ->
-                        FilterChip(
-                            selected = viewingMode == mode,
-                            onClick = {
-                                viewingMode = mode
-                                onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
-                            },
-                            label = { Text(mode.label) }
-                        )
+                        val selected = viewingMode == mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .tvInputHighlight(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    viewingMode = mode
+                                    onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
+                                }
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) TubeDeckAccentCyan else TubeDeckBorder,
+                                    RoundedCornerShape(10.dp)
+                                ).padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (selected) Icons.Default.RadioButtonChecked
+                                else Icons.Default.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (selected) TubeDeckAccentCyan else TubeDeckTextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                mode.label,
+                                color = if (selected) TubeDeckAccentCyan else TubeDeckTextPrimary,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     }
                 }
                 if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {

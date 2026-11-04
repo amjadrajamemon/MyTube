@@ -283,7 +283,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         val hadDown = event.keyCode in audioKeyDowns
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                if (event.repeatCount != 0) return true
+                if (event.repeatCount != 0 && hadDown) return true
                 audioKeyDowns.add(event.keyCode)
             }
             KeyEvent.ACTION_UP -> {

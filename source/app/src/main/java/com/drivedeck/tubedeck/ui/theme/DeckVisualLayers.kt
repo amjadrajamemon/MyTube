@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.drawscope.drawRect
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -31,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
  * Never allocates an image, player, timer or offscreen rendering layer.
  */
 fun Modifier.deckScreenBackground(): Modifier = composed {
-    val profile = LocalDeckThemeProfile.current
     val tokens = LocalDeckExperience.current
     val base = TubeDeckBackground
     val accent = TubeDeckAccentCyan

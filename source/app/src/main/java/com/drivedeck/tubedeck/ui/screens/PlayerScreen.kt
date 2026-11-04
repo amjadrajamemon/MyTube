@@ -2238,10 +2238,9 @@ fun NativeExoPlayer(
                     // Actual native video brightness. Unlike a Compose sibling overlay,
                     // a TextureView's alpha reliably affects the decoder picture.
                     // We leave subtitles and playback controls unaffected.
-                    val dim = ViewingModePolicy.videoDim(
+                    view.videoSurfaceView?.alpha = ViewingModePolicy.videoAlpha(
                         activeViewingMode, dimPreview, inPictureInPicture
                     )
-                    view.videoSurfaceView?.alpha = (1f - dim).coerceIn(0.25f, 1f)
                     view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
                     view.subtitleView?.setFixedTextSize(
                         android.util.TypedValue.COMPLEX_UNIT_SP,
@@ -5506,6 +5505,12 @@ private fun PlayerViewingModesDialog(
                 } else if (nightAudioEnabled && !nightAudioActive) {
                     Text("Audio effect not available in this playback session", fontSize = 11.sp)
                 }
+                Text(
+                    "Applied to native video: ${viewingMode.label}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp
+                )
                 Text(
                     "Full Blackout remains a separate control. Mode changes take effect immediately.",
                     fontSize = 11.sp

@@ -1095,7 +1095,9 @@ fun NativeExoPlayer(
     fun dispatchNextKey(): Boolean {
         val action = currentNextAction ?: return false
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNextKeyTime >= 350L) {
+        // A user's second steering-wheel press should count. Hardware duplicate
+        // DOWN/UP dispatches are deduped in PlaybackHardwareButtonBridge.
+        if (now - lastNextKeyTime >= 190L) {
             lastNextKeyTime = now
             action()
         }
@@ -1129,14 +1131,12 @@ fun NativeExoPlayer(
                     } else {
                         intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
                     }
-                    if (event?.action != AndroidKeyEvent.ACTION_DOWN || event.repeatCount != 0) {
-                        return false
-                    }
-                    return when (event.keyCode) {
-                        AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> currentDispatchNext()
-                        AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> currentDispatchPrevious()
-                        else -> false // Media3 retains play/pause, headset and seek handling.
-                    }
+                    // Unify MediaSession and Activity key routes so an OEM
+                    // sending DOWN to one and UP to the other cannot double-skip.
+                    // Also supports skip-forward/skip-back and UP-only firmware.
+                    return if (event != null) {
+                        PlaybackHardwareButtonBridge.handle(event)
+                    } else false
                 }
             })
             .build()
@@ -1685,7 +1685,14 @@ fun NativeExoPlayer(
         PlaybackDiagnostics.record(context, "player_created", "compat=$carHeadUnit")
         exoPlayer.addAnalyticsListener(analytics)
         exoPlayer.addListener(listener)
-        PlaybackHardwareButtonBridge.register(exoPlayer, { currentDispatchNext() }, { currentDispatchPrevious() })
+        PlaybackHardwareButtonBridge.register(
+            exoPlayer,
+            { currentDispatchNext() },
+            { currentDispatchPrevious() },
+            nextKeyCode = remoteNextKeyCode,
+            previousKeyCode = remotePreviousKeyCode,
+            context = context
+        )
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
             if (latestResumeEnabled && !latestResumePrompt) {

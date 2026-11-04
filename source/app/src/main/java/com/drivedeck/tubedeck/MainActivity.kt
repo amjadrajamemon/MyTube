@@ -203,7 +203,8 @@ class MainActivity : ComponentActivity() {
                 accentArgb = activeAppearance.themeAccentArgb,
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
                 textArgb = activeAppearance.themeTextArgb,
-                appearancePreset = activeAppearance.appearancePreset
+                appearancePreset = activeAppearance.appearancePreset,
+                lowResourceMode = settings.lowResourceMode
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()

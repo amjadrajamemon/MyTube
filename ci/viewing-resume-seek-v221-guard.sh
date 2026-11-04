@@ -30,7 +30,7 @@ grep -Fq 'onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled
 grep -Fq 'RadioButtonChecked' "$SETTINGS"
 grep -Fq 'RadioButtonChecked' "$PLAYER"
 grep -Fq 'val autoSaveDraft = currentSettings.copy(' "$SETTINGS"
-grep -Fq 'LaunchedEffect(autoSaveDraft, folderError)' "$SETTINGS"
+grep -Fq 'LaunchedEffect(autoSaveDraft)' "$SETTINGS"
 grep -Fq 'onSaveSettings(autoSaveDraft)' "$SETTINGS"
 grep -Fq 'Settings are saved and applied automatically' "$SETTINGS"
 ! grep -Fq 'Save and Apply Settings' "$SETTINGS"

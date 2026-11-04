@@ -5957,12 +5957,7 @@ private fun FadeVisibility(
     content: @Composable () -> Unit
 ) {
     val motion = LocalDeckThemeProfile.current.motionStyle
-    val duration = when (motion) {
-        DeckMotionStyle.INSTANT -> 0
-        DeckMotionStyle.SNAP -> 90
-        DeckMotionStyle.GLIDE -> 240
-        DeckMotionStyle.PULSE -> 165
-    }
+    val duration = LocalDeckExperience.current.motionDurationMs
     val entrance = if (motion == DeckMotionStyle.PULSE) {
         fadeIn(animationSpec = tween(durationMillis = duration)) +
             slideInVertically(

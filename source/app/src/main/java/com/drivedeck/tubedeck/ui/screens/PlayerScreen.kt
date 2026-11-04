@@ -5599,14 +5599,35 @@ private fun PlayerSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Viewing mode", fontWeight = FontWeight.Bold)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ViewingMode.values().forEach { mode ->
-                        FilterChip(
-                            selected = viewingMode == mode,
-                            onClick = { onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled) },
-                            label = { Text(mode.label) }
-                        )
+                        val selected = viewingMode == mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .tvInputHighlight(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
+                                }
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (selected) Icons.Default.RadioButtonChecked
+                                else Icons.Default.RadioButtonUnchecked,
+                                contentDescription = null,
+                                modifier = Modifier.size(21.dp),
+                                tint = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(mode.label)
+                        }
                     }
                 }
                 if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {

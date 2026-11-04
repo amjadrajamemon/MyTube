@@ -165,6 +165,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
+import com.drivedeck.tubedeck.player.VideoResumePolicy
 import com.drivedeck.tubedeck.player.VideoResumeStore
 import com.drivedeck.tubedeck.player.CreatorLinksPolicy
 import com.drivedeck.tubedeck.ui.theme.*
@@ -1104,7 +1105,9 @@ fun NativeExoPlayer(
     val privateSession by remember(context) {
         com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).privateSession
     }.collectAsState()
-    val resumeEnabled = resumeAfterInterruptions && !privateSession
+    // 'Resume after interruptions' controls app/phone interruptions only;
+    // watch-position resume is independent and disabled solely for private sessions.
+    val resumeEnabled = !privateSession
     val savedResume = remember(media.mediaUri, resumeEnabled, initialPositionMs) {
         if (resumeEnabled && initialPositionMs < 1_000L) {
             resumeStore.find(media.mediaUri)
@@ -2807,16 +2810,29 @@ fun NativeExoPlayer(
                             Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
                         Box(Modifier.fillMaxWidth()) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(
-                                    controllerGap,
-                                    Alignment.CenterHorizontally
-                                )
-                            ) {
+                            // Always visible in portrait; never hide Lights Out at the far
+                            // right edge of a horizontally scrolling controls strip.
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { viewingMenuVisible = true; controlsVisible = true },
+                                    modifier = Modifier.size(controllerHeight)
+                                        .tvInputHighlight(RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        Icons.Default.NightsStay,
+                                        "Lights Out / Cinema / Night viewing modes",
+                                        tint = if (viewingMode != ViewingMode.NORMAL || nightAudioEnabled)
+                                            TubeDeckAccentCyan else Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+                                Row(
+                                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        controllerGap, Alignment.CenterHorizontally
+                                    )
+                                ) {
                                 IconButton(
                                     onClick = {
                                         val nextMode = when (playbackContinuationMode) {
@@ -3056,74 +3072,6 @@ fun NativeExoPlayer(
                                 }
 
 
-                                Box {
-                                    IconButton(
-                                        onClick = { viewingMenuVisible = true; controlsVisible = true },
-                                        modifier = Modifier.size(controllerHeight)
-                                            .tvInputHighlight(RoundedCornerShape(8.dp))
-                                    ) {
-                                        Icon(Icons.Default.NightsStay,
-                                            "Lights Out, Cinema, Night and Night Audio",
-                                            tint = if (viewingMode != ViewingMode.NORMAL || nightAudioEnabled)
-                                                TubeDeckAccentCyan else Color.White,
-                                            modifier = Modifier.size(controllerIconSize))
-                                    }
-                                    DropdownMenu(
-                                        expanded = viewingMenuVisible,
-                                        onDismissRequest = {
-                                            onViewingPreferencesChanged(viewingMode, dimPreview, nightAudioEnabled)
-                                            viewingMenuVisible = false
-                                        }
-                                    ) {
-                                        Text("Viewing mode",
-                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 7.dp),
-                                            fontWeight = FontWeight.SemiBold)
-                                        ViewingMode.values().forEach { mode ->
-                                            DropdownMenuItem(
-                                                text = { Text(mode.label) },
-                                                leadingIcon = {
-                                                    if (viewingMode == mode) Icon(Icons.Default.Check, null)
-                                                },
-                                                onClick = {
-                                                    onViewingPreferencesChanged(mode, dimPreview, nightAudioEnabled)
-                                                    viewingMenuVisible = false
-                                                }
-                                            )
-                                        }
-                                        if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
-                                            Text("Dimming · $dimPreview%",
-                                                modifier = Modifier.padding(horizontal = 15.dp),
-                                                fontSize = 12.sp)
-                                            Slider(
-                                                value = dimPreview.toFloat(),
-                                                onValueChange = { dimPreview = it.toInt().coerceIn(10, 85) },
-                                                onValueChangeFinished = {
-                                                    onViewingPreferencesChanged(viewingMode, dimPreview, nightAudioEnabled)
-                                                },
-                                                valueRange = 10f..85f,
-                                                modifier = Modifier.width(240.dp).padding(horizontal = 14.dp)
-                                            )
-                                        }
-                                        HorizontalDivider()
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(if (!nightAudioSupported) "Night Audio · unavailable"
-                                                    else "Night Audio · " + (if (nightAudioEnabled) "On" else "Off"))
-                                            },
-                                            leadingIcon = { Icon(Icons.Default.Headphones, null) },
-                                            enabled = nightAudioSupported,
-                                            onClick = {
-                                                onViewingPreferencesChanged(viewingMode, dimPreview, !nightAudioEnabled)
-                                                viewingMenuVisible = false
-                                            }
-                                        )
-                                        if (nightAudioEnabled && nightAudioSupported && !nightAudioActive) {
-                                            Text("Audio effect pending or unsupported on this output",
-                                                modifier = Modifier.padding(horizontal = 15.dp),
-                                                fontSize = 10.sp)
-                                        }
-                                    }
-                                }
                                 IconButton(
                                     onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
                                     modifier = Modifier.size(controllerHeight)
@@ -3149,6 +3097,7 @@ fun NativeExoPlayer(
                                         tint = Color.White,
                                         modifier = Modifier.size(controllerIconSize)
                                     )
+                                }
                                 }
                             }
                         }
@@ -3449,6 +3398,21 @@ fun NativeExoPlayer(
             confirmButton = {
                 TextButton(onClick = { showQuickActions = false }) { Text("Close") }
             }
+        )
+    }
+
+    if (viewingMenuVisible) {
+        PlayerViewingModesDialog(
+            viewingMode = viewingMode,
+            dimPercent = dimPreview,
+            nightAudioEnabled = nightAudioEnabled,
+            nightAudioAvailable = nightAudioSupported,
+            nightAudioActive = nightAudioActive,
+            onChange = { mode, dim, night ->
+                dimPreview = dim.coerceIn(10, 85)
+                onViewingPreferencesChanged(mode, dimPreview, night)
+            },
+            onDismiss = { viewingMenuVisible = false }
         )
     }
 
@@ -5419,6 +5383,71 @@ private fun NativeCommentRow(comment: YoutubeStreamResolver.NativeComment) {
             }
         }
     }
+}
+
+/**
+ * A dedicated focusable dialog prevents the old DropdownMenu dismissal callback
+ * from writing the stale mode back over a newly selected one.
+ * Reused for ALL thirteen player chrome profiles; independent of theme.
+ */
+@Composable
+private fun PlayerViewingModesDialog(
+    viewingMode: ViewingMode,
+    dimPercent: Int,
+    nightAudioEnabled: Boolean,
+    nightAudioAvailable: Boolean,
+    nightAudioActive: Boolean,
+    onChange: (ViewingMode, Int, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Viewing modes") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ViewingMode.values().forEach { mode ->
+                    FilterChip(
+                        selected = viewingMode == mode,
+                        onClick = { onChange(mode, dimPercent, nightAudioEnabled) },
+                        label = { Text(mode.label) },
+                        leadingIcon = {
+                            if (viewingMode == mode) Icon(Icons.Default.Check, null)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · ${dimPercent.coerceIn(10, 85)}%")
+                    Slider(
+                        value = dimPercent.coerceIn(10, 85).toFloat(),
+                        onValueChange = { onChange(viewingMode, it.toInt(), nightAudioEnabled) },
+                        valueRange = 10f..85f
+                    )
+                }
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Night Audio", Modifier.weight(1f))
+                    Switch(
+                        checked = nightAudioEnabled,
+                        enabled = nightAudioAvailable,
+                        onCheckedChange = { onChange(viewingMode, dimPercent, it) }
+                    )
+                }
+                if (!nightAudioAvailable) {
+                    Text("Night Audio is not supported on this output", fontSize = 11.sp)
+                } else if (nightAudioEnabled && !nightAudioActive) {
+                    Text("Audio effect not available in this playback session", fontSize = 11.sp)
+                }
+                Text(
+                    "Full Blackout remains a separate control. Mode changes take effect immediately.",
+                    fontSize = 11.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
 }
 
 @Composable

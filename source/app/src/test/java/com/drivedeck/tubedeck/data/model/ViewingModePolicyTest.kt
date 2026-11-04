@@ -5,6 +5,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ViewingModePolicyTest {
+    @Test fun nativeTextureAlphaIsImmediatelyVisibleAndRecovers() {
+        assertEquals(1f, ViewingModePolicy.videoAlpha(ViewingMode.NORMAL, 55), .001f)
+        assertEquals(1f, ViewingModePolicy.videoAlpha(ViewingMode.CINEMA, 55), .001f)
+        val lights = ViewingModePolicy.videoAlpha(ViewingMode.LIGHTS_OUT, 55)
+        val night = ViewingModePolicy.videoAlpha(ViewingMode.NIGHT, 55)
+        assertTrue(lights < night)
+        assertTrue(night < 1f)
+        assertTrue(ViewingModePolicy.videoAlpha(ViewingMode.LIGHTS_OUT, 85) > .25f)
+        for (mode in ViewingMode.values()) {
+            assertEquals(1f, ViewingModePolicy.videoAlpha(mode, 55, true), .001f)
+        }
+    }
+
     @Test fun modesAreDistinctAndNoDimmingLeaksIntoPip() {
         assertEquals(4, ViewingMode.values().size)
         for (mode in ViewingMode.values()) {

@@ -55,6 +55,7 @@ fun SettingsScreen(
     onGoogleAccountClick: () -> Unit = {},
     onPreviewSettings: (TubeDeckSettings) -> Unit,
     onSaveSettings: (TubeDeckSettings) -> Unit,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit = { _, _, _ -> },
     onResetAdBlockStats: () -> Unit,
     onClearWatchHistory: () -> Unit = {},
     onClose: () -> Unit,
@@ -616,7 +617,10 @@ fun SettingsScreen(
                     ViewingMode.values().forEach { mode ->
                         FilterChip(
                             selected = viewingMode == mode,
-                            onClick = { viewingMode = mode },
+                            onClick = {
+                                viewingMode = mode
+                                onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
+                            },
                             label = { Text(mode.label) }
                         )
                     }
@@ -625,17 +629,21 @@ fun SettingsScreen(
                     Text("Video dimming · $viewingDimPercent%", color = TubeDeckTextPrimary)
                     Slider(
                         value = viewingDimPercent.toFloat(),
-                        onValueChange = { viewingDimPercent = it.toInt().coerceIn(10, 85) },
+                        onValueChange = {
+                            viewingDimPercent = it.toInt().coerceIn(10, 85)
+                            onViewingPreferencesChanged(viewingMode, viewingDimPercent, nightAudioEnabled)
+                        },
                         valueRange = 10f..85f
                     )
                 }
                 Text(
-                    "Cinema focuses the player and hides surrounding distractions. Lights Out dims video; Night adds a warm low-light tint. Full Blackout stays separate.",
+                    "Selections apply immediately. Cinema focuses the player, Lights Out dims video and Night adds a warm tint. Full Blackout stays separate.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
                 HorizontalDivider()
                 ToggleRow("Night Audio · soften peaks and lift quiet speech", nightAudioEnabled) {
                     nightAudioEnabled = it
+                    onViewingPreferencesChanged(viewingMode, viewingDimPercent, it)
                 }
                 Text(
                     "Native player only. Uses session-scoped Android compression on supported devices; never overrides system volume. May be unavailable on car units or some TV firmware.",

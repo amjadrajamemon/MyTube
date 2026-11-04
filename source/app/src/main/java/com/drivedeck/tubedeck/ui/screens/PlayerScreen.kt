@@ -166,6 +166,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
+import com.drivedeck.tubedeck.player.SeekPreviewPolicy
 import com.drivedeck.tubedeck.player.VideoResumePolicy
 import com.drivedeck.tubedeck.player.VideoResumeStore
 import com.drivedeck.tubedeck.player.CreatorLinksPolicy
@@ -5893,29 +5894,29 @@ private fun SeekPreviewThumbnail(
                         .background(Color.Black)
                 ) {
                     if (storyboard != null && storyboard.urls.isNotEmpty()) {
-                        val frameDuration = storyboard.durationPerFrameMs.coerceAtLeast(1)
-                        val frameNumber = (positionMs / frameDuration)
-                            .toInt()
-                            .coerceIn(0, (storyboard.totalCount - 1).coerceAtLeast(0))
-                        val framesPerPage = (storyboard.framesPerPageX * storyboard.framesPerPageY).coerceAtLeast(1)
-                        val page = (frameNumber / framesPerPage).coerceIn(0, storyboard.urls.lastIndex)
-                        val relative = frameNumber % framesPerPage
-                        val column = relative % storyboard.framesPerPageX.coerceAtLeast(1)
-                        val row = relative / storyboard.framesPerPageX.coerceAtLeast(1)
-                        val sheetWidth = previewWidth * storyboard.framesPerPageX.toFloat()
-                        val sheetHeight = previewHeight * storyboard.framesPerPageY.toFloat()
-
-                        AsyncImage(
-                            model = storyboard.urls[page],
-                            contentDescription = "Seek preview",
-                            contentScale = ContentScale.FillBounds,
-                            modifier = Modifier
-                                .requiredSize(sheetWidth, sheetHeight)
-                                .offset(
-                                    x = (-previewWidth.value * column).dp,
-                                    y = (-previewHeight.value * row).dp
-                                )
+                        val frame = SeekPreviewPolicy.frame(
+                            positionMs = positionMs,
+                            frameDurationMs = storyboard.durationPerFrameMs,
+                            totalFrames = storyboard.totalCount,
+                            columns = storyboard.framesPerPageX,
+                            rows = storyboard.framesPerPageY,
+                            pageCount = storyboard.urls.size
                         )
+                        if (frame != null) {
+                            val sheetWidth = previewWidth * storyboard.framesPerPageX.toFloat()
+                            val sheetHeight = previewHeight * storyboard.framesPerPageY.toFloat()
+                            AsyncImage(
+                                model = storyboard.urls[frame.page],
+                                contentDescription = "Video frame at " + formatDuration(positionMs),
+                                contentScale = ContentScale.FillBounds,
+                                modifier = Modifier
+                                    .requiredSize(sheetWidth, sheetHeight)
+                                    .offset(
+                                        x = (-previewWidth.value * frame.column).dp,
+                                        y = (-previewHeight.value * frame.row).dp
+                                    )
+                            )
+                        }
                     } else if (fallbackThumbnailUrl.isNotBlank()) {
                         AsyncImage(
                             model = fallbackThumbnailUrl,

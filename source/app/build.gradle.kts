@@ -47,7 +47,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 106
-        versionName = "2.2.0
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")

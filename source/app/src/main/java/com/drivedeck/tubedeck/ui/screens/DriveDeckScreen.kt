@@ -166,7 +166,7 @@ fun DriveDeckScreen(
             modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
         )
         Column(
-            modifier = Modifier.fillMaxSize().statusBarsPadding()
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
         ) {
         DriveDeckTopHeader(
             searchQuery = searchQuery,

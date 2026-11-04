@@ -29,14 +29,22 @@ internal class VideoResumeStore(context: Context) {
     }
 
     fun find(mediaUri: String): Resume? = synchronized(lock) {
-        items().firstOrNull { it.mediaUri == mediaUri && it.positionMs >= 30_000L }
+        val key = VideoResumePolicy.mediaKey(mediaUri)
+        // Read legacy raw-URL entries too; canonicalize on the next save.
+        items().firstOrNull {
+            VideoResumePolicy.mediaKey(it.mediaUri) == key &&
+                VideoResumePolicy.canResume(it.positionMs)
+        }
     }
 
-    fun record(mediaUri: String, positionMs: Long) = synchronized(lock) {
-        if (mediaUri.length !in 1..2048) return@synchronized
-        val copy = items().filterNot { it.mediaUri == mediaUri }.toMutableList()
-        if (positionMs >= 30_000L) copy.add(0, Resume(mediaUri,
-            positionMs.coerceAtMost(86_400_000L), System.currentTimeMillis()))
+    fun record(mediaUri: String, positionMs: Long, durationMs: Long = 0L) = synchronized(lock) {
+        val key = VideoResumePolicy.mediaKey(mediaUri)
+        if (key.length !in 1..2048) return@synchronized
+        val copy = items().filterNot { VideoResumePolicy.mediaKey(it.mediaUri) == key }.toMutableList()
+        if (VideoResumePolicy.shouldSave(positionMs, durationMs)) {
+            copy.add(0, Resume(key,
+                positionMs.coerceAtMost(86_400_000L), System.currentTimeMillis()))
+        }
         val encoded = JSONArray()
         copy.take(keep).forEach { state ->
             encoded.put(JSONObject().apply {
@@ -45,6 +53,7 @@ internal class VideoResumeStore(context: Context) {
                 put("updated", state.updatedAt)
             })
         }
-        prefs.edit().putString("items", encoded.toString()).apply()
+        // commit() ensures the final exit snapshot survives a process shutdown.
+        prefs.edit().putString("items", encoded.toString()).commit()
     }
 }

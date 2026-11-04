@@ -219,7 +219,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(TubeDeckBackground)
             .deckScreenBackground()
-            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
     ) {
         // Top Header
         Surface(

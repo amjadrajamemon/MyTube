@@ -107,6 +107,9 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var resolveJob: kotlinx.coroutines.Job? = null
     private var nextAudioLookupInProgress = false
     private val nextSession = AudioNextSessionPolicy()
+    private val audioKeyDowns = mutableSetOf<Int>()
+    private var lastAudioNextKeyAt = -10_000L
+    private var lastAudioPreviousKeyAt = -10_000L
     private var positionSnapshotJob: Job? = null
 
     override fun onCreate() {
@@ -244,18 +247,56 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     val event: KeyEvent? = if (Build.VERSION.SDK_INT >= 33) {
                         intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
                     } else intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-                    if (event?.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
-                    return when (event.keyCode) {
-                        KeyEvent.KEYCODE_MEDIA_NEXT -> skipBackgroundAudioNext()
-                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                            player.seekTo(0L)
-                            true
-                        }
-                        else -> false
-                    }
+                    return event?.let(::handleAudioHardwareTransportKey) ?: false
                 }
             })
             .build()
+    }
+
+    /** A car may issue media UP with no matching DOWN, including in audio-only mode. */
+    @Synchronized
+    private fun handleAudioHardwareTransportKey(event: KeyEvent): Boolean {
+        val settings = TubeDeckRepository.get(applicationContext).settings.value
+        val transport = CarMediaTransportKeyPolicy.classify(
+            event.keyCode, settings.remoteNextKeyCode, settings.remotePreviousKeyCode
+        ) ?: return false
+        val hadDown = event.keyCode in audioKeyDowns
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (event.repeatCount != 0) return true
+                audioKeyDowns.add(event.keyCode)
+            }
+            KeyEvent.ACTION_UP -> {
+                audioKeyDowns.remove(event.keyCode)
+                if (hadDown) return true
+            }
+            else -> return false
+        }
+        if (!CarMediaTransportKeyPolicy.shouldTrigger(
+                event.action, event.repeatCount, hadDown
+            )
+        ) return true
+        val now = android.os.SystemClock.elapsedRealtime()
+        val previousAt = if (transport == CarTransportAction.NEXT) {
+            lastAudioNextKeyAt
+        } else lastAudioPreviousKeyAt
+        if (now - previousAt < CarMediaTransportKeyPolicy.DUPLICATE_WINDOW_MS) {
+            return true
+        }
+        val delivered = when (transport) {
+            CarTransportAction.NEXT -> skipBackgroundAudioNext()
+            CarTransportAction.PREVIOUS -> {
+                player.seekTo(0L)
+                true
+            }
+        }
+        if (delivered) {
+            if (transport == CarTransportAction.NEXT) lastAudioNextKeyAt = now
+            else lastAudioPreviousKeyAt = now
+        }
+        PlaybackDiagnostics.record(this, "car_audio_hardware_key",
+            "direction=${transport.name} key=${event.keyCode} action=${event.action} delivered=$delivered")
+        return delivered
     }
 
     /**

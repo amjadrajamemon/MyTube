@@ -57,7 +57,13 @@ fun TopNavBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (includeStatusBarInset) Modifier.statusBarsPadding() else Modifier),
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(
+                    if (includeStatusBarInset)
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    else WindowInsetsSides.Horizontal
+                )
+            ),
         color = TubeDeckSurface,
         tonalElevation = 8.dp
     ) {

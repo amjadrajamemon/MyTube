@@ -112,6 +112,7 @@ class NativePlayerActivity : ComponentActivity() {
     private var activePlaylistIndex by mutableStateOf(-1)
     private val playbackBackStack = ArrayDeque<OfflineMedia>()
     private val playbackForwardStack = ArrayDeque<OfflineMedia>()
+    private var playedVideoIds by mutableStateOf<Set<String>>(emptySet())
     private var currentMedia by mutableStateOf(
         OfflineMedia(
             id = "pending",
@@ -127,6 +128,31 @@ class NativePlayerActivity : ComponentActivity() {
     // androidx.core. OEM head units sometimes send media keys only to this hook.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Capture the raw scan/key code on compatible car units. This helps
+        // diagnose OEM keys that never reach the standard MediaSession path;
+        // no account, song title, URL, or personal input is logged.
+        if (::repository.isInitialized && playerActive &&
+            (repository.settings.value.xyAutoCompatibilityMode ||
+                com.drivedeck.tubedeck.player.CarHeadUnitPolicy.isCarHeadUnit(this)) &&
+            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode !in listOf(
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN
+            )
+        ) {
+            com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(
+                this, "car_key_seen",
+                "code=${event.keyCode} scan=${event.scanCode} source=${event.source}"
+            )
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_MEDIA_STOP && isPipMode && !closingPlayer
+        ) {
+            closePlaybackCompletely()
+            return true
+        }
         if (playerActive && !closingPlayer &&
             com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
         ) return true
@@ -227,7 +253,8 @@ class NativePlayerActivity : ComponentActivity() {
                 fontScale = settings.fontScale,
                 accentArgb = settings.themeAccentArgb,
                 backgroundArgb = settings.themeBackgroundArgb,
-                textArgb = settings.themeTextArgb
+                textArgb = settings.themeTextArgb,
+                appearancePreset = settings.appearancePreset
             ) {
                 val media = currentMedia
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
@@ -469,6 +496,15 @@ class NativePlayerActivity : ComponentActivity() {
                     sideBySideEpisodeFeeds = settings.sideBySideEpisodeFeeds,
                     showRelevantShelf = settings.showRelevantShelf,
                     showEpisodesShelf = settings.showEpisodesShelf,
+                    floatingCardsMode = settings.floatingCardsMode,
+                    animatedCardPreviews = settings.animatedCardPreviews,
+                    hideWatchedRecommendations = settings.hideWatchedRecommendations,
+                    lowResourceMode = settings.lowResourceMode,
+                    resumeAfterInterruptions = settings.resumeAfterInterruptions,
+                    subtitleTextScale = settings.subtitleTextScale,
+                    subtitleBottomInsetDp = settings.subtitleBottomInsetDp,
+                    remoteNextKeyCode = settings.remoteNextKeyCode,
+                    remotePreviousKeyCode = settings.remotePreviousKeyCode,
                     playerControllerScale = settings.playerControllerScale,
                     equalizerTextScale = settings.equalizerTextScale,
                     playbackContinuationMode = settings.playbackContinuationMode,
@@ -480,6 +516,17 @@ class NativePlayerActivity : ComponentActivity() {
                     preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                     preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                     seekIntervalSeconds = settings.seekIntervalSeconds,
+                    viewingMode = settings.viewingMode,
+                    viewingDimPercent = settings.viewingDimPercent,
+                    nightAudioEnabled = settings.nightAudioEnabled,
+                    onViewingPreferencesChanged = { mode, dim, nightAudio ->
+                        val latest = repository.settings.value
+                        repository.updateSettings(latest.copy(
+                            viewingMode = mode,
+                            viewingDimPercent = dim.coerceIn(10, 85),
+                            nightAudioEnabled = nightAudio
+                        ))
+                    },
                     autoRotatePlayback = settings.autoRotatePlayback,
                     initialPositionMs = initialPlaybackPositionMs,
                     resumeGeneration = resumeGeneration,
@@ -505,6 +552,7 @@ class NativePlayerActivity : ComponentActivity() {
                         { playlistMode = true; showDownload = true }
                     } else null,
                     onPlayRelated = { related -> launchRelatedPlayer(related) },
+                    playedVideoIds = playedVideoIds,
                     onPreviousItem = when {
                         activePlaylistId != null && activePlaylistIndex > 0 ->
                             { { playPlaylistItem(activePlaylistIndex - 1) } }
@@ -517,8 +565,6 @@ class NativePlayerActivity : ComponentActivity() {
                             activePlaylistIndex >= 0 &&
                             activePlaylistIndex < activePlaylistItems.lastIndex ->
                             { { playPlaylistItem(activePlaylistIndex + 1) } }
-                        playbackForwardStack.isNotEmpty() ->
-                            { { playForwardItem() } }
                         else -> null
                     },
                     onPlaybackEnded = if (
@@ -813,6 +859,8 @@ class NativePlayerActivity : ComponentActivity() {
         }
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isNotBlank()) {
+            // Keep bounded, session-local history independent of the Back/Forward navigation stacks.
+            playedVideoIds = (playedVideoIds.toList().filterNot { it == videoId } + videoId).takeLast(80).toSet()
             repository.fetchSponsorSegments(videoId)
         }
     }
@@ -906,6 +954,12 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         if (isPipMode) {
+            // On TV a single Back on the focused mini-player must close it,
+            // rather than repeatedly hiding the task without stopping playback.
+            if (com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice(this)) {
+                closePlaybackCompletely()
+                return
+            }
             playbackBackDecisionJob?.cancel()
             playbackBackDecisionJob = null
             when (PlaybackParentPipBackPolicy.onBack(rapidCount, showPlaybackExitChoices)) {

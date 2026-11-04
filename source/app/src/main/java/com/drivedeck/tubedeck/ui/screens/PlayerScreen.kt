@@ -35,12 +35,14 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import android.content.Intent
 import android.os.SystemClock
@@ -78,6 +80,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -106,6 +109,7 @@ import com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.player.PlaybackQualityPolicy
 import com.drivedeck.tubedeck.player.PlaybackResourcePolicy
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MediaItem.SubtitleConfiguration
 import androidx.media3.common.MimeTypes
@@ -131,6 +135,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.data.model.ViewingMode
+import com.drivedeck.tubedeck.data.model.ViewingModePolicy
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
 import com.drivedeck.tubedeck.data.model.PlaylistItem
@@ -139,18 +145,32 @@ import com.drivedeck.tubedeck.player.LiveDubEngine
 import com.drivedeck.tubedeck.player.LiveDubLanguages
 import com.drivedeck.tubedeck.player.LiveDubInputMode
 import com.drivedeck.tubedeck.player.PlaybackPcmTapProcessor
+import com.drivedeck.tubedeck.player.NightAudioController
 import com.drivedeck.tubedeck.player.PlaybackEqualizerController
 import com.drivedeck.tubedeck.player.PlaybackStartupTelemetry
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesture
 import com.drivedeck.tubedeck.player.PlaybackSurfaceGesturePolicy
-import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import com.drivedeck.tubedeck.player.LiveDubVoiceProfiles
 import com.drivedeck.tubedeck.player.YoutubeWatchNextClient
+import com.drivedeck.tubedeck.player.PlaylistQueuePolicy
 import com.drivedeck.tubedeck.player.YoutubeStreamResolver
 import com.drivedeck.tubedeck.player.YoutubeUrls
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
+import com.drivedeck.tubedeck.ui.components.TvRemoteNavigationPolicy
+import com.drivedeck.tubedeck.ui.components.TvPlayerKeyAction
+import com.drivedeck.tubedeck.ui.components.TvRemoteKeyLearningPolicy
+import com.drivedeck.tubedeck.ui.components.VideoBookmarksDialog
+import com.drivedeck.tubedeck.ui.components.FocusAnimatedThumbs
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.compose.AsyncImagePainter
+import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
+import com.drivedeck.tubedeck.player.SeekPreviewPolicy
+import com.drivedeck.tubedeck.player.VideoResumePolicy
+import com.drivedeck.tubedeck.player.VideoResumeStore
+import com.drivedeck.tubedeck.player.CreatorLinksPolicy
 import com.drivedeck.tubedeck.ui.theme.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -175,6 +195,15 @@ fun PlayerScreen(
     sideBySideEpisodeFeeds: Boolean = true,
     showRelevantShelf: Boolean = true,
     showEpisodesShelf: Boolean = true,
+    floatingCardsMode: String = "Manual",
+    animatedCardPreviews: Boolean = false,
+    hideWatchedRecommendations: Boolean = true,
+    lowResourceMode: Boolean = false,
+    resumeAfterInterruptions: Boolean = true,
+    subtitleTextScale: Float = 1.0f,
+    subtitleBottomInsetDp: Int = 0,
+    remoteNextKeyCode: Int = 0,
+    remotePreviousKeyCode: Int = 0,
     playerControllerScale: Float = 1.20f,
     equalizerTextScale: Float = 1.25f,
     playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
@@ -182,6 +211,9 @@ fun PlayerScreen(
     preferredPlaybackQualityHeight: Int = 0,
     preferredPlaybackSpeed: Float = 1.0f,
     seekIntervalSeconds: Int = 10,
+    viewingMode: ViewingMode = ViewingMode.NORMAL,
+    viewingDimPercent: Int = 55,
+    nightAudioEnabled: Boolean = false,
     initialPositionMs: Long = 0L,
     resumeGeneration: Int = 0,
     pauseGeneration: Int = 0,
@@ -190,11 +222,13 @@ fun PlayerScreen(
     onEnterPip: () -> Unit,
     onAudioOnly: () -> Unit = {},
     onPlaybackPreferenceChanged: (Float, Int, Int) -> Unit = { _, _, _ -> },
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit = { _, _, _ -> },
     onDownloadVideo: (() -> Unit)? = null,
     onDownloadPlaylist: (() -> Unit)? = null,
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
@@ -209,7 +243,10 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = xyAutoCompatibilityMode
+    // Firmware-based auto detection handles recognized XY AUTO units without
+    // asking the user to enable a compatibility toggle manually.
+    val carHeadUnit = xyAutoCompatibilityMode ||
+        remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context.applicationContext) }
 
     // Normal playback Back is intentionally owned by the parent Activity so its
     // single/double-Back state machine cannot be bypassed by a nested Compose handler.
@@ -254,19 +291,28 @@ fun PlayerScreen(
     val youtube = YoutubeUrls.videoId(media.mediaUri) != null
 
     when {
-        youtube && (playerMode == PlayerMode.WEB || useWebFallback) -> WebPlayer(
-            media = media,
-            onClose = onClose,
-            onDownloadVideo = onDownloadVideo,
-            onDownloadPlaylist = onDownloadPlaylist,
-            googleAccount = googleAccount,
-            onGoogleAccountClick = onGoogleAccountClick,
-            modifier = modifier.fillMaxSize()
-        )
+        youtube && (playerMode == PlayerMode.WEB || useWebFallback) -> Box(modifier.fillMaxSize()) {
+            WebPlayer(
+                media = media,
+                onClose = onClose,
+                onDownloadVideo = onDownloadVideo,
+                onDownloadPlaylist = onDownloadPlaylist,
+                googleAccount = googleAccount,
+                onGoogleAccountClick = onGoogleAccountClick,
+                modifier = Modifier.fillMaxSize()
+            )
+            // Native audio compression cannot process WebView's separate audio session.
+            // Visual modes still apply without intercepting browser touch events.
+            val dim = ViewingModePolicy.videoDim(viewingMode, viewingDimPercent, inPictureInPicture)
+            if (dim > 0f) Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = dim)))
+            if (viewingMode == ViewingMode.NIGHT && !inPictureInPicture) {
+                Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = .055f)))
+            }
+        }
 
         else -> NativeExoPlayer(
             media = media,
-            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+            xyAutoCompatibilityMode = carHeadUnit,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
             inPictureInPicture = inPictureInPicture,
@@ -275,6 +321,15 @@ fun PlayerScreen(
             sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
             showRelevantShelf = showRelevantShelf,
             showEpisodesShelf = showEpisodesShelf,
+            floatingCardsMode = floatingCardsMode,
+            animatedCardPreviews = animatedCardPreviews,
+            hideWatchedRecommendations = hideWatchedRecommendations,
+            lowResourceMode = lowResourceMode,
+            resumeAfterInterruptions = resumeAfterInterruptions,
+            subtitleTextScale = subtitleTextScale,
+            subtitleBottomInsetDp = subtitleBottomInsetDp,
+            remoteNextKeyCode = remoteNextKeyCode,
+            remotePreviousKeyCode = remotePreviousKeyCode,
             playerControllerScale = playerControllerScale,
             equalizerTextScale = equalizerTextScale,
             playbackContinuationMode = playbackContinuationMode,
@@ -282,6 +337,10 @@ fun PlayerScreen(
             preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
             preferredPlaybackSpeed = preferredPlaybackSpeed,
             seekIntervalSeconds = seekIntervalSeconds,
+            viewingMode = viewingMode,
+            viewingDimPercent = viewingDimPercent,
+            nightAudioEnabled = nightAudioEnabled,
+            onViewingPreferencesChanged = onViewingPreferencesChanged,
             initialPositionMs = initialPositionMs,
             resumeGeneration = resumeGeneration,
             pauseGeneration = pauseGeneration,
@@ -296,6 +355,7 @@ fun PlayerScreen(
             onPlayRelated = onPlayRelated,
             onPreviousItem = onPreviousItem,
             onNextItem = onNextItem,
+            playedVideoIds = playedVideoIds,
             onPlaybackEnded = onPlaybackEnded,
             playlistItems = playlistItems,
             playlistIndex = playlistIndex,
@@ -501,6 +561,15 @@ fun NativeExoPlayer(
     sideBySideEpisodeFeeds: Boolean,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
+    floatingCardsMode: String,
+    animatedCardPreviews: Boolean,
+    hideWatchedRecommendations: Boolean,
+    lowResourceMode: Boolean,
+    resumeAfterInterruptions: Boolean,
+    subtitleTextScale: Float,
+    subtitleBottomInsetDp: Int,
+    remoteNextKeyCode: Int,
+    remotePreviousKeyCode: Int,
     playerControllerScale: Float,
     equalizerTextScale: Float,
     playbackContinuationMode: PlaybackContinuationMode,
@@ -508,6 +577,10 @@ fun NativeExoPlayer(
     preferredPlaybackQualityHeight: Int,
     preferredPlaybackSpeed: Float,
     seekIntervalSeconds: Int,
+    viewingMode: ViewingMode,
+    viewingDimPercent: Int,
+    nightAudioEnabled: Boolean,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit,
     initialPositionMs: Long,
     resumeGeneration: Int,
     pauseGeneration: Int,
@@ -522,6 +595,7 @@ fun NativeExoPlayer(
     onPlayRelated: ((OfflineMedia) -> Unit)? = null,
     onPreviousItem: (() -> Unit)? = null,
     onNextItem: (() -> Unit)? = null,
+    playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
@@ -536,14 +610,21 @@ fun NativeExoPlayer(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val carHeadUnit = xyAutoCompatibilityMode
-    val resourceLimits = remember(context, carHeadUnit) {
-        PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
+    // Firmware-based auto detection handles recognized XY AUTO units without
+    // asking the user to enable a compatibility toggle manually.
+    val carHeadUnit = xyAutoCompatibilityMode ||
+        remember(context) { CarHeadUnitPolicy.isCarHeadUnit(context.applicationContext) }
+    val resourceLimits = remember(context, carHeadUnit, lowResourceMode) {
+        if (lowResourceMode) PlaybackResourcePolicy.choose(true, 160, 2, true)
+        else PlaybackResourcePolicy.detect(context.applicationContext, carHeadUnit)
     }
     val latestForegroundPlaybackAllowed by rememberUpdatedState(foregroundPlaybackAllowed)
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-    val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
+    // Portrait controls must leave room for the fixed Lights Out affordance.
+    // Cap the scale only here; landscape/TV retains its user-selected size.
+    val controllerScale = if (isPortrait) playerControllerScale.coerceIn(0.85f, 1.05f) * .88f
+        else playerControllerScale.coerceIn(0.85f, 1.50f)
     val controllerHeight = (34f * controllerScale).dp
     val controllerIconSize = (19f * controllerScale).dp
     val controllerFontSize = (11f * controllerScale).sp
@@ -584,9 +665,13 @@ fun NativeExoPlayer(
     val tvNavigation = remember(context) { isTvLikeNavigationDevice(context) }
     val tvSurfaceFocus = remember { FocusRequester() }
     val tvPlayPauseFocus = remember { FocusRequester() }
+    val tvTopBackFocus = remember { FocusRequester() }
+    val tvCardsFocus = remember { FocusRequester() }
     var tvSurfaceFocused by remember { mutableStateOf(false) }
     var tvControlsFocused by remember { mutableStateOf(false) }
     var tvPendingControlFocus by remember { mutableStateOf(false) }
+    var tvPendingTopFocus by remember { mutableStateOf(false) }
+    var tvRestoreSurfaceFocus by remember { mutableStateOf(false) }
     var isFullscreen by rememberSaveable(media.id) { mutableStateOf(false) }
     var resizeMode by rememberSaveable(media.id) { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var playbackSpeed by remember(media.id) { mutableFloatStateOf(preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
@@ -604,14 +689,63 @@ fun NativeExoPlayer(
     var showQuickActions by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showCaptionMenu by remember { mutableStateOf(false) }
+    var viewingMenuVisible by remember { mutableStateOf(false) }
+    // Selection must take effect on the very first tap. A repository update alone
+    // can be delayed by the outer player host's lifecycle/state collection.
+    var activeViewingMode by remember(media.id) { mutableStateOf(viewingMode) }
+    var dimPreview by remember(media.id) { mutableIntStateOf(viewingDimPercent.coerceIn(10, 85)) }
+    var activeNightAudio by remember(media.id) { mutableStateOf(nightAudioEnabled) }
+    var viewingModeAcknowledgement by remember(media.id) { mutableStateOf(false) }
+    LaunchedEffect(viewingMode, viewingDimPercent, nightAudioEnabled) {
+        activeViewingMode = viewingMode
+        dimPreview = viewingDimPercent.coerceIn(10, 85)
+        activeNightAudio = nightAudioEnabled
+    }
+    fun applyViewingMode(mode: ViewingMode, dim: Int, nightAudio: Boolean) {
+        val safeDim = dim.coerceIn(10, 85)
+        // Update the actual player first, then persist to the repository.
+        activeViewingMode = mode
+        dimPreview = safeDim
+        activeNightAudio = nightAudio
+        viewingModeAcknowledgement = true
+        PlaybackDiagnostics.record(context, "viewing_mode",
+            "native=${mode.name}; dim=${safeDim}; audio=${nightAudio}")
+        onViewingPreferencesChanged(mode, safeDim, nightAudio)
+    }
+    LaunchedEffect(viewingModeAcknowledgement, viewingMenuVisible) {
+        if (viewingModeAcknowledgement && !viewingMenuVisible) {
+            delay(2400L)
+            viewingModeAcknowledgement = false
+        }
+    }
     var captionTrackFetchInProgress by remember(media.id) { mutableStateOf(false) }
     var pendingCaptionLanguage by remember(media.id) { mutableStateOf<String?>(null) }
     var showPlaybackModeCards by remember { mutableStateOf(false) }
+    var showBookmarks by remember(media.id) { mutableStateOf(false) }
+    var cardsDismissedThisVideo by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendations by remember(media.id) {
+        mutableStateOf<List<YoutubeStreamResolver.RelatedVideo>>(emptyList())
+    }
+    var fallbackRecommendationsLoading by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendationsAttempted by remember(media.id) { mutableStateOf(false) }
+    var fallbackRecommendationsError by remember(media.id) { mutableStateOf(false) }
+    var manualRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
     var continuationEpisodesLoaded by remember(media.id) { mutableStateOf(false) }
     var scrubFraction by remember(media.id) { mutableStateOf<Float?>(null) }
+    var remoteSeekPreviewSequence by remember(media.id) { mutableIntStateOf(0) }
+    var remoteSeekPreviewActive by remember(media.id) { mutableStateOf(false) }
+    LaunchedEffect(remoteSeekPreviewSequence) {
+        if (remoteSeekPreviewSequence > 0) {
+            delay(1700L)
+            if (remoteSeekPreviewActive) {
+                scrubFraction = null
+                remoteSeekPreviewActive = false
+            }
+        }
+    }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
     var gestureOverlayVisible by remember { mutableStateOf(false) }
@@ -628,6 +762,10 @@ fun NativeExoPlayer(
     var showEqualizer by rememberSaveable(media.id) { mutableStateOf(false) }
     val equalizerController = remember(media.id) { PlaybackEqualizerController(context.applicationContext) }
     var equalizerSnapshot by remember(media.id) { mutableStateOf(equalizerController.snapshot()) }
+    val nightAudioController = remember(media.id) { NightAudioController() }
+    var nightAudioActive by remember(media.id) { mutableStateOf(false) }
+    val latestNightAudioEnabled by rememberUpdatedState(activeNightAudio)
+    val nightAudioSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !carHeadUnit
     var currentCueText by remember(media.id) { mutableStateOf("") }
     var currentCuePresentationUs by remember(media.id) { mutableLongStateOf(-1L) }
     var playbackRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
@@ -707,11 +845,25 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading) {
-        if (showPlaybackModeCards && !continuationEpisodesLoading) {
-            delay(10_000L)
+    LaunchedEffect(showPlaybackModeCards, continuationEpisodesLoading, tvNavigation) {
+        // Keep TV cards open while a remote user navigates them.
+        if (showPlaybackModeCards && !continuationEpisodesLoading && !tvNavigation) {
+            delay(15_000L)
             showPlaybackModeCards = false
+            cardsDismissedThisVideo = true
         }
+    }
+    LaunchedEffect(showPlaybackModeCards, tvNavigation) {
+        if (tvNavigation && showPlaybackModeCards) {
+            delay(100)
+            runCatching { tvCardsFocus.requestFocus() }
+        }
+    }
+    LaunchedEffect(currentPosition, duration, firstFrameRendered, floatingCardsMode) {
+        if (floatingCardsMode == "Last 15 seconds" && firstFrameRendered &&
+            duration > 30_000L && currentPosition >= duration - 15_000L &&
+            !cardsDismissedThisVideo && !showPlaybackModeCards && !inPictureInPicture
+        ) showPlaybackModeCards = true
     }
 
     LaunchedEffect(continuationModeHint) {
@@ -772,14 +924,66 @@ fun NativeExoPlayer(
     // Next/Previous buttons. Send both remote and pointer actions through one queue
     // selection path rather than seeking within that single source.
     val sourceVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
+    val creatorDescriptionLinks = remember(resolved?.description) {
+        CreatorLinksPolicy.extract(resolved?.description.orEmpty())
+    }
+    val readyRelated = resolved?.relatedVideos.orEmpty()
+    val readyUnplayed = readyRelated.filter { it.videoId != sourceVideoId &&
+        (!hideWatchedRecommendations || it.videoId !in playedVideoIds) }
+    val availableRelated = if (readyUnplayed.isNotEmpty()) readyUnplayed else fallbackRecommendations
+    val shelfRelated = availableRelated.asSequence()
+        .filter { it.videoId != sourceVideoId &&
+            (!hideWatchedRecommendations || it.videoId !in playedVideoIds)
+        }.distinctBy { it.videoId }
+        .take(if (lowResourceMode) 6 else 12).toList()
+
+    // Do no extra network work until the user opens the cards.
+    LaunchedEffect(showPlaybackModeCards, media.id, readyUnplayed.size, fallbackRecommendationsAttempted) {
+        if (!showPlaybackModeCards || floatingCardsMode == "Off" ||
+            sourceVideoId.isBlank() || readyUnplayed.isNotEmpty() ||
+            fallbackRecommendationsAttempted
+        ) return@LaunchedEffect
+        fallbackRecommendationsAttempted = true
+        fallbackRecommendationsLoading = true
+        fallbackRecommendationsError = false
+        try {
+            val items = withTimeoutOrNull(9_000L) {
+                YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId).relatedVideos
+            }.orEmpty()
+            fallbackRecommendations = items.asSequence()
+                .filter { it.videoId.matches(Regex("[A-Za-z0-9_-]{11}")) }
+                .distinctBy { it.videoId }
+                .take(if (lowResourceMode) 6 else 16)
+                .map { item ->
+                    YoutubeStreamResolver.RelatedVideo(
+                        videoId = item.videoId,
+                        title = item.title,
+                        url = "https://www.youtube.com/watch?v=${item.videoId}",
+                        thumbnailUrl = item.thumbnailUrl,
+                        channelTitle = item.uploader,
+                        durationSeconds = item.durationSeconds
+                    )
+                }.toList()
+            fallbackRecommendationsError = fallbackRecommendations.isEmpty()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            fallbackRecommendationsError = true
+        } finally {
+            fallbackRecommendationsLoading = false
+        }
+    }
     val episodeList = continuationEpisodeShelf?.episodes.orEmpty().distinctBy { it.videoId }
     val episodeIndex = episodeList.indexOfFirst { it.videoId == sourceVideoId }
     val nextEpisode = if (episodeIndex in 0 until episodeList.lastIndex) {
-        episodeList[episodeIndex + 1]
+        episodeList.drop(episodeIndex + 1).firstOrNull {
+            PlaylistQueuePolicy.nextUnplayed(listOf(it.videoId), sourceVideoId, playedVideoIds) != null
+        }
     } else null
-    val relatedNext = resolved?.relatedVideos?.firstOrNull {
-        it.videoId.isNotBlank() && it.videoId != sourceVideoId
-    }
+    val relatedNextId = PlaylistQueuePolicy.nextUnplayed(
+        resolved?.relatedVideos.orEmpty().map { it.videoId }, sourceVideoId, playedVideoIds
+    )
+    val relatedNext = resolved?.relatedVideos?.firstOrNull { it.videoId == relatedNextId }
     var nextLookupInProgress by remember(media.id) { mutableStateOf(false) }
     val sharedNextAction: (() -> Unit)? = when {
         onNextItem != null -> onNextItem
@@ -818,10 +1022,9 @@ fun NativeExoPlayer(
                 if (!nextLookupInProgress) {
                     val title = resolved?.title?.takeIf { it.isNotBlank() && it != "Now Playing" }
                         ?: media.title.takeIf { it.isNotBlank() && it != "Now Playing" }
-                    if (title == null) {
-                        Toast.makeText(context, "Next video is still loading", Toast.LENGTH_SHORT).show()
-                    } else {
-                        nextLookupInProgress = true
+                    // Hardware Next may arrive before the metadata/title resolver.
+                    // Watch-Next only requires the source video ID; title search is optional.
+                    nextLookupInProgress = true
                         playbackScope.launch {
                             try {
                                 // First use the current video's actual Watch-Next
@@ -831,7 +1034,9 @@ fun NativeExoPlayer(
                                     withTimeoutOrNull(8_000L) {
                                         YoutubeWatchNextClient.resolve(media.mediaUri, sourceVideoId)
                                             .relatedVideos.firstOrNull {
-                                                it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                                PlaylistQueuePolicy.nextUnplayed(
+                                                    listOf(it.videoId), sourceVideoId, playedVideoIds
+                                                ) != null
                                             }
                                     }
                                 }.getOrNull()
@@ -844,11 +1049,15 @@ fun NativeExoPlayer(
                                         mediaUri = "https://www.youtube.com/watch?v=${directNext.videoId}"
                                     )
                                 } else {
-                                    val candidates = withTimeoutOrNull(8_000L) {
-                                        YoutubeStreamResolver.searchVideos(title, 16)
-                                    }.orEmpty()
+                                    val candidates = if (title != null) {
+                                        withTimeoutOrNull(8_000L) {
+                                            YoutubeStreamResolver.searchVideos(title, 16)
+                                        }.orEmpty()
+                                    } else emptyList()
                                     candidates.firstOrNull {
-                                        it.videoId.isNotBlank() && it.videoId != sourceVideoId
+                                        PlaylistQueuePolicy.nextUnplayed(
+                                            listOf(it.videoId), sourceVideoId, playedVideoIds
+                                        ) != null
                                     }?.let { next ->
                                         OfflineMedia(
                                             id = "search-next-${next.videoId}-${System.nanoTime()}",
@@ -872,13 +1081,13 @@ fun NativeExoPlayer(
                                 nextLookupInProgress = false
                             }
                         }
-                    }
                 }
             }
         }
         else -> null
     }
     val currentNextAction by rememberUpdatedState(sharedNextAction)
+    val latestSharedNextAction by rememberUpdatedState(sharedNextAction)
     val currentPreviousAction by rememberUpdatedState(onPreviousItem)
     var lastNextKeyTime by remember(media.id) { mutableLongStateOf(0L) }
     var lastPreviousKeyTime by remember(media.id) { mutableLongStateOf(0L) }
@@ -886,7 +1095,9 @@ fun NativeExoPlayer(
     fun dispatchNextKey(): Boolean {
         val action = currentNextAction ?: return false
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNextKeyTime >= 350L) {
+        // A user's second steering-wheel press should count. Hardware duplicate
+        // DOWN/UP dispatches are deduped in PlaybackHardwareButtonBridge.
+        if (now - lastNextKeyTime >= 190L) {
             lastNextKeyTime = now
             action()
         }
@@ -909,6 +1120,30 @@ fun NativeExoPlayer(
         MediaSession.Builder(context, exoPlayer)
             .setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}")
             .setCallback(object : MediaSession.Callback {
+                override fun onPlayerInteractionFinished(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    playerCommands: Player.Commands
+                ) {
+                    // Some car launcher/media widgets issue controller skip
+                    // commands rather than KEYCODE_MEDIA_NEXT. Media3 would
+                    // seek inside the single-item ExoPlayer queue (no-op).
+                    // Translate the completed controller interaction to the
+                    // application's working on-screen Next/Previous actions.
+                    when {
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT) ||
+                            playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM) -> {
+                            PlaybackDiagnostics.record(context, "car_controller_next", "native")
+                            currentDispatchNext()
+                        }
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS) ||
+                            playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) -> {
+                            PlaybackDiagnostics.record(context, "car_controller_previous", "native")
+                            currentDispatchPrevious()
+                        }
+                    }
+                }
+
                 override fun onMediaButtonEvent(
                     session: MediaSession,
                     controllerInfo: MediaSession.ControllerInfo,
@@ -920,21 +1155,123 @@ fun NativeExoPlayer(
                     } else {
                         intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
                     }
-                    if (event?.action != AndroidKeyEvent.ACTION_DOWN || event.repeatCount != 0) {
-                        return false
-                    }
-                    return when (event.keyCode) {
-                        AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> currentDispatchNext()
-                        AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> currentDispatchPrevious()
-                        else -> false // Media3 retains play/pause, headset and seek handling.
-                    }
+                    // Unify MediaSession and Activity key routes so an OEM
+                    // sending DOWN to one and UP to the other cannot double-skip.
+                    // Also supports skip-forward/skip-back and UP-only firmware.
+                    return if (event != null) {
+                        PlaybackHardwareButtonBridge.handle(event)
+                    } else false
                 }
             })
             .build()
     }
+    val resumeStore = remember(context) { VideoResumeStore(context) }
+    val privateSession by remember(context) {
+        com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).privateSession
+    }.collectAsState()
+    // 'Resume after interruptions' controls app/phone interruptions only;
+    // watch-position resume is independent and disabled solely for private sessions.
+    val resumeEnabled = !privateSession
+    val savedResume = remember(media.mediaUri, resumeEnabled, initialPositionMs) {
+        if (resumeEnabled && initialPositionMs < 1_000L) {
+            resumeStore.find(media.mediaUri)
+        } else null
+    }
+    var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
+    // Mutable holder is read when the stream actually starts, even if the user
+    // chooses Resume BEFORE the asynchronous stream resolver finishes.
+    val selectedResumeStart = remember(media.id) {
+        mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
+    }
+    val latestResumeEnabled by rememberUpdatedState(resumeEnabled)
+    val latestResumePrompt by rememberUpdatedState(showResumePrompt)
+
+    LaunchedEffect(isPlaying, resumeEnabled, showResumePrompt, media.mediaUri) {
+        if (resumeEnabled && !showResumePrompt && isPlaying) {
+            while (isActive) {
+                delay(12_000L)
+                if (exoPlayer.isPlaying) {
+                    resumeStore.record(
+                        media.mediaUri,
+                        exoPlayer.currentPosition.coerceAtLeast(0L),
+                        exoPlayer.duration
+                    )
+                }
+            }
+        }
+    }
+    LaunchedEffect(showResumePrompt, isPlaying) {
+        if (showResumePrompt && isPlaying) exoPlayer.pause()
+    }
+    // The final resume snapshot is taken in the ExoPlayer release effect,
+    // BEFORE release(). A separate earlier DisposableEffect disposed too late
+    // on some Compose hosts and silently saved an IDLE/zero position.
+    LaunchedEffect(privateSession) {
+        if (privateSession) showResumePrompt = false
+    }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
-    val compactPortrait = isPortrait && !isFullscreen && !inPictureInPicture && !isPipMode(activity)
+    val themeProfile = LocalDeckThemeProfile.current
+    val playerButtonShape = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.CONSOLE, DeckPlayerChrome.HUD -> RoundedCornerShape(5.dp)
+        DeckPlayerChrome.ARCADE -> RoundedCornerShape(1.dp)
+        DeckPlayerChrome.THEATER -> RoundedCornerShape(15.dp)
+        DeckPlayerChrome.GLASS -> RoundedCornerShape(22.dp)
+        DeckPlayerChrome.CLASSIC -> CircleShape
+        DeckPlayerChrome.TV_CLASSIC -> RoundedCornerShape(4.dp)
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> CircleShape
+        DeckPlayerChrome.PLEX -> RoundedCornerShape(18.dp)
+        DeckPlayerChrome.KODI -> RoundedCornerShape(8.dp)
+        DeckPlayerChrome.MX_GESTURE -> RoundedCornerShape(25.dp)
+        DeckPlayerChrome.VLC_COMPACT -> RoundedCornerShape(2.dp)
+        DeckPlayerChrome.MATERIAL -> RoundedCornerShape(28.dp)
+        DeckPlayerChrome.APPLE_FLOAT -> RoundedCornerShape(26.dp)
+        DeckPlayerChrome.CYBER -> RoundedCornerShape(0.dp)
+    }
+    val playerOverlayOpacity = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.THEATER -> .50f
+        DeckPlayerChrome.GLASS -> .22f
+        DeckPlayerChrome.HUD, DeckPlayerChrome.CONSOLE -> .58f
+        DeckPlayerChrome.ARCADE -> .46f
+        DeckPlayerChrome.CLASSIC -> .35f
+        DeckPlayerChrome.TV_CLASSIC -> .58f
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> .43f
+        DeckPlayerChrome.PLEX -> .50f
+        DeckPlayerChrome.KODI -> .29f
+        DeckPlayerChrome.MX_GESTURE -> .33f
+        DeckPlayerChrome.VLC_COMPACT -> .60f
+        DeckPlayerChrome.MATERIAL -> .40f
+        DeckPlayerChrome.APPLE_FLOAT -> .18f
+        DeckPlayerChrome.CYBER -> .61f
+    }
+    val playerButtonColor = when (themeProfile.playerChrome) {
+        DeckPlayerChrome.THEATER, DeckPlayerChrome.PLEX,
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP,
+        DeckPlayerChrome.APPLE_FLOAT -> Color.White
+        DeckPlayerChrome.HUD, DeckPlayerChrome.CYBER -> TubeDeckAccentMint
+        DeckPlayerChrome.VLC_COMPACT -> Color(0xFFFF9800)
+        DeckPlayerChrome.MATERIAL -> Color(0xFF6750A4)
+        else -> TubeDeckAccentCyan
+    }
+    // Controls change hierarchy and placement with the experience,
+    // not just accent colors. Playback state always stays on the same ExoPlayer.
+    val cinematicPlayer = themeProfile.playerChrome in setOf(
+        DeckPlayerChrome.PLEX, DeckPlayerChrome.KODI, DeckPlayerChrome.THEATER,
+        DeckPlayerChrome.GLASS, DeckPlayerChrome.APPLE_FLOAT
+    )
+    val gesturePlayer = themeProfile.playerChrome == DeckPlayerChrome.MX_GESTURE
+    val technicalPlayer = themeProfile.playerChrome in setOf(
+        DeckPlayerChrome.VLC_COMPACT, DeckPlayerChrome.CONSOLE,
+        DeckPlayerChrome.CYBER, DeckPlayerChrome.HUD
+    )
+    val largeTvControls = themeProfile.playerChrome == DeckPlayerChrome.TV_CLASSIC
+    val compactPortrait = isPortrait && activeViewingMode != ViewingMode.CINEMA &&
+        !isFullscreen && !inPictureInPicture && !isPipMode(activity)
     val centerControlDiameter = if (compactPortrait) 52.dp else 60.dp
+    // The spinner and central Play/Pause row must share the exact same offset.
+    // More importantly, BOTH are positioned inside safeDrawing insets. The old
+    // spinner was centered on the raw screen while Play was centered inside
+    // the system-bar-safe area, causing an obvious landscape/TV-box drift.
+    val centerPlayYOffset = if (compactPortrait) 12.dp else 10.dp
 
     fun loadResolvedStream(
         sourceMedia: YoutubeStreamResolver.ResolvedMedia,
@@ -974,7 +1311,7 @@ fun NativeExoPlayer(
         val position = if (preservePosition) {
             exoPlayer.currentPosition
         } else {
-            initialPositionMs.coerceAtLeast(0L)
+            selectedResumeStart.longValue
         }
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         isPreparing = true
@@ -1147,6 +1484,16 @@ fun NativeExoPlayer(
                 }
                 isPlaying = playing
                 if (!playing && !exoPlayer.playWhenReady && liveDubEnabled) liveDubEngine.pauseForPlayback()
+                // Save at an actual pause as well as the regular 12-second tick;
+                // do not clear an old position while the resume dialog is open.
+                if (!playing && latestResumeEnabled && !latestResumePrompt &&
+                    exoPlayer.playbackState == Player.STATE_READY
+                ) {
+                    val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    if (VideoResumePolicy.shouldSave(pos, exoPlayer.duration)) {
+                        resumeStore.record(media.mediaUri, pos, exoPlayer.duration)
+                    }
+                }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
@@ -1158,6 +1505,9 @@ fun NativeExoPlayer(
                     endActionDispatched = false
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
                 } else if (state == Player.STATE_ENDED || state == Player.STATE_IDLE) {
+                    if (state == Player.STATE_ENDED && latestResumeEnabled) {
+                        resumeStore.record(media.mediaUri, 0L)
+                    }
                     isPreparing = false
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
@@ -1179,7 +1529,11 @@ fun NativeExoPlayer(
                                     currentEpisodeIndex >= 0 &&
                                     currentEpisodeIndex < episodes.lastIndex
                                 ) {
-                                    episodes[currentEpisodeIndex + 1]
+                                    episodes.drop(currentEpisodeIndex + 1).firstOrNull {
+                                        PlaylistQueuePolicy.nextUnplayed(
+                                            listOf(it.videoId), currentVideoId, playedVideoIds
+                                        ) != null
+                                    }
                                 } else {
                                     null
                                 }
@@ -1203,29 +1557,17 @@ fun NativeExoPlayer(
                                         latestOnPlayPlaylistItem?.invoke(latestPlaylistIndex + 1)
                                     }
 
-                                    else -> latestOnPlaybackEnded?.invoke()
+                                    else -> { if (latestSharedNextAction != null) latestSharedNextAction?.invoke() else latestOnPlaybackEnded?.invoke() }
                                 }
                             }
 
                             PlaybackContinuationMode.AUTO_NEXT -> {
-                                val currentVideoId = YoutubeUrls.videoId(media.mediaUri).orEmpty()
-                                val suggested = latestResolvedMedia?.relatedVideos
-                                    ?.firstOrNull { it.videoId.isNotBlank() && it.videoId != currentVideoId }
-
-                                when {
-                                    latestOnPlaybackEnded != null -> latestOnPlaybackEnded?.invoke()
-                                    latestOnNextItem != null -> latestOnNextItem?.invoke()
-                                    suggested != null && latestOnPlayRelated != null -> {
-                                        latestOnPlayRelated?.invoke(
-                                            OfflineMedia(
-                                                id = "auto-next-${suggested.videoId}-${System.nanoTime()}",
-                                                title = suggested.title,
-                                                videoId = suggested.videoId,
-                                                thumbnailUrl = suggested.thumbnailUrl,
-                                                mediaUri = suggested.url
-                                            )
-                                        )
-                                    }
+                                // Manual Next and end-of-stream use one selection policy.
+                                // An empty related shelf triggers the same bounded Watch-Next lookup.
+                                if (latestSharedNextAction != null) {
+                                    latestSharedNextAction?.invoke()
+                                } else {
+                                    latestOnPlaybackEnded?.invoke()
                                 }
                             }
                         }
@@ -1248,6 +1590,9 @@ fun NativeExoPlayer(
             }
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(audioSessionId)
+                nightAudioActive = nightAudioController.apply(
+                    audioSessionId, latestNightAudioEnabled && nightAudioSupported
+                )
             }
             override fun onCues(cueGroup: CueGroup) {
                 val cue = cueGroup.cues
@@ -1364,12 +1709,36 @@ fun NativeExoPlayer(
         PlaybackDiagnostics.record(context, "player_created", "compat=$carHeadUnit")
         exoPlayer.addAnalyticsListener(analytics)
         exoPlayer.addListener(listener)
-        PlaybackHardwareButtonBridge.register(exoPlayer, { currentDispatchNext() }, { currentDispatchPrevious() })
+        PlaybackHardwareButtonBridge.register(
+            exoPlayer,
+            { currentDispatchNext() },
+            { currentDispatchPrevious() },
+            nextKeyCode = remoteNextKeyCode,
+            previousKeyCode = remotePreviousKeyCode,
+            context = context
+        )
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
+            if (latestResumeEnabled && !latestResumePrompt) {
+                runCatching {
+                    val completed = exoPlayer.playbackState == Player.STATE_ENDED
+                    val position = if (completed) 0L else exoPlayer.currentPosition.coerceAtLeast(0L)
+                    if (VideoResumePolicy.shouldSnapshot(
+                            exoPlayer.currentMediaItem != null &&
+                                exoPlayer.playbackState != Player.STATE_IDLE,
+                            false,
+                            position,
+                            completed
+                        )
+                    ) {
+                        resumeStore.record(media.mediaUri, position, exoPlayer.duration)
+                    }
+                }
+            }
             PlaybackHardwareButtonBridge.unregister(exoPlayer)
             exoPlayer.removeListener(listener)
             exoPlayer.removeAnalyticsListener(analytics)
+            nightAudioController.release()
             equalizerController.release()
             liveDubEngine.close()
             mediaSession.release()
@@ -1377,7 +1746,12 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(media.id, media.mediaUri) {
+    LaunchedEffect(activeNightAudio, nightAudioSupported, exoPlayer) {
+        nightAudioActive = nightAudioController.apply(
+            exoPlayer.audioSessionId, activeNightAudio && nightAudioSupported
+        )
+    }
+    LaunchedEffect(media.id, media.mediaUri, manualRecoveryAttempts) {
         isPreparing = true
         isBuffering = false
         val online = YoutubeUrls.videoId(media.mediaUri) != null
@@ -1450,7 +1824,7 @@ fun NativeExoPlayer(
             firstFrameRendered = false
             exoPlayer.setMediaItem(
                 MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build(),
-                initialPositionMs.coerceAtLeast(0L)
+                selectedResumeStart.longValue
             )
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
@@ -1553,8 +1927,8 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos, autoLoadUpNext) {
-        if (!firstFrameRendered || !autoLoadUpNext) return@LaunchedEffect
+    LaunchedEffect(firstFrameRendered, resolved?.relatedVideos, autoLoadUpNext, lowResourceMode) {
+        if (!firstFrameRendered || !autoLoadUpNext || lowResourceMode) return@LaunchedEffect
         // Up Next prefetch is optional because even post-first-frame extraction can compete for
         // network/CPU on modest devices. When disabled in Settings no related item is prewarmed.
         resolved?.relatedVideos.orEmpty()
@@ -1667,9 +2041,9 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused) {
+    LaunchedEffect(controlsVisible, autoHideControls, tvControlsFocused, viewingMenuVisible) {
         // Do not hide TV controls while a remote or keyboard has focus inside them.
-        if (controlsVisible && autoHideControls && !tvControlsFocused) {
+        if (controlsVisible && autoHideControls && !tvControlsFocused && !viewingMenuVisible) {
             delay(4200)
             if (!tvControlsFocused) controlsVisible = false
         }
@@ -1710,20 +2084,57 @@ fun NativeExoPlayer(
         }
     }
 
-    LaunchedEffect(activity, isFullscreen) {
-        activity?.let { setFullscreen(it, isFullscreen) }
+    LaunchedEffect(activity, isFullscreen, activeViewingMode) {
+        activity?.let { setFullscreen(it, isFullscreen || activeViewingMode == ViewingMode.CINEMA) }
+    }
+    LaunchedEffect(activeViewingMode) {
+        if (activeViewingMode == ViewingMode.CINEMA) {
+            showPlaybackModeCards = false
+            controlsVisible = false
+        }
+    }
+
+    // TV Back first dismisses a visible player overlay, as it does in SmartTube.
+    // A subsequent Back is owned by the Activity and its PiP/exit state machine.
+    BackHandler(enabled = showPlaybackModeCards && !inPictureInPicture) {
+        showPlaybackModeCards = false
+        cardsDismissedThisVideo = true
+        controlsVisible = true
+        tvPendingControlFocus = true
+    }
+
+    BackHandler(
+        enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
+            !showSettings && !showQuickActions && !showEqualizer &&
+            !showCaptionMenu && !showQualityMenu && !showComments && !viewingMenuVisible &&
+            !showPlaybackModeCards
+    ) {
+        controlsVisible = false
+        tvRestoreSurfaceFocus = true
+    }
+
+    LaunchedEffect(controlsVisible, tvRestoreSurfaceFocus) {
+        if (!controlsVisible && tvRestoreSurfaceFocus) {
+            withFrameNanos { }
+            runCatching { tvSurfaceFocus.requestFocus() }
+            tvRestoreSurfaceFocus = false
+        }
     }
 
     LaunchedEffect(media.id, tvNavigation) {
         if (tvNavigation && !inPictureInPicture) tvSurfaceFocus.requestFocus()
     }
 
-    LaunchedEffect(controlsVisible, tvPendingControlFocus) {
-        // The overlay can be absent after auto-hide. Wait until Compose has mounted
-        // the control before invoking FocusRequester, avoiding TV-only crashes.
-        if (controlsVisible && tvPendingControlFocus) {
-            tvPlayPauseFocus.requestFocus()
+    LaunchedEffect(controlsVisible, tvPendingControlFocus, tvPendingTopFocus) {
+        // Do not dispatch a D-pad focus request until the control overlay is attached.
+        if (controlsVisible && (tvPendingControlFocus || tvPendingTopFocus)) {
+            withFrameNanos { }
+            runCatching {
+                if (tvPendingTopFocus) tvTopBackFocus.requestFocus()
+                else tvPlayPauseFocus.requestFocus()
+            }
             tvPendingControlFocus = false
+            tvPendingTopFocus = false
         }
     }
 
@@ -1734,55 +2145,92 @@ fun NativeExoPlayer(
             if (key.type != KeyEventType.KeyDown || inPictureInPicture) {
                 false
             } else {
-                when (key.nativeKeyEvent.keyCode) {
-                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> dispatchNextKey()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> dispatchPreviousKey()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                val modalVisible = showSettings || showQuickActions || showEqualizer || viewingMenuVisible ||
+                    showCaptionMenu || showQualityMenu || showPlaybackModeCards || showComments || showBookmarks
+                val decision = if (!modalVisible) {
+                    TvRemoteKeyLearningPolicy.remap(
+                        key.nativeKeyEvent.keyCode, key.nativeKeyEvent.repeatCount,
+                        remoteNextKeyCode, remotePreviousKeyCode
+                    )
+                } else null
+                val actionDecision = decision ?: TvRemoteNavigationPolicy.decide(
+                    keyCode = key.nativeKeyEvent.keyCode,
+                    repeatCount = key.nativeKeyEvent.repeatCount,
+                    surfaceFocused = tvSurfaceFocused,
+                    controlsVisible = controlsVisible,
+                    modalVisible = modalVisible
+                )
+                fun showCenterControls() {
+                    controlsVisible = true
+                    tvPendingControlFocus = true
+                }
+                when (actionDecision.action) {
+                    TvPlayerKeyAction.IGNORE -> false
+                    TvPlayerKeyAction.REVEAL_CENTER_CONTROLS -> {
+                        showCenterControls()
+                        true
+                    }
+                    TvPlayerKeyAction.REVEAL_TOP_CONTROLS -> {
+                        controlsVisible = true
+                        tvPendingTopFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.HIDE_CONTROLS -> {
+                        controlsVisible = false
+                        tvRestoreSurfaceFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.TOGGLE_CONTROLS -> {
+                        controlsVisible = !controlsVisible
+                        if (controlsVisible) tvPendingControlFocus = true
+                        else tvRestoreSurfaceFocus = true
+                        true
+                    }
+                    TvPlayerKeyAction.PLAY_PAUSE -> {
                         if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        controlsVisible = true
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> { exoPlayer.play(); controlsVisible = true; true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
-                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> { exoPlayer.pause(); controlsVisible = true; true }
-                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND,
-                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD) 1 else -1
-                        exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
-                            .coerceIn(0L, duration.coerceAtLeast(0L)))
-                        controlsVisible = true
+                    TvPlayerKeyAction.PLAY -> {
+                        exoPlayer.play()
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER,
-                    AndroidKeyEvent.KEYCODE_ENTER,
-                    AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
-                    AndroidKeyEvent.KEYCODE_BUTTON_A,
-                    AndroidKeyEvent.KEYCODE_SPACE -> {
-                        if (!tvSurfaceFocused) false else {
-                            controlsVisible = true
-                            tvPendingControlFocus = true
-                            true
-                        }
+                    TvPlayerKeyAction.PAUSE -> {
+                        exoPlayer.pause()
+                        true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_LEFT,
-                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (!tvSurfaceFocused) false else {
-                            val direction = if (key.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
-                            exoPlayer.seekTo((exoPlayer.currentPosition + direction * seekIntervalSeconds * 1000L)
-                                .coerceIn(0L, duration.coerceAtLeast(0L)))
-                            controlsVisible = true
-                            true
-                        }
+                    TvPlayerKeyAction.STOP -> {
+                        exoPlayer.pause()
+                        onClose()
+                        true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN,
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> {
-                        if (!tvSurfaceFocused) false else {
+                    TvPlayerKeyAction.NEXT -> dispatchNextKey()
+                    TvPlayerKeyAction.PREVIOUS -> dispatchPreviousKey()
+                    TvPlayerKeyAction.SEEK_BACKWARD,
+                    TvPlayerKeyAction.SEEK_FORWARD -> {
+                        val sign = if (actionDecision.action == TvPlayerKeyAction.SEEK_FORWARD) 1L else -1L
+                        val seekMs = sign * actionDecision.multiplier * seekIntervalSeconds * 1000L
+                        val target = (exoPlayer.currentPosition + seekMs)
+                            .coerceIn(0L, duration.coerceAtLeast(0L))
+                        exoPlayer.seekTo(target)
+                        if (duration > 0L) {
+                            scrubFraction = (target.toFloat() / duration).coerceIn(0f, 1f)
+                            remoteSeekPreviewActive = true
+                            remoteSeekPreviewSequence += 1
                             controlsVisible = true
-                            tvPendingControlFocus = true
-                            true
                         }
+                        true
                     }
-                    else -> false
+                    TvPlayerKeyAction.SEEK_PERCENT -> {
+                        if (duration > 0L) {
+                            val target = (duration * actionDecision.percent / 100L).coerceIn(0L, duration)
+                            exoPlayer.seekTo(target)
+                            scrubFraction = (target.toFloat() / duration).coerceIn(0f, 1f)
+                            remoteSeekPreviewActive = true
+                            remoteSeekPreviewSequence += 1
+                            controlsVisible = true
+                        }
+                        true
+                    }
                 }
             }
         }
@@ -1796,14 +2244,20 @@ fun NativeExoPlayer(
                 Modifier.fillMaxSize().background(Color.Black)
             }
         ) {
+            // Keep the SAME TextureView attached across every viewing-mode
+            // change. Recreating AndroidView caused OEM video/compositing failures.
+            // Direct alpha on the TextureView is independent of Compose Z ordering.
             key(carHeadUnit) {
             AndroidView(
                 factory = { ctx ->
                     val view = if (carHeadUnit) {
                         LayoutInflater.from(ctx).inflate(R.layout.mytube_car_player_view, null, false) as PlayerView
-                    } else PlayerView(ctx)
+                    } else {
+                        LayoutInflater.from(ctx).inflate(R.layout.mytube_viewing_player_view, null, false) as PlayerView
+                    }
                     PlaybackDiagnostics.record(ctx, "video_surface", view.videoSurfaceView?.javaClass?.simpleName.orEmpty())
                     view.apply {
+                        setBackgroundColor(android.graphics.Color.BLACK)
                         player = exoPlayer
                         useController = false
                         setKeepContentOnPlayerReset(true)
@@ -1814,11 +2268,47 @@ fun NativeExoPlayer(
                 update = { view ->
                     view.player = exoPlayer
                     view.resizeMode = resizeMode
+                    // Actual native video brightness. Unlike a Compose sibling overlay,
+                    // a TextureView's alpha reliably affects the decoder picture.
+                    // We leave subtitles and playback controls unaffected.
+                    view.videoSurfaceView?.alpha = ViewingModePolicy.videoAlpha(
+                        activeViewingMode, dimPreview, inPictureInPicture
+                    )
                     view.subtitleView?.visibility = if (captionsEnabled) View.VISIBLE else View.GONE
+                    view.subtitleView?.setFixedTextSize(
+                        android.util.TypedValue.COMPLEX_UNIT_SP,
+                        18f * subtitleTextScale.coerceIn(.8f, 1.8f)
+                    )
+                    view.subtitleView?.setBottomPaddingFraction(
+                        (0.08f + subtitleBottomInsetDp.coerceIn(0, 120) / 900f).coerceIn(0.08f, 0.25f)
+                    )
                 },
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { view -> view.player = null }
             )
+            }
+
+            // Night additionally warms the picture. Brightness itself is applied
+            // to the TextureView above, not twice through a fragile overlay.
+            if (!inPictureInPicture && activeViewingMode == ViewingMode.NIGHT) {
+                Box(Modifier.matchParentSize().background(Color(0xFFFFAD6A).copy(alpha = .08f)))
+            }
+            if (viewingModeAcknowledgement && !viewingMenuVisible && !inPictureInPicture) {
+                Surface(
+                    color = Color.Black.copy(alpha = .76f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(top = 14.dp)
+                ) {
+                    Text(
+                        text = "Viewing mode: ${activeViewingMode.label}",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
+                }
             }
 
             if (gestureEnabled) {
@@ -1963,7 +2453,9 @@ fun NativeExoPlayer(
                                         }
                                     }
                                 }
-                                if (playbackCardsSwipeZone && dragging) {
+                                if (playbackCardsSwipeZone && dragging &&
+                                    floatingCardsMode != "Off"
+                                ) {
                                     showPlaybackModeCards = totalDy < -(size.height * .08f)
                                     controlsVisible = true
                                     gestureOverlayVisible = false
@@ -2048,6 +2540,7 @@ fun NativeExoPlayer(
                             onDragEnd = {
                                 if (downwardDrag > 72f) {
                                     showPlaybackModeCards = false
+                                    cardsDismissedThisVideo = true
                                     controlsVisible = true
                                 }
                                 downwardDrag = 0f
@@ -2061,12 +2554,60 @@ fun NativeExoPlayer(
                 PlaybackContinuationCards(
                     episodesLoading = continuationEpisodesLoading,
                     currentVideoId = currentVideoId,
-                    relatedVideos = resolved?.relatedVideos.orEmpty(),
+                    relatedVideos = shelfRelated,
+                    creatorLinks = creatorDescriptionLinks,
+                    onCreatorLink = { link ->
+                        if (link.kind == CreatorLinksPolicy.Kind.VIDEO &&
+                            link.videoId != null
+                        ) {
+                            onPlayRelated?.invoke(
+                                OfflineMedia(
+                                    id = "creator-link-${link.videoId}-${System.nanoTime()}",
+                                    title = "Creator-linked video",
+                                    videoId = link.videoId,
+                                    thumbnailUrl = "https://i.ytimg.com/vi/${link.videoId}/hqdefault.jpg",
+                                    mediaUri = link.url
+                                )
+                            )
+                        } else {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW, Uri.parse(link.url)
+                                    )
+                                )
+                            }.onFailure {
+                                Toast.makeText(context, "Could not open creator link", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     episodeShelf = continuationEpisodeShelf,
                     showRelevantShelf = showRelevantShelf,
                     showEpisodesShelf = showEpisodesShelf,
+                    relatedLoading = fallbackRecommendationsLoading,
+                    relatedError = fallbackRecommendationsError,
+                    firstFocus = tvCardsFocus,
+                    allowAnimatedPreviews = FocusAnimatedThumbs.eligible(
+                        requested = animatedCardPreviews,
+                        lowResourceMode = lowResourceMode,
+                        pictureInPicture = inPictureInPicture,
+                        blackout = com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context)
+                            .screenBlackoutEnabled.collectAsState().value,
+                        sdk = android.os.Build.VERSION.SDK_INT,
+                        metered = !FocusAnimatedThumbs.onUnmeteredNetwork(context)
+                    ),
+                    onClose = {
+                        showPlaybackModeCards = false
+                        cardsDismissedThisVideo = true
+                        tvPendingControlFocus = true
+                    },
+                    onRetry = {
+                        fallbackRecommendationsAttempted = false
+                        fallbackRecommendationsError = false
+                    },
                     onPlayMedia = { selected ->
                         showPlaybackModeCards = false
+                        cardsDismissedThisVideo = true
                         onPlayRelated?.invoke(selected)
                     }
                 )
@@ -2099,24 +2640,34 @@ fun NativeExoPlayer(
 
             if ((isPreparing || !firstFrameRendered || isBuffering || playbackRecoveryActive) &&
                 resolveError == null && !inPictureInPicture) {
-                Surface(
-                    color = Color.Black.copy(alpha = .68f),
-                    shape = CircleShape,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp,
+                // Spinner and visible Play/Pause share the same safeDrawing
+                // coordinate space, center offset and control diameter. A
+                // fullscreen Box alone is not enough on asymmetric TV/landscape
+                // navigation-bar insets: it would center on the raw window.
+                Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = if (compactPortrait) 12.dp else 10.dp)
-                        .zIndex(50f)
-                        .size(centerControlDiameter)
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .zIndex(50f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(centerControlDiameter),
-                            strokeWidth = if (compactPortrait) 4.dp else 5.dp,
-                            color = TubeDeckAccentCyan,
-                            trackColor = Color.White.copy(alpha = .26f)
-                        )
+                    Surface(
+                        color = Color.Black.copy(alpha = .68f),
+                        shape = playerButtonShape,
+                        tonalElevation = 8.dp,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .offset(y = centerPlayYOffset)
+                            .size(centerControlDiameter)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                strokeWidth = if (compactPortrait) 4.dp else 5.dp,
+                                color = TubeDeckAccentCyan,
+                                trackColor = Color.White.copy(alpha = .26f)
+                            )
+                        }
                     }
                 }
             }
@@ -2158,29 +2709,44 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .onFocusChanged { tvControlsFocused = it.hasFocus }
-                        .background(Color.Black.copy(alpha = .35f))
+                        .background(Color.Black.copy(alpha = playerOverlayOpacity))
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
                     Row(
-                        Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 6.dp),
+                        Modifier.fillMaxWidth().align(Alignment.TopCenter)
+                            .then(if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CYBER ||
+                                themeProfile.playerChrome == DeckPlayerChrome.VLC_COMPACT)
+                                Modifier.background(Color.Black.copy(alpha = .72f))
+                            else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            liveDubEngine.stop()
-                            exoPlayer.pause()
-                            onClose()
-                        }) {
+                        IconButton(
+                            onClick = {
+                                liveDubEngine.stop()
+                                exoPlayer.pause()
+                                onClose()
+                            },
+                            modifier = Modifier.focusRequester(tvTopBackFocus).tvInputHighlight(CircleShape)
+                        ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                             Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "${if (autoQuality) "Auto • ${selectedHeight}p" else qualityLabel} • ${playbackSpeed}x • ${resizeModeLabel(resizeMode)}${if (liveDubEnabled) " • Dub ${LiveDubLanguages.label(dubTargetCode)}" else ""}",
-                                color = Color.White.copy(alpha = .72f),
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
+                                themeProfile.playerChrome == DeckPlayerChrome.CYBER ||
+                                themeProfile.playerChrome == DeckPlayerChrome.VLC_COMPACT) {
+                                Text(
+                                    "${if (autoQuality) "Auto • ${selectedHeight}p" else qualityLabel} • ${playbackSpeed}x • ${resizeModeLabel(resizeMode)}${if (liveDubEnabled) " • Dub ${LiveDubLanguages.label(dubTargetCode)}" else ""}",
+                                    color = Color.White.copy(alpha = .72f),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         IconButton(onClick = ::rotatePlayer) {
                             Icon(Icons.Default.ScreenRotation, "Rotate portrait/landscape", tint = Color.White)
@@ -2205,11 +2771,44 @@ fun NativeExoPlayer(
                         }
                     }
 
-                    if (!compactPortrait && (onDownloadVideo != null || onDownloadPlaylist != null)) {
+                    if (!compactPortrait && (onDownloadVideo != null || onDownloadPlaylist != null) &&
+                        !cinematicPlayer) {
                         Box(
                             modifier = Modifier.align(Alignment.TopEnd).padding(top = 54.dp, end = 8.dp)
                         ) {
                             DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
+                        }
+                    }
+
+                    if (gesturePlayer && !compactPortrait) {
+                        Surface(
+                            color = Color.Black.copy(alpha = .78f),
+                            shape = RoundedCornerShape(22.dp),
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                                .padding(end = 8.dp, bottom = 65.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                IconButton(
+                                    onClick = {
+                                        exoPlayer.seekTo((currentPosition - 10_000L).coerceAtLeast(0L))
+                                    },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Replay10, "Back 10 seconds", tint = Color.White)
+                                }
+                                IconButton(
+                                    onClick = { exoPlayer.seekTo(currentPosition + 10_000L) },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Forward10, "Forward 10 seconds", tint = Color.White)
+                                }
+                                IconButton(
+                                    onClick = { showSettings = true },
+                                    modifier = Modifier.tvInputHighlight(RoundedCornerShape(18.dp))
+                                ) {
+                                    Icon(Icons.Default.Tune, "Playback tools", tint = Color.White)
+                                }
+                            }
                         }
                     }
 
@@ -2220,14 +2819,16 @@ fun NativeExoPlayer(
 
                         Row(
                             Modifier.align(Alignment.Center)
-                                .offset(y = if (compactPortrait) 12.dp else 10.dp),
+                                .offset(y = centerPlayYOffset),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(if (compactPortrait) 12.dp else 20.dp)
+                            horizontalArrangement = Arrangement.spacedBy(
+                                if (compactPortrait) 12.dp else if (largeTvControls) 24.dp else 20.dp
+                            )
                         ) {
                             IconButton(
                                 onClick = { onPreviousItem?.invoke() },
                                 enabled = onPreviousItem != null,
-                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
+                                modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(playerButtonShape)
                             ) {
                                 Icon(
                                     Icons.Default.SkipPrevious,
@@ -2239,9 +2840,10 @@ fun NativeExoPlayer(
 
                             Surface(
                                 onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
-                                shape = CircleShape,
-                                color = TubeDeckAccentCyan,
-                                modifier = Modifier.focusRequester(tvPlayPauseFocus).size(centerControlDiameter).tvInputHighlight(CircleShape)
+                                shape = playerButtonShape,
+                                color = playerButtonColor,
+                                modifier = Modifier.focusRequester(tvPlayPauseFocus)
+                                    .size(centerControlDiameter).tvInputHighlight(playerButtonShape)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -2255,7 +2857,7 @@ fun NativeExoPlayer(
 
                             val nextEnabled = sharedNextAction != null
                             IconButton(
-                                onClick = { sharedNextAction?.invoke() },
+                                onClick = { dispatchNextKey() },
                                 enabled = nextEnabled,
                                 modifier = Modifier.size(if (compactPortrait) 44.dp else 50.dp).tvInputHighlight(CircleShape)
                             ) {
@@ -2273,8 +2875,31 @@ fun NativeExoPlayer(
                         Modifier.fillMaxWidth()
                             .align(Alignment.BottomCenter)
                             .then(if (compactPortrait) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars))
-                            .padding(horizontal = 10.dp, vertical = 1.dp)
+                            .then(
+                                if (cinematicPlayer) Modifier.background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = .85f)
+                                        )
+                                    )
+                                ) else if (technicalPlayer) Modifier
+                                    .background(Color.Black.copy(alpha = .82f))
+                                else Modifier
+                            )
+                            .padding(horizontal = if (cinematicPlayer) 17.dp else 10.dp,
+                                vertical = if (cinematicPlayer) 12.dp else 1.dp)
                     ) {
+                        if (cinematicPlayer) {
+                            Text(
+                                media.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = if (compactPortrait) 12.sp else 16.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
                         // Keep only frequent playback controls beside the seek bar. Playback speed,
                         // dubbing and Equalizer live under the top-right Player settings gear.
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2283,16 +2908,29 @@ fun NativeExoPlayer(
                             Text(formatDuration(duration), color = Color.White.copy(alpha = .75f), fontSize = 9.sp)
                         }
                         Box(Modifier.fillMaxWidth()) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(
-                                    controllerGap,
-                                    Alignment.CenterHorizontally
-                                )
-                            ) {
+                            // Always visible in portrait; never hide Lights Out at the far
+                            // right edge of a horizontally scrolling controls strip.
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { viewingMenuVisible = true; controlsVisible = true },
+                                    modifier = Modifier.size(controllerHeight)
+                                        .tvInputHighlight(RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        Icons.Default.NightsStay,
+                                        "Lights Out / Cinema / Night viewing modes",
+                                        tint = if (activeViewingMode != ViewingMode.NORMAL || activeNightAudio)
+                                            TubeDeckAccentCyan else Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+                                Row(
+                                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        controllerGap, Alignment.CenterHorizontally
+                                    )
+                                ) {
                                 IconButton(
                                     onClick = {
                                         val nextMode = when (playbackContinuationMode) {
@@ -2501,6 +3139,37 @@ fun NativeExoPlayer(
                                     )
                                 }
 
+                                if (floatingCardsMode != "Off") {
+                                    IconButton(
+                                        onClick = {
+                                            showPlaybackModeCards = true
+                                            controlsVisible = true
+                                        },
+                                        modifier = Modifier.size(controllerHeight)
+                                            .tvInputHighlight(RoundedCornerShape(8.dp))
+                                    ) {
+                                        Icon(
+                                            Icons.Default.VideoLibrary,
+                                            "More video cards",
+                                            tint = TubeDeckAccentCyan,
+                                            modifier = Modifier.size(controllerIconSize)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { showBookmarks = true; controlsVisible = true },
+                                    modifier = Modifier.size(controllerHeight)
+                                        .tvInputHighlight(RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        Icons.Default.BookmarkAdd,
+                                        "Bookmark current video moment",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(controllerIconSize)
+                                    )
+                                }
+
+
                                 IconButton(
                                     onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
                                     modifier = Modifier.size(controllerHeight)
@@ -2526,6 +3195,7 @@ fun NativeExoPlayer(
                                         tint = Color.White,
                                         modifier = Modifier.size(controllerIconSize)
                                     )
+                                }
                                 }
                             }
                         }
@@ -2555,6 +3225,7 @@ fun NativeExoPlayer(
                             )
                         }
                         CompactSeekBar(
+                            chrome = themeProfile.playerChrome,
                             progress = scrubFraction
                                 ?: if (duration > 0) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f,
                             chapterFractions = resolved?.chapters.orEmpty()
@@ -2569,7 +3240,10 @@ fun NativeExoPlayer(
                                     (segment.endTime * 1000f / duration.toFloat()).coerceIn(0f, 1f)
                                 )
                             },
-                            onScrubChange = { scrubFraction = it },
+                            onScrubChange = {
+                                remoteSeekPreviewActive = false
+                                scrubFraction = it
+                            },
                             onSeekFinished = { fraction ->
                                 exoPlayer.seekTo((fraction * duration).toLong())
                                 scrubFraction = null
@@ -2579,29 +3253,10 @@ fun NativeExoPlayer(
                 }
             }
 
-            // An always-reachable audio-only blackout shortcut is vital on car
-            // dashboards: the normal transport controls hide after 4.2 seconds.
-            // Keep this shortcut accessible without requiring a tap that might
-            // pause or seek the playing video.
-            if (!controlsVisible && !inPictureInPicture) {
-                IconButton(
-                    onClick = {
-                        com.drivedeck.tubedeck.data.repository.TubeDeckRepository
-                            .get(context).enableScreenBlackout()
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        .navigationBarsPadding()
-                        .padding(end = 12.dp, bottom = 12.dp)
-                        .zIndex(65f)
-                        .background(Color.Black.copy(alpha = .8f), CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.VisibilityOff,
-                        "Black screen, continue audio",
-                        tint = Color.White
-                    )
-                }
-            }
+            // The permanent bottom-right blackout eye was distracting on every
+            // video and duplicated the fading eye in the lower control bar.
+            // Keep the lower-bar eye (above) unchanged. During blackout the
+            // opaque PlaybackBlackoutHost owns the screen and any tap restores it.
 
             if (showEqualizer && !inPictureInPicture) {
                 PlaybackEqualizerOverlay(
@@ -2655,6 +3310,7 @@ fun NativeExoPlayer(
             }
 
             if (resolveError != null) {
+                val advice = PlaybackErrorAdvisor.analyze(resolveError.orEmpty())
                 Surface(
                     color = Color.Black.copy(alpha = .92f),
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
@@ -2665,7 +3321,18 @@ fun NativeExoPlayer(
                         Spacer(Modifier.height(8.dp))
                         Text("Native stream unavailable", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
-                        Text(resolveError.orEmpty(), color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                        Text(advice.message, color = Color.White.copy(alpha = .95f), fontSize = 13.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Text(advice.suggestion, color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(resolveError.orEmpty().take(180), color = Color.White.copy(alpha = .55f), fontSize = 10.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { manualRecoveryAttempts += 1 },
+                                enabled = manualRecoveryAttempts < 3
+                            ) { Text("Retry stream") }
+                            TextButton(onClick = { showBookmarks = true }) { Text("Saved moments") }
+                        }
                         Spacer(Modifier.height(12.dp))
                         if (YoutubeUrls.videoId(media.mediaUri) != null) {
                             Text("The web player may work for this video.", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
@@ -2712,6 +3379,53 @@ fun NativeExoPlayer(
                 modifier = Modifier.fillMaxWidth().weight(1f)
             )
         }
+    }
+
+    if (showResumePrompt && savedResume != null) {
+        AlertDialog(
+            onDismissRequest = {
+                selectedResumeStart.longValue = 0L
+                showResumePrompt = false
+                resumeStore.record(media.mediaUri, 0L)
+                if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+                exoPlayer.playWhenReady = true
+            },
+            title = { Text("Resume previous video?") },
+            text = {
+                Text("You were watching this video at " +
+                    formatDuration(savedResume.positionMs) +
+                    ". Continue from this point, or start over?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedResumeStart.longValue = savedResume.positionMs
+                    showResumePrompt = false
+                    if (exoPlayer.currentMediaItem != null) {
+                        exoPlayer.seekTo(savedResume.positionMs)
+                    }
+                    exoPlayer.playWhenReady = true
+                }) { Text("Resume") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    selectedResumeStart.longValue = 0L
+                    showResumePrompt = false
+                    resumeStore.record(media.mediaUri, 0L)
+                    if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+                    exoPlayer.playWhenReady = true
+                }) { Text("Start over") }
+            }
+        )
+    }
+
+    if (showBookmarks) {
+        VideoBookmarksDialog(
+            videoId = YoutubeUrls.videoId(media.mediaUri).orEmpty(),
+            videoTitle = resolved?.title?.ifBlank { media.title } ?: media.title,
+            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+            onSeek = { ms -> exoPlayer.seekTo(ms.coerceIn(0L, duration.coerceAtLeast(0L))) },
+            onDismiss = { showBookmarks = false }
+        )
     }
 
     if (showQuickActions) {
@@ -2788,10 +3502,29 @@ fun NativeExoPlayer(
         )
     }
 
+    if (viewingMenuVisible) {
+        PlayerViewingModesDialog(
+            viewingMode = activeViewingMode,
+            dimPercent = dimPreview,
+            nightAudioEnabled = activeNightAudio,
+            nightAudioAvailable = nightAudioSupported,
+            nightAudioActive = nightAudioActive,
+            onChange = { mode, dim, night ->
+                applyViewingMode(mode, dim, night)
+            },
+            onDismiss = { viewingMenuVisible = false }
+        )
+    }
+
     if (showSettings) {
         PlayerSettingsDialog(
             captionsEnabled = captionsEnabled,
             hasCaptions = hasCaptions,
+            viewingMode = activeViewingMode,
+            viewingDimPercent = dimPreview,
+            nightAudioEnabled = activeNightAudio,
+            nightAudioAvailable = nightAudioSupported,
+            onViewingPreferencesChanged = ::applyViewingMode,
             gestureEnabled = gestureEnabled,
             autoHideControls = autoHideControls,
             fullscreen = isFullscreen,
@@ -3485,9 +4218,17 @@ private fun PlaybackContinuationCards(
     episodesLoading: Boolean,
     currentVideoId: String,
     relatedVideos: List<YoutubeStreamResolver.RelatedVideo>,
+    creatorLinks: List<CreatorLinksPolicy.Link> = emptyList(),
+    onCreatorLink: (CreatorLinksPolicy.Link) -> Unit = {},
     episodeShelf: YoutubeStreamResolver.DiscoveredPlaylist?,
     showRelevantShelf: Boolean,
     showEpisodesShelf: Boolean,
+    relatedLoading: Boolean = false,
+    relatedError: Boolean = false,
+    firstFocus: FocusRequester? = null,
+    allowAnimatedPreviews: Boolean = false,
+    onClose: () -> Unit = {},
+    onRetry: () -> Unit = {},
     onPlayMedia: (OfflineMedia) -> Unit
 ) {
     val episodeCards = remember(episodeShelf, currentVideoId) {
@@ -3517,6 +4258,19 @@ private fun PlaybackContinuationCards(
         shadowElevation = 10.dp
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("More videos", color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier.then(
+                        if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier
+                    ).tvInputHighlight(RoundedCornerShape(8.dp))
+                ) { Text("Close", color = TubeDeckAccentCyan) }
+            }
             if (!showRelevantShelf && !showEpisodesShelf) {
                 Text(
                     "Relevant and Episodes rows are disabled in Settings",
@@ -3546,7 +4300,8 @@ private fun PlaybackContinuationCards(
                         ) { related ->
                             RelatedVideoCard(
                                 video = related,
-                                cardWidth = compactCardWidth
+                                cardWidth = compactCardWidth,
+                                allowAnimatedPreview = allowAnimatedPreviews
                             ) {
                                 onPlayMedia(
                                     OfflineMedia(
@@ -3560,9 +4315,19 @@ private fun PlaybackContinuationCards(
                             }
                         }
                     }
+                } else if (relatedLoading) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Finding related videos…", color = TubeDeckTextSecondary)
+                    }
+                } else if (relatedError) {
+                    TextButton(onClick = onRetry) {
+                        Text("Recommendations unavailable · Retry", color = TubeDeckAccentCyan)
+                    }
                 } else {
                     Text(
-                        "No relevant cards available yet",
+                        "No related cards on this video",
                         color = TubeDeckTextSecondary,
                         fontSize = 10.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -3574,6 +4339,41 @@ private fun PlaybackContinuationCards(
                 Spacer(Modifier.height(4.dp))
                 HorizontalDivider(color = TubeDeckBorder.copy(alpha = .48f))
                 Spacer(Modifier.height(2.dp))
+            }
+
+            if (creatorLinks.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider(color = TubeDeckBorder.copy(alpha = .5f))
+                Text(
+                    "Links from this video's creator",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) {
+                    items(creatorLinks, key = { "creator-${it.url}" }) { link ->
+                        TextButton(
+                            onClick = { onCreatorLink(link) },
+                            modifier = Modifier.tvInputHighlight(RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(
+                                when (link.kind) {
+                                    CreatorLinksPolicy.Kind.VIDEO -> Icons.Default.PlayCircle
+                                    CreatorLinksPolicy.Kind.PLAYLIST -> Icons.Default.PlaylistPlay
+                                    CreatorLinksPolicy.Kind.CHANNEL -> Icons.Default.Person
+                                }, null, tint = TubeDeckAccentCyan,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(link.label, color = TubeDeckTextPrimary, fontSize = 10.sp)
+                        }
+                    }
+                }
             }
 
             if (showEpisodesShelf) {
@@ -4481,22 +5281,58 @@ private fun EpisodeVideoCard(
 private fun RelatedVideoCard(
     video: YoutubeStreamResolver.RelatedVideo,
     cardWidth: Dp,
+    allowAnimatedPreview: Boolean = false,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    var focused by remember { mutableStateOf(false) }
+    var previewReady by remember { mutableStateOf(false) }
+    LaunchedEffect(focused, allowAnimatedPreview) {
+        previewReady = false
+        if (focused && allowAnimatedPreview) {
+            delay(1_100)
+            previewReady = true
+        }
+    }
+    val animatedUrl = remember(video.videoId) { FocusAnimatedThumbs.url(video.videoId) }
     Column(
         modifier = Modifier
             .width(cardWidth)
+            .onFocusChanged { focused = it.isFocused }
             .tvInputHighlight(RoundedCornerShape(8.dp))
             .clickable(enabled = true, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = video.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
-            )
+            val imageModifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+            if (previewReady && animatedUrl != null) {
+                SubcomposeAsyncImage(
+                    model = animatedUrl,
+                    imageLoader = FocusAnimatedThumbs.imageLoader(context),
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = imageModifier,
+                    content = {
+                        if (painter.state is AsyncImagePainter.State.Success) {
+                            SubcomposeAsyncImageContent()
+                        } else {
+                            AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = video.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                )
+            } else {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = imageModifier
+                )
+            }
             if (video.durationSeconds > 0L) {
                 Surface(
                     color = Color.Black.copy(alpha = .82f),
@@ -4518,8 +5354,7 @@ private fun RelatedVideoCard(
             fontWeight = FontWeight.SemiBold,
             fontSize = 9.5.sp,
             lineHeight = 11.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            softWrap = true
         )
         Text(
             video.channelTitle,
@@ -4650,10 +5485,104 @@ private fun NativeCommentRow(comment: YoutubeStreamResolver.NativeComment) {
     }
 }
 
+/**
+ * A dedicated focusable dialog prevents the old DropdownMenu dismissal callback
+ * from writing the stale mode back over a newly selected one.
+ * Reused for ALL thirteen player chrome profiles; independent of theme.
+ */
+@Composable
+private fun PlayerViewingModesDialog(
+    viewingMode: ViewingMode,
+    dimPercent: Int,
+    nightAudioEnabled: Boolean,
+    nightAudioAvailable: Boolean,
+    nightAudioActive: Boolean,
+    onChange: (ViewingMode, Int, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Viewing modes") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ViewingMode.values().forEach { mode ->
+                    val selected = viewingMode == mode
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .tvInputHighlight(RoundedCornerShape(10.dp))
+                            .clickable { onChange(mode, dimPercent, nightAudioEnabled) }
+                            .border(
+                                if (selected) 2.dp else 1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline,
+                                RoundedCornerShape(10.dp)
+                            ).padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (selected) Icons.Default.RadioButtonChecked
+                            else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            mode.label,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · ${dimPercent.coerceIn(10, 85)}%")
+                    Slider(
+                        value = dimPercent.coerceIn(10, 85).toFloat(),
+                        onValueChange = { onChange(viewingMode, it.toInt(), nightAudioEnabled) },
+                        valueRange = 10f..85f
+                    )
+                }
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Night Audio", Modifier.weight(1f))
+                    Switch(
+                        checked = nightAudioEnabled,
+                        enabled = nightAudioAvailable,
+                        onCheckedChange = { onChange(viewingMode, dimPercent, it) }
+                    )
+                }
+                if (!nightAudioAvailable) {
+                    Text("Night Audio is not supported on this output", fontSize = 11.sp)
+                } else if (nightAudioEnabled && !nightAudioActive) {
+                    Text("Audio effect not available in this playback session", fontSize = 11.sp)
+                }
+                Text(
+                    "Applied to native video: ${viewingMode.label}",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp
+                )
+                Text(
+                    "Full Blackout remains a separate control. Mode changes take effect immediately.",
+                    fontSize = 11.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
+}
+
 @Composable
 private fun PlayerSettingsDialog(
     captionsEnabled: Boolean,
     hasCaptions: Boolean,
+    viewingMode: ViewingMode,
+    viewingDimPercent: Int,
+    nightAudioEnabled: Boolean,
+    nightAudioAvailable: Boolean,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit,
     gestureEnabled: Boolean,
     autoHideControls: Boolean,
     fullscreen: Boolean,
@@ -4701,6 +5630,60 @@ private fun PlayerSettingsDialog(
                 Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text("Viewing mode", fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ViewingMode.values().forEach { mode ->
+                        val selected = viewingMode == mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .tvInputHighlight(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
+                                }
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (selected) Icons.Default.RadioButtonChecked
+                                else Icons.Default.RadioButtonUnchecked,
+                                contentDescription = null,
+                                modifier = Modifier.size(21.dp),
+                                tint = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(mode.label)
+                        }
+                    }
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · $viewingDimPercent%")
+                    Slider(
+                        value = viewingDimPercent.toFloat(),
+                        onValueChange = {
+                            onViewingPreferencesChanged(viewingMode, it.toInt(), nightAudioEnabled)
+                        },
+                        valueRange = 10f..85f
+                    )
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Night Audio", Modifier.weight(1f))
+                    Switch(
+                        checked = nightAudioEnabled,
+                        onCheckedChange = {
+                            onViewingPreferencesChanged(viewingMode, viewingDimPercent, it)
+                        },
+                        enabled = nightAudioAvailable
+                    )
+                }
+                if (!nightAudioAvailable) Text("Night Audio unavailable on this device", fontSize = 11.sp)
+                HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Gestures", Modifier.weight(1f))
                     Switch(gestureEnabled, onGestures)
@@ -5013,10 +5996,12 @@ private fun SeekPreviewThumbnail(
     val previewHeight = storyboardHeight.coerceIn(76.dp, 110.dp)
     val chapter = chapters.lastOrNull { it.startTimeSeconds * 1_000L <= positionMs }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // The preview follows the touched/hovered thumb, clamped at screen edges.
+        // This is a single overlay used by all player chrome/theme profiles.
+        val maxLeft = (maxWidth - previewWidth).coerceAtLeast(0.dp)
+        val left = (maxWidth * normalized - previewWidth / 2).coerceIn(0.dp, maxLeft)
+        Column(modifier = Modifier.offset(x = left).width(previewWidth)) {
         Surface(
             color = Color.Black.copy(alpha = .92f),
             shape = RoundedCornerShape(10.dp),
@@ -5030,29 +6015,29 @@ private fun SeekPreviewThumbnail(
                         .background(Color.Black)
                 ) {
                     if (storyboard != null && storyboard.urls.isNotEmpty()) {
-                        val frameDuration = storyboard.durationPerFrameMs.coerceAtLeast(1)
-                        val frameNumber = (positionMs / frameDuration)
-                            .toInt()
-                            .coerceIn(0, (storyboard.totalCount - 1).coerceAtLeast(0))
-                        val framesPerPage = (storyboard.framesPerPageX * storyboard.framesPerPageY).coerceAtLeast(1)
-                        val page = (frameNumber / framesPerPage).coerceIn(0, storyboard.urls.lastIndex)
-                        val relative = frameNumber % framesPerPage
-                        val column = relative % storyboard.framesPerPageX.coerceAtLeast(1)
-                        val row = relative / storyboard.framesPerPageX.coerceAtLeast(1)
-                        val sheetWidth = previewWidth * storyboard.framesPerPageX.toFloat()
-                        val sheetHeight = previewHeight * storyboard.framesPerPageY.toFloat()
-
-                        AsyncImage(
-                            model = storyboard.urls[page],
-                            contentDescription = "Seek preview",
-                            contentScale = ContentScale.FillBounds,
-                            modifier = Modifier
-                                .requiredSize(sheetWidth, sheetHeight)
-                                .offset(
-                                    x = (-previewWidth.value * column).dp,
-                                    y = (-previewHeight.value * row).dp
-                                )
+                        val frame = SeekPreviewPolicy.frame(
+                            positionMs = positionMs,
+                            frameDurationMs = storyboard.durationPerFrameMs,
+                            totalFrames = storyboard.totalCount,
+                            columns = storyboard.framesPerPageX,
+                            rows = storyboard.framesPerPageY,
+                            pageCount = storyboard.urls.size
                         )
+                        if (frame != null) {
+                            val sheetWidth = previewWidth * storyboard.framesPerPageX.toFloat()
+                            val sheetHeight = previewHeight * storyboard.framesPerPageY.toFloat()
+                            AsyncImage(
+                                model = storyboard.urls[frame.page],
+                                contentDescription = "Video frame at " + formatDuration(positionMs),
+                                contentScale = ContentScale.FillBounds,
+                                modifier = Modifier
+                                    .requiredSize(sheetWidth, sheetHeight)
+                                    .offset(
+                                        x = (-previewWidth.value * frame.column).dp,
+                                        y = (-previewHeight.value * frame.row).dp
+                                    )
+                            )
+                        }
                     } else if (fallbackThumbnailUrl.isNotBlank()) {
                         AsyncImage(
                             model = fallbackThumbnailUrl,
@@ -5087,11 +6072,13 @@ private fun SeekPreviewThumbnail(
             }
         }
         Spacer(Modifier.height(3.dp))
+        }
     }
 }
 
 @Composable
 private fun CompactSeekBar(
+    chrome: DeckPlayerChrome,
     progress: Float,
     chapterFractions: List<Float> = emptyList(),
     sponsorRanges: List<Pair<Float, Float>> = emptyList(),
@@ -5099,9 +6086,45 @@ private fun CompactSeekBar(
     onSeekFinished: (Float) -> Unit
 ) {
     val normalized = progress.coerceIn(0f, 1f)
+    val seekAccent = when (chrome) {
+        DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> Color(0xFFFF0033)
+        DeckPlayerChrome.VLC_COMPACT -> Color(0xFFFF9800)
+        DeckPlayerChrome.PLEX -> Color(0xFFE9AC37)
+        DeckPlayerChrome.MATERIAL -> Color(0xFF6750A4)
+        DeckPlayerChrome.APPLE_FLOAT -> Color.White
+        DeckPlayerChrome.MX_GESTURE -> Color(0xFF0088FF)
+        DeckPlayerChrome.CYBER -> TubeDeckAccentMint
+        else -> TubeDeckAccentCyan
+    }
+    val seekStroke = when (chrome) {
+        DeckPlayerChrome.PLEX, DeckPlayerChrome.KODI, DeckPlayerChrome.MX_GESTURE -> 5.dp
+        DeckPlayerChrome.VLC_COMPACT, DeckPlayerChrome.CONSOLE -> 2.dp
+        else -> 3.dp
+    }
     Canvas(
         modifier = Modifier.fillMaxWidth()
-            .height(20.dp)
+            .height(26.dp)
+            .pointerInput("seek-preview-hover") {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.none { it.pressed } && size.width > 0) {
+                            when (event.type) {
+                                PointerEventType.Enter, PointerEventType.Move -> {
+                                    val point = event.changes.firstOrNull()
+                                    if (point != null) {
+                                        onScrubChange(
+                                            (point.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                        )
+                                    }
+                                }
+                                PointerEventType.Exit -> onScrubChange(null)
+                                else -> Unit
+                            }
+                        }
+                    }
+                }
+            }
             .pointerInput(chapterFractions, sponsorRanges) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -5158,15 +6181,15 @@ private fun CompactSeekBar(
             )
         }
         drawLine(
-            color = TubeDeckAccentCyan,
+            color = seekAccent,
             start = Offset(0f, y),
             end = Offset(activeX, y),
-            strokeWidth = 3.dp.toPx(),
+            strokeWidth = seekStroke.toPx(),
             cap = StrokeCap.Round
         )
         drawCircle(
-            color = TubeDeckAccentCyan,
-            radius = 4.5.dp.toPx(),
+            color = seekAccent,
+            radius = (if (chrome == DeckPlayerChrome.MX_GESTURE) 6.5.dp else 4.5.dp).toPx(),
             center = Offset(activeX, y)
         )
     }
@@ -5177,7 +6200,20 @@ private fun FadeVisibility(
     visible: Boolean,
     content: @Composable () -> Unit
 ) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+    val motion = LocalDeckThemeProfile.current.motionStyle
+    val duration = LocalDeckExperience.current.motionDurationMs
+    val entrance = if (motion == DeckMotionStyle.PULSE) {
+        fadeIn(animationSpec = tween(durationMillis = duration)) +
+            slideInVertically(
+                initialOffsetY = { height -> height / 9 },
+                animationSpec = tween(durationMillis = duration)
+            )
+    } else fadeIn(animationSpec = tween(durationMillis = duration))
+    AnimatedVisibility(
+        visible = visible,
+        enter = entrance,
+        exit = fadeOut(animationSpec = tween(durationMillis = duration))
+    ) {
         content()
     }
 }

@@ -101,30 +101,32 @@ object YoutubeStreamResolver {
                         }
                     }
 
-                    request.dataToSend()?.let { body ->
-                        connection.doOutput = true
-                        connection.outputStream.use { it.write(body) }
-                    }
-
-                    val code = connection.responseCode
-                    if (code == 429) {
-                        connection.disconnect()
-                        throw ReCaptchaException("HTTP 429", request.url())
-                    }
-
-                    val stream = if (code >= 400) connection.errorStream else connection.inputStream
-                    val body = if (stream != null && request.httpMethod() != "HEAD") {
-                        BufferedInputStream(stream).use { input ->
-                            ByteArrayOutputStream().use { output ->
-                                input.copyTo(output)
-                                output.toString(StandardCharsets.UTF_8.name())
-                            }
-                        }
-                    } else {
-                        ""
-                    }
-
+                    // Always release the connection: request-body write failures,
+                    // HTTP response exceptions and interrupted reads happen before
+                    // Response is constructed, not just while constructing it.
                     return try {
+                        request.dataToSend()?.let { body ->
+                            connection.doOutput = true
+                            connection.outputStream.use { it.write(body) }
+                        }
+
+                        val code = connection.responseCode
+                        if (code == 429) {
+                            throw ReCaptchaException("HTTP 429", request.url())
+                        }
+
+                        val stream = if (code >= 400) connection.errorStream else connection.inputStream
+                        val body = if (stream != null && request.httpMethod() != "HEAD") {
+                            BufferedInputStream(stream).use { input ->
+                                ByteArrayOutputStream().use { output ->
+                                    input.copyTo(output)
+                                    output.toString(StandardCharsets.UTF_8.name())
+                                }
+                            }
+                        } else {
+                            ""
+                        }
+
                         Response(
                             code,
                             connection.responseMessage ?: "",
@@ -1569,6 +1571,39 @@ object YoutubeStreamResolver {
                 }
                 .distinctBy { YoutubeUrls.playlistId(it.url) ?: it.url }
                 .take(limit.coerceIn(1, 40))
+        }
+
+    /**
+     * Actual NewPipe continuation tokens, not repeated first-page searches.
+     * Call only at the end of a visible Home feed; callers hold the cursor in memory.
+     * No imposed total-page count. UI virtualizes thumbnails and repositories bound RAM.
+     */
+    suspend fun searchVideosPage(
+        query: String,
+        cursor: org.schabi.newpipe.extractor.Page?,
+        limit: Int = 36
+    ): Pair<List<RelatedVideo>, org.schabi.newpipe.extractor.Page?> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val clean = query.trim()
+            if (clean.isBlank()) return@withContext emptyList<RelatedVideo>() to null
+            ensureInitialized()
+            val service = NewPipe.getService("YouTube")
+            val handler = service.searchQHFactory.fromQuery(clean, listOf("videos"), "")
+            val items: List<org.schabi.newpipe.extractor.InfoItem>
+            val nextPage: org.schabi.newpipe.extractor.Page?
+            if (cursor == null) {
+                val info = SearchInfo.getInfo(service, handler)
+                items = info.relatedItems
+                nextPage = info.nextPage
+            } else {
+                val page = SearchInfo.getMoreItems(service, handler, cursor)
+                items = page.items
+                nextPage = page.nextPage
+            }
+            items.filterIsInstance<StreamInfoItem>()
+                .mapNotNull(::relatedVideoFromSearchItem)
+                .distinctBy { it.videoId }
+                .take(limit.coerceIn(1, 50)) to nextPage
         }
 
     suspend fun searchVideos(query: String, limit: Int = 20): List<RelatedVideo> =

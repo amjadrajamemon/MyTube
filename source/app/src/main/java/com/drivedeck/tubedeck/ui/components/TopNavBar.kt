@@ -48,7 +48,8 @@ fun TopNavBar(
     recentSearches: List<String> = emptyList(),
     onRemoveRecentSearch: (String) -> Unit = {},
     onClearRecentSearches: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    includeStatusBarInset: Boolean = true
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
     val focusManager = LocalFocusManager.current
@@ -56,7 +57,13 @@ fun TopNavBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding(),
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(
+                    if (includeStatusBarInset)
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    else WindowInsetsSides.Horizontal
+                )
+            ),
         color = TubeDeckSurface,
         tonalElevation = 8.dp
     ) {

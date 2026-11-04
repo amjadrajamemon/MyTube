@@ -29,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,10 +65,14 @@ import com.drivedeck.tubedeck.ui.components.GoogleDeviceCodeDialog
 import com.drivedeck.tubedeck.ui.components.PlaybackBackChoiceOverlay
 import com.drivedeck.tubedeck.ui.components.TopNavBar
 import com.drivedeck.tubedeck.ui.components.TubeDeckBottomBar
+import com.drivedeck.tubedeck.ui.components.TubeDeckSideRail
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
+import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.screens.*
 import com.drivedeck.tubedeck.ui.theme.TubeDeckBackground
 import com.drivedeck.tubedeck.ui.theme.TubeDeckTheme
+import com.drivedeck.tubedeck.ui.theme.LocalDeckThemeProfile
+import com.drivedeck.tubedeck.ui.theme.DeckNavigationPlacement
 import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -113,6 +118,7 @@ class MainActivity : ComponentActivity() {
     private var embeddedPlaybackRequested = false
     private var automaticEmbeddedHandoff = false
     private var closeActivePlaybackUi: (() -> Unit)? = null
+    private var tvNavigateBackBehindPip: (() -> Boolean)? = null
     private val playbackBackCoordinator = PlaybackBackCoordinator()
     private val legacyPlaybackBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -124,6 +130,38 @@ class MainActivity : ComponentActivity() {
     // androidx.core. OEM head units sometimes send media keys only to this hook.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Capture the raw scan/key code on compatible car units. This helps
+        // diagnose OEM keys that never reach the standard MediaSession path;
+        // no account, song title, URL, or personal input is logged.
+        if (::repository.isInitialized && playerActive &&
+            (repository.settings.value.xyAutoCompatibilityMode ||
+                com.drivedeck.tubedeck.player.CarHeadUnitPolicy.isCarHeadUnit(this)) &&
+            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode !in listOf(
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN
+            )
+        ) {
+            com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(
+                this, "car_key_seen",
+                "code=${event.keyCode} scan=${event.scanCode} source=${event.source}"
+            )
+        }
+        // STOP is a hardware-remote escape if the TV shell hides its PiP X.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_MEDIA_STOP
+        ) {
+            NativePipSessionBridge.activeSessionId.value?.let { session ->
+                NativePipSessionBridge.request(session, NativePipSessionBridge.Action.CLOSE)
+                return true
+            }
+            if (isPipMode && playerActive) {
+                closeActivePlaybackCompletely()
+                return true
+            }
+        }
         // Some TV/XY AUTO ROMs send transport keys to the Activity, not MediaSession.
         if (playerActive &&
             com.drivedeck.tubedeck.player.PlaybackHardwareButtonBridge.handle(event)
@@ -183,7 +221,9 @@ class MainActivity : ComponentActivity() {
                 fontScale = activeAppearance.fontScale,
                 accentArgb = activeAppearance.themeAccentArgb,
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
-                textArgb = activeAppearance.themeTextArgb
+                textArgb = activeAppearance.themeTextArgb,
+                appearancePreset = activeAppearance.appearancePreset,
+                lowResourceMode = settings.lowResourceMode
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
@@ -378,6 +418,8 @@ class MainActivity : ComponentActivity() {
                 val playlistSearchStatus by repository.playlistSearchStatus.collectAsStateWithLifecycle()
                 val homeCountry by repository.homeCountry.collectAsStateWithLifecycle()
                 val homeTrendingStatus by repository.homeTrendingStatus.collectAsStateWithLifecycle()
+                val moreFeedsLoading by repository.moreFeedsLoading.collectAsStateWithLifecycle()
+                val moreFeedsExhausted by repository.moreFeedsExhausted.collectAsStateWithLifecycle()
                 val sponsorSegments by repository.currentSponsorSegments.collectAsStateWithLifecycle()
                 val blockedAdsCount by repository.blockedAdsCount.collectAsStateWithLifecycle()
 
@@ -479,6 +521,9 @@ class MainActivity : ComponentActivity() {
                     return navigateBack()
                 }
 
+                // The TV Back key navigates the parent UI beneath native PiP.
+                SideEffect { tvNavigateBackBehindPip = { navigateBrowserBackOrApp() } }
+
                 fun navigateBrowserForwardOrApp(): Boolean {
                     if (currentScreen == ActiveScreen.BROWSER && webCanGoForward) {
                         webViewInstance?.goForward()
@@ -488,7 +533,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    com.novastream.iptv.core.NovaPlaybackBridge.stop()
                     val playbackHost = if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
                         else PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
                     // Preserve the complete watch URL, including list=/mix context. The resolver
@@ -804,11 +848,43 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val activeDeckProfile = LocalDeckThemeProfile.current
+                // Measured dp screen size is the safe trigger for foldables,
+                // small phone windows and rotated/side-by-side app windows.
+                val availableViewportWidthDp = LocalConfiguration.current.screenWidthDp
+                val adaptiveNavigationPlacement =
+                    if (activeDeckProfile.navigationPlacement == DeckNavigationPlacement.SIDE &&
+                        availableViewportWidthDp < 700
+                    ) DeckNavigationPlacement.BOTTOM
+                    else activeDeckProfile.navigationPlacement
+                val showPrimaryNav = !isPipMode && currentScreen != ActiveScreen.PLAYER &&
+                    !isBrowserFullscreen &&
+                    !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)
+                val navigateTheme: (ActiveScreen) -> Unit = { screen ->
+                    if (screen == ActiveScreen.MIXES && playlistSearchResults.isEmpty() &&
+                        playlistSearchStatus.isBlank()
+                    ) repository.searchPlaylists(mixesSearchQuery)
+                    if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
+                    else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
+                    navigateTo(screen)
+                }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = TubeDeckBackground,
                     contentWindowInsets = WindowInsets.safeDrawing,
                     topBar = {
+                        Column {
+                        if (showPrimaryNav &&
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.TOP
+                        ) {
+                            TubeDeckBottomBar(
+                                currentScreen = currentScreen,
+                                activeDownloadCount = activeDownloads.size,
+                                blockedAdsCount = blockedAdsCount,
+                                onNavigate = navigateTheme
+                            )
+                        }
                         if (!isPipMode && currentScreen == ActiveScreen.BROWSER &&
                             settings.desktopYoutubeUiEnabled && !isBrowserFullscreen
                         ) {
@@ -851,6 +927,7 @@ class MainActivity : ComponentActivity() {
                         } else if (!isPipMode && currentScreen == ActiveScreen.BROWSER && !isBrowserFullscreen) {
                             Column {
                                 TopNavBar(
+                                    includeStatusBarInset = adaptiveNavigationPlacement != DeckNavigationPlacement.TOP,
                                     currentUrl = currentUrl,
                                     recentSearches = recentSearches,
                                     onRemoveRecentSearch = repository::removeRecentSearch,
@@ -898,26 +975,48 @@ class MainActivity : ComponentActivity() {
                                 GlobalProgressBar(isVisible = hasActiveDownloads, progress = averageProgress)
                             }
                         }
+                        }
                     },
                     bottomBar = {
-                        if (!isPipMode && currentScreen != ActiveScreen.PLAYER && !isBrowserFullscreen &&
-                            !(settings.desktopYoutubeUiEnabled && currentScreen == ActiveScreen.BROWSER)) {
+                        Column {
+                        if (!isPipMode && nativePipSessionId != null &&
+                            isTvLikeNavigationDevice(this@MainActivity)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .background(TubeDeckBackground)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Mini-player active", modifier = Modifier.weight(1f))
+                                OutlinedButton(
+                                    onClick = {
+                                        NativePipSessionBridge.request(
+                                            nativePipSessionId.orEmpty(), NativePipSessionBridge.Action.SHOW_CHOOSER
+                                        )
+                                    }
+                                ) { Text("Expand") }
+                                Button(
+                                    onClick = {
+                                        NativePipSessionBridge.request(
+                                            nativePipSessionId.orEmpty(), NativePipSessionBridge.Action.CLOSE
+                                        )
+                                    },
+                                    modifier = Modifier.tvInputHighlight()
+                                ) { Text("Close mini-player") }
+                            }
+                        }
+                        if (showPrimaryNav &&
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.BOTTOM
+                        ) {
                             TubeDeckBottomBar(
                                 currentScreen = currentScreen,
                                 activeDownloadCount = activeDownloads.size,
                                 blockedAdsCount = blockedAdsCount,
-                                onNavigate = { screen ->
-                                    if (screen == ActiveScreen.MIXES &&
-                                        playlistSearchResults.isEmpty() &&
-                                        playlistSearchStatus.isBlank()
-                                    ) {
-                                        repository.searchPlaylists(mixesSearchQuery)
-                                    }
-                                    if (screen == ActiveScreen.DOWNLOADS) downloadsInitialTab = 1
-                                    else if (screen == ActiveScreen.OFFLINE_VAULT) downloadsInitialTab = 0
-                                    navigateTo(screen)
-                                }
+                                onNavigate = navigateTheme
                             )
+                        }
                         }
                     }
                 ) { innerPadding ->
@@ -928,7 +1027,17 @@ class MainActivity : ComponentActivity() {
                             .padding(contentPadding)
                             .consumeWindowInsets(contentPadding)
                     ) {
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                        Row(Modifier.weight(1f).fillMaxWidth()) {
+                        if (showPrimaryNav &&
+                            adaptiveNavigationPlacement == DeckNavigationPlacement.SIDE
+                        ) {
+                            TubeDeckSideRail(
+                                currentScreen = currentScreen,
+                                activeDownloadCount = activeDownloads.size,
+                                onNavigate = navigateTheme
+                            )
+                        }
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
                         if (browserSessionCreated) {
                             BrowserScreen(
                                     currentUrl = currentUrl,
@@ -1050,19 +1159,6 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     },
-                                    onOpenIptv = {
-                                        // The add-on uses its own lifecycle and a single media session.
-                                        pauseBrowserMediaForSwitch()
-                                        PlaybackSessionRegistry.stopForWeb()
-                                        BackgroundAudioController.stop(applicationContext)
-                                        startActivity(Intent(this@MainActivity, com.drivedeck.tubedeck.iptv.IptvActivity::class.java))
-                                    },
-                                    onOpenNovaIptv = {
-                                        pauseBrowserMediaForSwitch()
-                                        PlaybackSessionRegistry.stopForWeb()
-                                        BackgroundAudioController.stop(applicationContext)
-                                        startActivity(Intent(this@MainActivity, com.novastream.iptv.ui.MainActivity::class.java))
-                                    },
                                     onOpenDownloads = {
                                         downloadsInitialTab = 1
                                         navigateTo(ActiveScreen.DOWNLOADS)
@@ -1097,6 +1193,9 @@ class MainActivity : ComponentActivity() {
                                     trendingStatus = homeTrendingStatus,
                                     viewStateKey = currentScreen.name,
                                     onRefreshFeed = { repository.refreshHomeFeed(googleSession.currentYoutubeAccessToken(), force = true) },
+                                    onLoadMoreHomeFeed = { feed -> repository.loadMoreHomeFeed(feed) },
+                                    moreFeedsLoading = moreFeedsLoading,
+                                    moreFeedsExhausted = moreFeedsExhausted,
                                     onClearLiveSearch = { repository.clearLiveSearch() },
                                     onOpenVideo = { item ->
                                         val media = OfflineMedia(
@@ -1182,6 +1281,16 @@ class MainActivity : ComponentActivity() {
                                         repository.updateSettings(it)
                                         previewAppearance = null
                                     },
+                                    onViewingPreferencesChanged = { mode, dim, nightAudio ->
+                                        val latest = repository.settings.value
+                                        repository.updateSettings(
+                                            latest.copy(
+                                                viewingMode = mode,
+                                                viewingDimPercent = dim.coerceIn(10, 85),
+                                                nightAudioEnabled = nightAudio
+                                            )
+                                        )
+                                    },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
                                     onClearWatchHistory = {
                                         repository.clearWatchHistory()
@@ -1233,6 +1342,15 @@ class MainActivity : ComponentActivity() {
                                         sideBySideEpisodeFeeds = settings.sideBySideEpisodeFeeds,
                                         showRelevantShelf = settings.showRelevantShelf,
                                         showEpisodesShelf = settings.showEpisodesShelf,
+                                        floatingCardsMode = settings.floatingCardsMode,
+                                        animatedCardPreviews = settings.animatedCardPreviews,
+                                        hideWatchedRecommendations = settings.hideWatchedRecommendations,
+                                        lowResourceMode = settings.lowResourceMode,
+                                        resumeAfterInterruptions = settings.resumeAfterInterruptions,
+                                        subtitleTextScale = settings.subtitleTextScale,
+                                        subtitleBottomInsetDp = settings.subtitleBottomInsetDp,
+                                        remoteNextKeyCode = settings.remoteNextKeyCode,
+                                        remotePreviousKeyCode = settings.remotePreviousKeyCode,
                                         playerControllerScale = settings.playerControllerScale,
                                         equalizerTextScale = settings.equalizerTextScale,
                                         playbackContinuationMode = settings.playbackContinuationMode,
@@ -1244,6 +1362,17 @@ class MainActivity : ComponentActivity() {
                                         preferredPlaybackQualityHeight = settings.preferredPlaybackQualityHeight,
                                         preferredPlaybackSpeed = settings.preferredPlaybackSpeed,
                                         seekIntervalSeconds = settings.seekIntervalSeconds,
+                                        viewingMode = settings.viewingMode,
+                                        viewingDimPercent = settings.viewingDimPercent,
+                                        nightAudioEnabled = settings.nightAudioEnabled,
+                                        onViewingPreferencesChanged = { mode, dim, nightAudio ->
+                                            val latest = repository.settings.value
+                                            repository.updateSettings(latest.copy(
+                                                viewingMode = mode,
+                                                viewingDimPercent = dim.coerceIn(10, 85),
+                                                nightAudioEnabled = nightAudio
+                                            ))
+                                        },
                                         autoRotatePlayback = settings.autoRotatePlayback,
                                         onClose = {
                                             playingMedia = null
@@ -1385,6 +1514,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         }
+                        }
                         if (showPlaybackExitChoices && !isPipMode) {
                             val bridgedSession = nativePipSessionId
                             PlaybackBackChoiceOverlay(
@@ -1451,7 +1581,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchNativePlayer(media: OfflineMedia) {
-        com.novastream.iptv.core.NovaPlaybackBridge.stop()
         if (
             PlaybackHostRouter.choose(
                 repository.settings.value.playerMode,
@@ -1660,6 +1789,15 @@ class MainActivity : ComponentActivity() {
         val now = SystemClock.elapsedRealtime()
 
         NativePipSessionBridge.activeSessionId.value?.let { sessionId ->
+            if (isTvLikeNavigationDevice(this)) {
+                // Preserve SmartTube-style background navigation while the mini-player
+                // floats; at the navigation root, Back closes playback immediately.
+                if (tvNavigateBackBehindPip?.invoke() != true) {
+                    NativePipSessionBridge.request(sessionId, NativePipSessionBridge.Action.CLOSE)
+                }
+                PlaybackBackSequenceTracker.reset()
+                return
+            }
             val rapidCount = PlaybackBackSequenceTracker.record(now)
             nativePipBackExitJob?.cancel()
             nativePipBackExitJob = null
@@ -1686,6 +1824,10 @@ class MainActivity : ComponentActivity() {
         }
 
         if (!playerActive) return
+        if (isPipMode && isTvLikeNavigationDevice(this)) {
+            closeActivePlaybackCompletely()
+            return
+        }
 
         val rapidCount = PlaybackBackSequenceTracker.record(now)
         if (rapidCount >= 3) {
@@ -1933,6 +2075,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        tvNavigateBackBehindPip = null
         playbackBackDecisionJob?.cancel()
         playbackBackDecisionJob = null
         webPipExitResolutionJob?.cancel()

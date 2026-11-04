@@ -7,6 +7,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.drivedeck.tubedeck.MainActivity
+import com.drivedeck.tubedeck.data.model.PlaybackContinuationMode
+import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import androidx.core.app.ServiceCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -34,8 +36,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 
 /**
  * Foreground MediaSession playback for Audio-only and user-initiated Home transitions.
@@ -89,6 +93,8 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaSession? = null
+    private val nightAudioController = NightAudioController()
+    private var nightAudioSettingsJob: Job? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var sourceUrl: String = ""
@@ -100,6 +106,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     private var recoveryAttempts = 0
     private var resolveJob: kotlinx.coroutines.Job? = null
     private var nextAudioLookupInProgress = false
+    private val nextSession = AudioNextSessionPolicy()
+    private val audioKeyDowns = mutableSetOf<Int>()
+    private var lastAudioNextKeyAt = -10_000L
+    private var lastAudioPreviousKeyAt = -10_000L
+    private var positionSnapshotJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -130,7 +141,35 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             .build().apply {
             playWhenReady = false
             addListener(object : Player.Listener {
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    val settings = TubeDeckRepository.get(applicationContext).settings.value
+                    nightAudioController.apply(
+                        audioSessionId,
+                        settings.nightAudioEnabled && !CarHeadUnitPolicy.isCarHeadUnit(applicationContext)
+                    )
+                }
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    // Snapshots are event-driven when paused, so a sleeping TV box
+                    // has no periodically waking coroutine during audio pause.
+                    positionSnapshotJob?.cancel()
+                    positionSnapshotJob = null
+                    if (sourceUrl.isNotBlank()) {
+                        BackgroundAudioController.markPosition(
+                            sourceUrl, player.currentPosition.coerceAtLeast(0L)
+                        )
+                    }
+                    if (isPlaying) {
+                        positionSnapshotJob = serviceScope.launch {
+                            while (isActive && player.isPlaying) {
+                                if (sourceUrl.isNotBlank()) {
+                                    BackgroundAudioController.markPosition(
+                                        sourceUrl, player.currentPosition.coerceAtLeast(0L)
+                                    )
+                                }
+                                delay(2_000L)
+                            }
+                        }
+                    }
                     if (isPlaying && startupPending) {
                         startupPending = false
                         BackgroundAudioController.markStarted(sourceUrl, currentTitle, currentArtwork)
@@ -151,6 +190,21 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
 
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_READY) recoveryAttempts = 0
+                    if (state == Player.STATE_ENDED) {
+                        // A foreground audio session must never remain an idle zombie.
+                        // Honor the user's continuation mode just like native video.
+                        when (TubeDeckRepository.get(applicationContext)
+                            .settings.value.playbackContinuationMode) {
+                            PlaybackContinuationMode.AUTO_NEXT -> {
+                                if (!skipBackgroundAudioNext()) stopSelf()
+                            }
+                            PlaybackContinuationMode.LOOP_CURRENT -> {
+                                player.seekTo(0L)
+                                player.play()
+                            }
+                            PlaybackContinuationMode.EPISODES -> stopSelf()
+                        }
+                    }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -170,9 +224,40 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                 }
             })
         }
+        // Keep opt-in night compression across audio-only transitions and setting changes.
+        // No effect is created if the setting is disabled or the vendor car ROM is excluded.
+        nightAudioSettingsJob = serviceScope.launch {
+            TubeDeckRepository.get(applicationContext).settings.collect { settings ->
+                nightAudioController.apply(
+                    player.audioSessionId,
+                    settings.nightAudioEnabled && !CarHeadUnitPolicy.isCarHeadUnit(applicationContext)
+                )
+            }
+        }
+
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(returnToVideoPendingIntent())
             .setCallback(object : MediaSession.Callback {
+                override fun onPlayerInteractionFinished(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    playerCommands: Player.Commands
+                ) {
+                    // In background audio, car launchers can send seek-to-next
+                    // as a MediaController command instead of a media KeyEvent.
+                    if (playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT) ||
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
+                        PlaybackDiagnostics.record(this@BackgroundAudioPlaybackService,
+                            "car_controller_next", "background_audio")
+                        skipBackgroundAudioNext()
+                    } else if (
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS) ||
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    ) {
+                        player.seekTo(0L)
+                    }
+                }
+
                 override fun onMediaButtonEvent(
                     session: MediaSession,
                     controllerInfo: MediaSession.ControllerInfo,
@@ -182,24 +267,56 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     val event: KeyEvent? = if (Build.VERSION.SDK_INT >= 33) {
                         intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
                     } else intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-                    if (event?.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
-                    return when (event.keyCode) {
-                        KeyEvent.KEYCODE_MEDIA_NEXT -> skipBackgroundAudioNext()
-                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                            player.seekTo(0L)
-                            true
-                        }
-                        else -> false
-                    }
+                    return event?.let(::handleAudioHardwareTransportKey) ?: false
                 }
             })
             .build()
-        serviceScope.launch {
-            while (isActive) {
-                BackgroundAudioController.markPosition(sourceUrl, player.currentPosition.coerceAtLeast(0L))
-                delay(500L)
+    }
+
+    /** A car may issue media UP with no matching DOWN, including in audio-only mode. */
+    @Synchronized
+    private fun handleAudioHardwareTransportKey(event: KeyEvent): Boolean {
+        val settings = TubeDeckRepository.get(applicationContext).settings.value
+        val transport = CarMediaTransportKeyPolicy.classify(
+            event.keyCode, settings.remoteNextKeyCode, settings.remotePreviousKeyCode
+        ) ?: return false
+        val hadDown = event.keyCode in audioKeyDowns
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (event.repeatCount != 0 && hadDown) return true
+                audioKeyDowns.add(event.keyCode)
+            }
+            KeyEvent.ACTION_UP -> {
+                audioKeyDowns.remove(event.keyCode)
+                if (hadDown) return true
+            }
+            else -> return false
+        }
+        if (!CarMediaTransportKeyPolicy.shouldTrigger(
+                event.action, event.repeatCount, hadDown
+            )
+        ) return true
+        val now = android.os.SystemClock.elapsedRealtime()
+        val previousAt = if (transport == CarTransportAction.NEXT) {
+            lastAudioNextKeyAt
+        } else lastAudioPreviousKeyAt
+        if (now - previousAt < CarMediaTransportKeyPolicy.DUPLICATE_WINDOW_MS) {
+            return true
+        }
+        val delivered = when (transport) {
+            CarTransportAction.NEXT -> skipBackgroundAudioNext()
+            CarTransportAction.PREVIOUS -> {
+                player.seekTo(0L)
+                true
             }
         }
+        if (delivered) {
+            if (transport == CarTransportAction.NEXT) lastAudioNextKeyAt = now
+            else lastAudioPreviousKeyAt = now
+        }
+        PlaybackDiagnostics.record(this, "car_audio_hardware_key",
+            "direction=${transport.name} key=${event.keyCode} action=${event.action} delivered=$delivered")
+        return delivered
     }
 
     /**
@@ -215,18 +332,23 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         val searchHint = currentTitle
         serviceScope.launch {
             try {
-                val cached = YoutubeStreamResolver.peekForHandoff(original)
-                val suggested = cached?.relatedVideos?.firstOrNull {
-                    it.videoId.isNotBlank() && it.videoId != YoutubeUrls.videoId(original)
-                }
                 val currentVideoId = YoutubeUrls.videoId(original).orEmpty()
+                val cached = YoutubeStreamResolver.peekForHandoff(original)
+                val suggestedCandidates = cached?.relatedVideos.orEmpty()
+                val suggestedId = nextSession.firstUnplayed(
+                    currentVideoId, suggestedCandidates.map { it.videoId }
+                )
+                val suggested = suggestedCandidates.firstOrNull { it.videoId == suggestedId }
+
                 val watchNext = if (suggested == null) {
                     runCatching {
                         withTimeoutOrNull(8_000L) {
-                            YoutubeWatchNextClient.resolve(original, currentVideoId)
-                                .relatedVideos.firstOrNull {
-                                    it.videoId.isNotBlank() && it.videoId != currentVideoId
-                                }
+                            val candidates = YoutubeWatchNextClient.resolve(original, currentVideoId)
+                                .relatedVideos
+                            val selected = nextSession.firstUnplayed(
+                                currentVideoId, candidates.map { it.videoId }
+                            )
+                            candidates.firstOrNull { it.videoId == selected }
                         }
                     }.getOrNull()
                 } else null
@@ -234,9 +356,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     searchHint.isNotBlank() && searchHint != "Now Playing"
                 ) {
                     withTimeoutOrNull(8_000L) {
-                        YoutubeStreamResolver.searchVideos(searchHint, 12).firstOrNull {
-                            it.videoId.isNotBlank() && it.videoId != currentVideoId
-                        }
+                        val candidates = YoutubeStreamResolver.searchVideos(searchHint, 12)
+                        val selected = nextSession.firstUnplayed(
+                            currentVideoId, candidates.map { it.videoId }
+                        )
+                        candidates.firstOrNull { it.videoId == selected }
                     }
                 } else null
                 val nextUrl = suggested?.url
@@ -244,17 +368,27 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
                     ?: searchNext?.url
                 val nextTitle = suggested?.title ?: watchNext?.title ?: searchNext?.title
                 val nextArtwork = suggested?.thumbnailUrl ?: watchNext?.thumbnailUrl ?: searchNext?.thumbnailUrl
-                if (nextUrl.isNullOrBlank() || sourceUrl != original) return@launch
+                if (nextUrl.isNullOrBlank()) {
+                    // End of queue: don't strand an ended ExoPlayer/foreground service.
+                    if (player.playbackState == Player.STATE_ENDED) stopSelf()
+                    return@launch
+                }
+                if (sourceUrl != original) return@launch
 
                 val nextPlayable = withContext(Dispatchers.IO) {
                     val resolved = YoutubeStreamResolver.resolve(applicationContext, nextUrl)
                     YoutubeStreamResolver.preferredAudioPlaybackUrl(resolved)
                 }
-                if (nextPlayable.isNullOrBlank() || sourceUrl != original) return@launch
+                if (sourceUrl != original) return@launch
+                if (nextPlayable.isNullOrBlank()) {
+                    if (player.playbackState == Player.STATE_ENDED) stopSelf()
+                    return@launch
+                }
 
                 player.pause()
                 BackgroundAudioController.markStopped(original)
                 sourceUrl = nextUrl
+                nextSession.recordPlayed(YoutubeUrls.videoId(nextUrl).orEmpty())
                 currentTitle = nextTitle.orEmpty().ifBlank { "YouTube audio" }
                 currentArtwork = nextArtwork
                 // The existing foreground session and audio focus remain active.
@@ -267,6 +401,10 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             } catch (error: Exception) {
                 PlaybackDiagnostics.record(this@BackgroundAudioPlaybackService,
                     "background_audio_next_error", error.javaClass.simpleName)
+                // If autoplay has already exhausted the current audio stream,
+                // an unavailable network/next suggestion must not leave a
+                // permanently idle foreground service behind.
+                if (player.playbackState == Player.STATE_ENDED) stopSelf()
             } finally {
                 nextAudioLookupInProgress = false
             }
@@ -290,6 +428,7 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
             player.stop()
             val directUrl = intent.getStringExtra(EXTRA_PLAY_URL).orEmpty()
             sourceUrl = intent.getStringExtra(EXTRA_SOURCE_URL).orEmpty()
+            nextSession.startExplicitPlayback(YoutubeUrls.videoId(sourceUrl).orEmpty())
             if (sourceUrl.isNotBlank() && BackgroundAudioController.startup.isCurrent(requestId)) {
                 currentTitle = intent.getStringExtra(EXTRA_TITLE)
                     .orEmpty()
@@ -434,6 +573,11 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        nightAudioSettingsJob?.cancel()
+        nightAudioSettingsJob = null
+        nightAudioController.release()
+        positionSnapshotJob?.cancel()
+        positionSnapshotJob = null
         BackgroundAudioController.startup.fail(requestId, "Audio playback stopped before it was ready")
         BackgroundAudioController.markStopped(sourceUrl)
         serviceScope.cancel()

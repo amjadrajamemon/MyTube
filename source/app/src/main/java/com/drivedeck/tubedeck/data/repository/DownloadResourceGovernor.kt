@@ -16,22 +16,42 @@ import android.os.PowerManager
  */
 internal object DownloadResourceGovernor {
     fun targetConcurrency(context: Context): Int {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val connectivityManager =
-            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        val severeThermal = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            powerManager.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
+        // Some inexpensive Android TV ROMs omit services or throw when querying
+        // broken vendor power/thermal implementations. Falling back to one
+        // worker is safer than crashing the entire download scheduler.
+        val activityManager = runCatching {
+            context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        }.getOrNull()
+        val powerManager = runCatching {
+            context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        }.getOrNull()
+        val connectivityManager = runCatching {
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        }.getOrNull()
+        val memoryInfo = runCatching {
+            activityManager?.let { manager ->
+                ActivityManager.MemoryInfo().also(manager::getMemoryInfo)
+            }
+        }.getOrNull()
+        val memoryClassMb = runCatching { activityManager?.memoryClass }.getOrNull() ?: 160
+        val powerSave = runCatching { powerManager?.isPowerSaveMode }.getOrNull() ?: true
+        val severeThermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                (powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_SEVERE) >=
+                    PowerManager.THERMAL_STATUS_SEVERE
+            }.getOrDefault(true)
+        } else false
+        val metered = runCatching {
+            connectivityManager?.isActiveNetworkMetered
+        }.getOrNull() ?: true
 
         return computeTarget(
-            memoryClassMb = activityManager.memoryClass,
+            memoryClassMb = memoryClassMb,
             cpuCores = Runtime.getRuntime().availableProcessors(),
-            lowMemory = memoryInfo.lowMemory,
-            powerSave = powerManager.isPowerSaveMode,
+            lowMemory = memoryInfo?.lowMemory ?: true,
+            powerSave = powerSave,
             severeThermal = severeThermal,
-            meteredNetwork = connectivityManager.isActiveNetworkMetered
+            meteredNetwork = metered
         )
     }
 

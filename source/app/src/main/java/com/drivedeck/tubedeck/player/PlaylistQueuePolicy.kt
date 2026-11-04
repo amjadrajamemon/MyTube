@@ -7,4 +7,8 @@ internal object PlaylistQueuePolicy {
 
     fun preferContextualWatchNext(playlistId: String?, currentVideoId: String?): Boolean =
         isDynamicMix(playlistId) && !currentVideoId.isNullOrBlank()
+
+    /** Never replay a recently watched video just because it is recommended again. */
+    fun nextUnplayed(candidates: Iterable<String>, currentVideoId: String, playedVideoIds: Set<String>): String? =
+        candidates.firstOrNull { it.isNotBlank() && it != currentVideoId && it !in playedVideoIds }
 }

@@ -10,6 +10,31 @@ enum class PlayerMode(val label: String) {
     NATIVE("Native ExoPlayer")
 }
 
+/** Optional viewing treatments; distinct from the full audio-only blackout. */
+enum class ViewingMode(val label: String) {
+    NORMAL("Normal"),
+    LIGHTS_OUT("Lights Out"),
+    CINEMA("Cinema"),
+    NIGHT("Night")
+}
+
+/** Pure viewing policy: PiP must never inherit video dimming. */
+object ViewingModePolicy {
+    /** Final TextureView opacity. Underlying player container is opaque black. */
+    fun videoAlpha(mode: ViewingMode, level: Int, inPip: Boolean = false): Float =
+        (1f - videoDim(mode, level, inPip)).coerceIn(.25f, 1f)
+
+    fun videoDim(mode: ViewingMode, level: Int, inPip: Boolean = false): Float {
+        if (inPip) return 0f
+        val amount = level.coerceIn(10, 85) / 100f
+        return when (mode) {
+            ViewingMode.NORMAL, ViewingMode.CINEMA -> 0f
+            ViewingMode.LIGHTS_OUT -> amount * 0.78f
+            ViewingMode.NIGHT -> amount * 0.62f
+        }
+    }
+}
+
 enum class PlaybackContinuationMode(val label: String) {
     LOOP_CURRENT("Loop"),
     AUTO_NEXT("Auto play"),
@@ -91,6 +116,9 @@ data class TubeDeckSettings(
     val preferredPlaybackQualityHeight: Int = 0,
     val preferredPlaybackSpeed: Float = 1.0f,
     val seekIntervalSeconds: Int = 10,
+    val viewingMode: ViewingMode = ViewingMode.NORMAL,
+    val viewingDimPercent: Int = 55,
+    val nightAudioEnabled: Boolean = false,
     val autoRotatePlayback: Boolean = true,
     val playbackContinuationMode: PlaybackContinuationMode = PlaybackContinuationMode.AUTO_NEXT,
     val homeSuggestionsEnabled: Boolean = true,
@@ -121,6 +149,16 @@ data class TubeDeckSettings(
     val equalizerTextScale: Float = 1.25f,
     val showRelevantShelf: Boolean = true,
     val showEpisodesShelf: Boolean = true,
+    // Next-generation TV improvements are opt-in where extra work is involved.
+    val floatingCardsMode: String = "Manual",
+    val animatedCardPreviews: Boolean = false, // Off, Manual, Last 15 seconds
+    val hideWatchedRecommendations: Boolean = true,
+    val lowResourceMode: Boolean = false,
+    val resumeAfterInterruptions: Boolean = true,
+    val subtitleTextScale: Float = 1.0f,
+    val subtitleBottomInsetDp: Int = 0,
+    val remoteNextKeyCode: Int = 0,
+    val remotePreviousKeyCode: Int = 0,
 
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",

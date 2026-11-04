@@ -30,7 +30,7 @@ import java.io.File
 /** Real target-APK tests, excluded from production. No test entry points are added to the app. */
 class BlackoutInstrumentation : Instrumentation() {
     private var phase = "transitions"
-    private val maskDescription = "Screen blank. Double-tap to restore video"
+    private val maskDescription = "Screen blank. Tap to restore video"
     private val repository get() = TubeDeckRepository.get(targetContext)
 
     override fun onCreate(arguments: Bundle?) {
@@ -73,22 +73,10 @@ class BlackoutInstrumentation : Instrumentation() {
         awaitMask()
         assertBlackPixels()
         checkpoint("opaque blackout screenshot confirmed")
-        // Let Android's double-tap recognition window expire after pressing the
-        // blackout eye. Otherwise the first touch on the new mask can be paired
-        // with the eye-button tap and misclassified as a user double-tap.
-        SystemClock.sleep(700L)
         val center = screenCenter()
-        tap(center.first, center.second)
-        SystemClock.sleep(600L)
-        check(repository.screenBlackoutEnabled.value) {
-            "Single tap disabled blackout unexpectedly; investigate overlay double-tap gesture leakage"
-        }
-        awaitMask()
-        check(onMain { player(activity)?.playWhenReady } == true) { "Single tap affected playback" }
-        checkpoint("single tap consumed; test long press")
         press(center.first, center.second, 900L)
         awaitMask()
-
+        check(onMain { player(activity)?.playWhenReady } == true) { "Long press affected playback" }
         checkpoint("long press consumed; launch manually selected video")
         // The same callback used when a user selects another video must retain the mask.
         val replacement = OfflineMedia("blackout-manual", "Blackout manually selected video", "", "", Uri.fromFile(fixture).toString())
@@ -158,7 +146,7 @@ class BlackoutInstrumentation : Instrumentation() {
         SystemClock.sleep(250L)
         check(repository.screenBlackoutEnabled.value) { "Activity replacement cleared blackout" }
         // Leave the preference set; the next instrumentation invocation starts a fresh process.
-        sendStatus(0, Bundle().apply { putString("stream", "PASS: eye button; single/long tap ignored; manual selection; actual automatic next; Web host; activity replacement; opaque black pixels.\n") })
+        sendStatus(0, Bundle().apply { putString("stream", "PASS: eye button; long press ignored; manual selection; actual automatic next; Web host; activity replacement; opaque black pixels.\n") })
     }
 
     private fun verifyProcessRestart(fixture: File) {
@@ -171,17 +159,10 @@ class BlackoutInstrumentation : Instrumentation() {
         onMain { player(activity)?.seekTo(0L); player(activity)?.play() }
         val center = screenCenter()
         tap(center.first, center.second)
-        SystemClock.sleep(600L)
-        awaitMask()
-        checkpoint("single tap after restart consumed; check double tap")
-        // Send two physical taps inside Android's double-tap window. The mask consumes both.
-        tap(center.first, center.second)
-        SystemClock.sleep(80L)
-        tap(center.first, center.second)
-        await("manual double-tap restore") { !repository.screenBlackoutEnabled.value && node(maskDescription) == null }
-        check(onMain { player(activity)?.playWhenReady } == true) { "Unlock double-tap leaked into play/pause" }
+        await("immediate single-tap restore") { !repository.screenBlackoutEnabled.value && node(maskDescription) == null }
+        check(onMain { player(activity)?.playWhenReady } == true) { "Unlock tap leaked into play/pause" }
         onMain { activity.finish() }
-        sendStatus(0, Bundle().apply { putString("stream", "PASS: process restart retains blackout; single tap ignored; double-tap restores without pausing playback.\n") })
+        sendStatus(0, Bundle().apply { putString("stream", "PASS: process restart retains blackout; single tap instantly restores without pausing playback.\n") })
     }
 
     private fun launchNative(fixture: File, title: String): NativePlayerActivity {

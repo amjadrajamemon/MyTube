@@ -9,6 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.content.res.ColorStateList
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,9 +56,9 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             hostView.foreground = protectiveForeground
             val detector = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: MotionEvent): Boolean = true
-                override fun onSingleTapConfirmed(e: MotionEvent): Boolean = true
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    repository.restoreScreenAfterDoubleTap()
+                // ACTION_UP is immediate; confirmed taps wait for Android's double-tap timeout.
+                override fun onSingleTapUp(e: MotionEvent): Boolean {
+                    repository.restoreScreenAfterTap()
                     return true
                 }
                 override fun onLongPress(e: MotionEvent) {
@@ -65,12 +67,31 @@ fun PlaybackBlackoutHost(repository: TubeDeckRepository, content: @Composable ()
             })
             val mask = FrameLayout(activity).apply {
                 setBackgroundColor(android.graphics.Color.BLACK)
-                contentDescription = "Screen blank. Double-tap to restore video"
+                contentDescription = "Screen blank. Tap to restore video"
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 setOnTouchListener { _, event ->
                     detector.onTouchEvent(event)
                     true // Never leak taps, long presses or swipes to the video.
                 }
+
+                // A small, dim restore affordance belongs to the blackout panel,
+                // NOT to the normal player. The fading lower controls retain their
+                // own Black Screen action, without a duplicate floating eye.
+                // The rest of the display stays black; any tap also restores it.
+                val density = activity.resources.displayMetrics.density
+                val edge = (48f * density).toInt()
+                val margin = (12f * density).toInt()
+                addView(ImageButton(activity).apply {
+                    setImageResource(android.R.drawable.ic_menu_revert)
+                    imageTintList = ColorStateList.valueOf(android.graphics.Color.rgb(78, 78, 78))
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    contentDescription = "Restore video from blackout"
+                    isFocusable = false // The host panel must not steal TV remote focus.
+                    setOnClickListener { repository.restoreScreenAfterTap() }
+                }, FrameLayout.LayoutParams(edge, edge, Gravity.END or Gravity.BOTTOM).apply {
+                    marginEnd = margin
+                    bottomMargin = margin
+                })
             }
             var installed = false
             var disposed = false

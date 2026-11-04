@@ -36,6 +36,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences("tubedeck_prefs", Context.MODE_PRIVATE)
+    private val videoHistoryArchive = VideoHistoryArchive(context)
     private val _screenBlackoutEnabled = MutableStateFlow(prefs.getBoolean("screen_blackout_enabled", false))
     val screenBlackoutEnabled: StateFlow<Boolean> = _screenBlackoutEnabled.asStateFlow()
 
@@ -45,7 +46,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     /** This is the only in-app action that clears blackout; media/lifecycle events never do. */
-    fun restoreScreenAfterDoubleTap() {
+    fun restoreScreenAfterTap() {
         prefs.edit().putBoolean("screen_blackout_enabled", false).apply()
         _screenBlackoutEnabled.value = false
     }
@@ -57,6 +58,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private var activeSponsorId: String? = null
     private var homeSuggestionsJob: Job? = null
     private var homeTrendingJob: Job? = null
+    private val homePageJobs = mutableMapOf<String, Job>()
+    private val homePageCursors = mutableMapOf<String, org.schabi.newpipe.extractor.Page?>()
+    private val homePageQueries = mutableMapOf<String, String>()
+    private val homePageExhausted = mutableSetOf<String>()
+    private val _moreFeedsLoading = MutableStateFlow<Set<String>>(emptySet())
+    val moreFeedsLoading: StateFlow<Set<String>> = _moreFeedsLoading.asStateFlow()
+    private val _moreFeedsExhausted = MutableStateFlow<Set<String>>(emptySet())
+    val moreFeedsExhausted: StateFlow<Set<String>> = _moreFeedsExhausted.asStateFlow()
     private var homeLiveJob: Job? = null
     private var liveSearchJob: Job? = null
     private var videoSearchJob: Job? = null
@@ -65,6 +74,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
     @Volatile private var schedulingSuspendedBySystem = false
 
     private val _settings = MutableStateFlow(loadSettings())
+    // Private mode is process-scoped and NEVER persisted to disk.
+    private val _privateSession = MutableStateFlow(false)
+    val privateSession: StateFlow<Boolean> = _privateSession
+    fun setPrivateSession(enabled: Boolean) { _privateSession.value = enabled }
     val settings: StateFlow<TubeDeckSettings> = _settings.asStateFlow()
     private val _blockedAdsCount = MutableStateFlow(prefs.getInt("blocked_ads_count", 0))
     val blockedAdsCount: StateFlow<Int> = _blockedAdsCount.asStateFlow()
@@ -78,6 +91,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadHistory: StateFlow<List<DownloadTask>> = _downloadHistory.asStateFlow()
     private val _watchHistory = MutableStateFlow(loadWatchHistory())
     val watchHistory: StateFlow<List<HomeVideo>> = _watchHistory.asStateFlow()
+    private var historyLoadedCount = _watchHistory.value.size
+    private var historyMoreJob: Job? = null
     private val _recentSearches = MutableStateFlow(loadRecentSearches())
     val recentSearches: StateFlow<List<String>> = _recentSearches.asStateFlow()
     private val _homeSuggestions = MutableStateFlow(loadHomeSuggestions())
@@ -141,6 +156,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putInt("preferredPlaybackQualityHeight", next.preferredPlaybackQualityHeight.coerceAtLeast(0))
             putFloat("preferredPlaybackSpeed", next.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f))
             putInt("seekIntervalSeconds", next.seekIntervalSeconds.coerceIn(5, 60))
+            putString("viewingMode", next.viewingMode.name)
+            putInt("viewingDimPercent", next.viewingDimPercent.coerceIn(10, 85))
+            putBoolean("nightAudioEnabled", next.nightAudioEnabled)
             putBoolean("autoRotatePlayback", next.autoRotatePlayback)
             putString("playbackContinuationMode", next.playbackContinuationMode.name)
             putBoolean("homeSuggestionsEnabled", next.homeSuggestionsEnabled)
@@ -160,6 +178,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putFloat("equalizerTextScale", next.equalizerTextScale.coerceIn(1.0f, 1.8f))
             putBoolean("showRelevantShelf", next.showRelevantShelf)
             putBoolean("showEpisodesShelf", next.showEpisodesShelf)
+            putBoolean("animatedCardPreviews", next.animatedCardPreviews)
+            putString("floatingCardsMode", next.floatingCardsMode.takeIf {
+                it in setOf("Off", "Manual", "Last 15 seconds")
+            } ?: "Manual")
+            putBoolean("hideWatchedRecommendations", next.hideWatchedRecommendations)
+            putBoolean("lowResourceMode", next.lowResourceMode)
+            putBoolean("resumeAfterInterruptions", next.resumeAfterInterruptions)
+            putFloat("subtitleTextScale", next.subtitleTextScale.coerceIn(0.8f, 1.8f))
+            putInt("subtitleBottomInsetDp", next.subtitleBottomInsetDp.coerceIn(0, 120))
+            putInt("remoteNextKeyCode", next.remoteNextKeyCode.coerceAtLeast(0))
+            putInt("remotePreviousKeyCode", next.remotePreviousKeyCode.coerceAtLeast(0))
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
@@ -196,6 +225,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         preferredPlaybackQualityHeight = prefs.getInt("preferredPlaybackQualityHeight", 0).coerceAtLeast(0),
         preferredPlaybackSpeed = loadPreferredPlaybackSpeed(),
         seekIntervalSeconds = prefs.getInt("seekIntervalSeconds", 10).coerceIn(5, 60),
+        viewingMode = enumValue(prefs.getString("viewingMode", null), ViewingMode.NORMAL),
+        viewingDimPercent = prefs.getInt("viewingDimPercent", 55).coerceIn(10, 85),
+        nightAudioEnabled = prefs.getBoolean("nightAudioEnabled", false),
         autoRotatePlayback = prefs.getBoolean("autoRotatePlayback", true),
         playbackContinuationMode = enumValue(
             prefs.getString("playbackContinuationMode", null),
@@ -221,6 +253,16 @@ class TubeDeckRepository private constructor(private val context: Context) {
         equalizerTextScale = prefs.getFloat("equalizerTextScale", 1.25f).coerceIn(1.0f, 1.8f),
         showRelevantShelf = prefs.getBoolean("showRelevantShelf", true),
         showEpisodesShelf = prefs.getBoolean("showEpisodesShelf", true),
+        animatedCardPreviews = prefs.getBoolean("animatedCardPreviews", false),
+        floatingCardsMode = prefs.getString("floatingCardsMode", "Manual")
+            ?.takeIf { it in setOf("Off", "Manual", "Last 15 seconds") } ?: "Manual",
+        hideWatchedRecommendations = prefs.getBoolean("hideWatchedRecommendations", true),
+        lowResourceMode = prefs.getBoolean("lowResourceMode", false),
+        resumeAfterInterruptions = prefs.getBoolean("resumeAfterInterruptions", true),
+        subtitleTextScale = prefs.getFloat("subtitleTextScale", 1.0f).coerceIn(0.8f, 1.8f),
+        subtitleBottomInsetDp = prefs.getInt("subtitleBottomInsetDp", 0).coerceIn(0, 120),
+        remoteNextKeyCode = prefs.getInt("remoteNextKeyCode", 0).coerceAtLeast(0),
+        remotePreviousKeyCode = prefs.getInt("remotePreviousKeyCode", 0).coerceAtLeast(0),
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
@@ -248,6 +290,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     fun getVideoThumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
     fun recordSearch(query: String) {
+        if (_privateSession.value) return
         saveRecentSearches(SearchAssistPolicy.record(query, _recentSearches.value))
     }
 
@@ -447,6 +490,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun recordWatch(media: OfflineMedia) {
+        if (_privateSession.value) return
         val videoId = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
         if (videoId.isBlank() || YoutubeUrls.videoId(media.mediaUri) == null) return
         val item = HomeVideo(
@@ -456,12 +500,22 @@ class TubeDeckRepository private constructor(private val context: Context) {
             thumbnailUrl = media.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
             watchedAt = System.currentTimeMillis()
         )
-        val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(40)
+        runCatching { videoHistoryArchive.upsert(item) }
+        val wasLoaded = _watchHistory.value.any { it.videoId == videoId }
+        val next = (listOf(item) + _watchHistory.value.filterNot { it.videoId == videoId }).take(700)
+        if (!wasLoaded) historyLoadedCount++
         _watchHistory.value = next
-        saveHomeVideos("watch_history_json", next)
+        // Compact preference snapshot for legacy migrations; the SQLite archive
+        // holds the full paged history without a lifetime-entry limit.
+        saveHomeVideos("watch_history_json", next.take(40))
+        _moreFeedsExhausted.value = _moreFeedsExhausted.value - "History"
     }
 
     fun clearWatchHistory() {
+        historyMoreJob?.cancel()
+        historyLoadedCount = 0
+        runCatching { videoHistoryArchive.clear() }
+        _moreFeedsExhausted.value = _moreFeedsExhausted.value - "History"
         homeSuggestionsJob?.cancel()
         homeSuggestionsJob = null
         _watchHistory.value = emptyList()
@@ -678,8 +732,94 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Paginate Home feeds using actual provider cursors. Never refetch just page 1,
+     * and never expand the image composition to all prior pages. A rolling recent
+     * in-memory window prevents unbounded RAM while scrolling forward indefinitely.
+     * When the provider has no next-page cursor, the UI shows an end-of-feed state.
+     */
+    fun loadMoreHomeFeed(feed: String) {
+        if (feed == "History") {
+            if (historyMoreJob?.isActive == true || feed in _moreFeedsExhausted.value) return
+            historyMoreJob = scope.launch {
+                _moreFeedsLoading.value = _moreFeedsLoading.value + feed
+                try {
+                    val batch = videoHistoryArchive.page(historyLoadedCount, 50)
+                    ensureActive()
+                    historyLoadedCount += batch.size
+                    val seen = _watchHistory.value.mapTo(hashSetOf()) { it.videoId }
+                    _watchHistory.value = (_watchHistory.value +
+                        batch.filter { it.videoId !in seen }).takeLast(700)
+                    if (batch.size < 50) {
+                        _moreFeedsExhausted.value = _moreFeedsExhausted.value + feed
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    // User can retry using Load More; avoid crashing on provider/OEM storage.
+                } finally {
+                    _moreFeedsLoading.value = _moreFeedsLoading.value - feed
+                }
+            }
+            return
+        }
+        if (feed !in setOf("Relevant", "Trending")) return
+        if (homePageJobs[feed]?.isActive == true || feed in homePageExhausted) return
+        val country = _homeCountry.value
+        val query = if (feed == "Trending") {
+            "popular trending videos ${Locale("", country).displayCountry.ifBlank { country }}"
+        } else {
+            val lastQuery = _recentSearches.value.firstOrNull().orEmpty()
+            val watchTitle = _watchHistory.value.firstOrNull()?.title.orEmpty()
+            val seed = lastQuery.ifBlank { watchTitle }.take(65)
+            if (seed.isBlank()) "interesting documentaries and technology videos" else "$seed related videos"
+        }
+        if (homePageQueries[feed] != query) {
+            homePageQueries[feed] = query
+            homePageCursors.remove(feed)
+            homePageExhausted.remove(feed)
+            _moreFeedsExhausted.value = _moreFeedsExhausted.value - feed
+        }
+        homePageJobs[feed] = scope.launch {
+            _moreFeedsLoading.value = _moreFeedsLoading.value + feed
+            try {
+                val (items, nextCursor) = YoutubeStreamResolver.searchVideosPage(
+                    query, homePageCursors[feed], limit = 36
+                )
+                ensureActive()
+                if (homePageQueries[feed] != query) return@launch
+                val target = if (feed == "Relevant") _homeSuggestions else _homeTrending
+                val seen = target.value.mapTo(hashSetOf()) { it.videoId }
+                val watched = if (feed == "Relevant") _watchHistory.value.mapTo(hashSetOf()) { it.videoId }
+                    else emptySet()
+                val next = items
+                    .filter { it.videoId !in seen && it.videoId !in watched }
+                    .map(::relatedToHome)
+                if (next.isNotEmpty()) {
+                    // Rolling memory window; the continuation cursor does NOT reset.
+                    // Keeps scrolling/buffering viable even after hundreds of pages.
+                    target.value = (target.value + next).takeLast(360)
+                }
+                homePageCursors[feed] = nextCursor
+                if (nextCursor == null) {
+                    homePageExhausted.add(feed)
+                    _moreFeedsExhausted.value = _moreFeedsExhausted.value + feed
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // A failed page must remain retryable via the Load More control.
+            } finally {
+                _moreFeedsLoading.value = _moreFeedsLoading.value - feed
+            }
+        }
+    }
+
     suspend fun fetchDownloadChoices(url: String): DownloadChoices {
-        val media = YoutubeStreamResolver.resolve(context, url)
+        // The dialog must use the same extractor policy as the actual download job.
+        // NewPipe can fail to list formats even while yt-dlp can still download them;
+        // gating the Start button on NewPipe alone made working videos undownloadable.
+        val media = YoutubeStreamResolver.resolveForDownload(context, url)
         return DownloadChoices(
             media.downloadOptions.map { it.label }.distinct(),
             media.audioOptions.isNotEmpty()
@@ -876,7 +1016,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
         mode: DownloadMode = _settings.value.instantMode,
         quality: String = _settings.value.instantQuality
     ): String {
-        require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
         val videoId = YoutubeUrls.videoId(url) ?: throw IllegalArgumentException("Open a valid YouTube video first")
         val now = System.currentTimeMillis()
         val task = synchronized(lock) {
@@ -899,7 +1038,6 @@ class TubeDeckRepository private constructor(private val context: Context) {
     }
 
     fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String): Int {
-        require(!_settings.value.downloadTreeUri.isNullOrBlank()) { "Choose a download folder in Settings first" }
         val now = System.currentTimeMillis()
         val tasks = synchronized(lock) {
             val sessionId = currentOrNewSessionIdLocked(now)
@@ -1486,14 +1624,12 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 item.optLong("durationSeconds"), item.optLong("downloadDate")
             )
         }.filter { media ->
-            val uri = Uri.parse(media.mediaUri)
-            when (uri.scheme) {
-                "file" -> uri.path?.let { File(it).isFile } == true
-                "content" -> runCatching {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
-                }.getOrDefault(false)
-                else -> false
-            }
+            // A SAF folder or removable USB drive may be temporarily unavailable at
+            // app startup. Do not silently discard otherwise valid library records:
+            // a later catalog save would make that loss permanent even after the
+            // device is reconnected or the folder permission is restored.
+            val scheme = runCatching { Uri.parse(media.mediaUri).scheme }.getOrNull()
+            media.id.isNotBlank() && scheme in setOf("file", "content")
         }
     }
 
@@ -1566,7 +1702,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
         prefs.edit().putString(key, array.toString()).apply()
     }
 
-    private fun loadWatchHistory(): List<HomeVideo> = loadHomeVideos("watch_history_json")
+    private fun loadWatchHistory(): List<HomeVideo> {
+        val legacy = loadHomeVideos("watch_history_json")
+        return runCatching {
+            videoHistoryArchive.importLegacyIfEmpty(legacy)
+            videoHistoryArchive.page(0, 60)
+        }.getOrElse { legacy }
+    }
 
     private fun loadHomeSuggestions(): List<HomeVideo> = loadHomeVideos("home_suggestions_json")
 

@@ -52,6 +52,21 @@ internal object MediaDownloader {
         onProgress: (Progress) -> Unit
     ): OfflineMedia = withContext(Dispatchers.IO) {
         val app = context.applicationContext
+        // Check the actual Storage Access Framework destination before expensive
+        // extraction, downloading or muxing. A saved URI may be revoked or a USB
+        // folder may have disappeared after the user selected it.
+        val treeUri = settings.downloadTreeUri?.takeIf { it.isNotBlank() }
+        // A custom SAF destination is optional: fresh installs download to
+        // MyTube's app-private storage. Explicitly selected folders still need
+        // to be writable and must never silently redirect to another location.
+        if (treeUri != null) {
+            val chosenTree = runCatching {
+                DocumentFile.fromTreeUri(app, Uri.parse(treeUri))
+            }.getOrNull()
+            require(chosenTree?.isDirectory == true && chosenTree.canWrite()) {
+                "Chosen download folder is unavailable or no longer writable; select it again in Settings"
+            }
+        }
         val resolved = YoutubeStreamResolver.resolveForDownload(app, task.url)
         require(resolved.durationSeconds > 0) {
             "Live or unbounded streams are not supported for offline downloads"
@@ -162,10 +177,6 @@ internal object MediaDownloader {
         val targetName = "${safeTitle}_${task.id}.$extension"
         val finalSize = completedStage.length()
 
-        val treeUri = settings.downloadTreeUri
-            ?.takeIf { it.isNotBlank() }
-            ?: error("Choose a download folder in Settings first")
-
         onProgress(
             Progress(
                 bytes = finalSize,
@@ -177,14 +188,21 @@ internal object MediaDownloader {
             )
         )
 
-        val mediaUri = copyToChosenFolder(
-            context = app,
-            treeUri = treeUri,
-            name = targetName,
-            extension = extension,
-            isAudioOnly = task.mode == DownloadMode.AUDIO,
-            source = completedStage
-        )
+        val mediaUri = if (treeUri == null) {
+            // Keep the verified completed file inside app-specific storage.
+            // Offline files can later be exported from MyTube's Downloads screen.
+            val finalFile = LocalDownloadCommit.commit(completedStage, File(dir, targetName))
+            Uri.fromFile(finalFile).toString()
+        } else {
+            copyToChosenFolder(
+                context = app,
+                treeUri = treeUri,
+                name = targetName,
+                extension = extension,
+                isAudioOnly = task.mode == DownloadMode.AUDIO,
+                source = completedStage
+            )
+        }
 
         cleanupTaskFiles(dir, task.id)
 

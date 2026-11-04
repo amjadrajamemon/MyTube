@@ -1,0 +1,77 @@
+name: Publish MyTube v2.0.1 direct APK downloads
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - .github/workflows/publish-v201-direct.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-existing-verified-apks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Verify APK build provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(gh run view 41642942464 --repo "$GITHUB_REPOSITORY" --json headSha,conclusion --jq 'select(.conclusion == "success") | .headSha')"
+          test "$ACTUAL_SHA" = "5ac3f2af30e839a309dd502c1df870c7b2cf83d8" || {
+            echo "::error::Source build SHA or status mismatch"; exit 1;
+          }
+      - name: Download exact verified ARM64 and Universal APKs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 41642942464 --repo "$GITHUB_REPOSITORY" --name "MyTube-v2.0.1-ARM64-and-Universal" --dir dist
+          test -s dist/MyTube-v2.0.1-ARM64-debug.apk
+          test -s dist/MyTube-v2.0.1-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -t dist/MyTube-v2.0.1-ARM64-debug.apk >/dev/null
+          unzip -t dist/MyTube-v2.0.1-Universal-debug.apk >/dev/null
+          ls -lh dist
+      - name: Publish permanent direct-download GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v2.0.1-home-swipe-20261103"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists. Nothing overwritten."
+            exit 0
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          MyTube 2.0.1 — Android installable test builds (signed debug APKs)
+
+          Direct APKs:
+          - ARM64: recommended for modern Android phones, TV boxes and many car head units.
+          - Universal: broader device architecture coverage.
+
+          This release includes thirteen differentiated interface/player theme profiles, responsive TV/phone home feed layout, touch-swipe panels on narrower screens, smarter remote/keyboard/air-mouse navigation, screen-cutout inset handling, player chrome and control refinements, and previous playback stability fixes.
+
+          Provenance: the exact APKs from successful GitHub Actions run 41642942464, commit 5ac3f2af30e839a309dd502c1df870c7b2cf83d8. CI tests/build and APK signing verification passed.
+
+          Prerelease: on-device validation is still recommended. The source branch and PR #32 are not merged.
+          EOF
+          gh release create "$TAG" \
+            dist/MyTube-v2.0.1-ARM64-debug.apk \
+            dist/MyTube-v2.0.1-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 5ac3f2af30e839a309dd502c1df870c7b2cf83d8 \
+            --title "MyTube v2.0.1 — Direct ARM64 + Universal APK downloads" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

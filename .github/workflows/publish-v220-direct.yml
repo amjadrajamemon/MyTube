@@ -1,0 +1,82 @@
+name: Publish MyTube v2.2.0 Stage A-D direct APKs
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - .github/workflows/publish-v220-direct.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-verified-220-apks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Confirm successful CI and exact approved source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_SHA="$(gh run view 41790095025 --repo "$GITHUB_REPOSITORY" --json headSha,conclusion --jq 'select(.conclusion == "success") | .headSha')"
+          test "$BUILD_SHA" = "a262ba94a8955bb6e792ed0c3fd8dfaddadfd6be" || {
+            echo "::error::Source commit mismatch or v2.2.0 CI has not passed"
+            exit 1
+          }
+
+      - name: Obtain original verified ARM64 and Universal APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 41790095025 --repo "$GITHUB_REPOSITORY" \
+            --name "MyTube-v2.2.0-ARM64-and-Universal" --dir dist
+          test -s dist/MyTube-v2.2.0-ARM64-debug.apk
+          test -s dist/MyTube-v2.2.0-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -t dist/MyTube-v2.2.0-ARM64-debug.apk >/dev/null
+          unzip -t dist/MyTube-v2.2.0-Universal-debug.apk >/dev/null
+          ls -lh dist
+
+      - name: Publish immutable direct APK release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.2.0-immersive-ui-20261104"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Release already exists: keeping the previously published assets unchanged."
+            exit 0
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          # MyTube v2.2.0 — Stage A–D Immersive UI/UX Modernization
+
+          **Stage A — Adaptive design system:** unified 13-theme visual tokens, bounded focus and hover motion, shared atmospheric colors, automatic reduced-motion and Low Resource Mode budgets.
+          **Stage B — Presentation and themes:** 13 retained distinct Home/nav/player structures, lightweight theme-specific gradient backgrounds on Home, Settings and Downloads, small thumbnail-powered Home artwork halo in eligible cinematic themes, richer theme preview including player identity.
+          **Stage C — Navigation & motion:** nuanced D-pad/keyboard/air-mouse focus scale/borders, animation-budget-aware navigation and player controls, restored Home scroll, single-line nav labels with ellipsis.
+          **Stage D — QA safeguards:** 13-theme policy unit tests, explicit inset/notch checks for Home, Settings, Downloads and Web toolbar, existing blackout/night-mode safeguards, source guards and unchanged APK verification. Android lint report is attached to the CI run.
+
+          No new media features were introduced. Lights Out, Cinema, Night Viewing and Night Audio from v2.1.0 remain, as do the Blackout, bookmarks, downloaded media, D-pad navigation and existing themes.
+
+          **Verified binary provenance:** both APKs were taken *unchanged* from successful GitHub Actions CI run 41790095025 (commit a262ba94a8955bb6e792ed0c3fd8dfaddadfd6be). Both variants passed unit tests, APK builds, signature, ABI and integrity checks.
+
+          **Prerelease:** Real Android TV/AOSP-box/phone/car on-device screenshots, performance, D-pad focus and accessibility acceptance remain outstanding. See UIUX_V220_STAGE_A_D_QA.md on the development branch. This is debug signed, not production/Play Store signed.
+          EOF
+          gh release create "$TAG" \
+            dist/MyTube-v2.2.0-ARM64-debug.apk \
+            dist/MyTube-v2.2.0-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target a262ba94a8955bb6e792ed0c3fd8dfaddadfd6be \
+            --title "MyTube v2.2.0 — Extreme UI/UX Stages A–D (ARM64 + Universal)" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

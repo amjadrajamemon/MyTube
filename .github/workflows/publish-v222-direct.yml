@@ -1,0 +1,94 @@
+name: Publish MyTube v2.2.2 Native Viewing and Settings Autosave APKs
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - .github/workflows/publish-v222-direct.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-exact-tested-222-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Require the exact successful Android build source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_SHA="$(gh run view 41808864174 --repo "$GITHUB_REPOSITORY" --json headSha,conclusion --jq 'select(.conclusion == "success") | .headSha')"
+          test "$BUILD_SHA" = "7e8b60846dfd21b501b419b8478efe9a1d30ba2f" || {
+            echo "::error::v2.2.2 Android tests or APK build did not pass on the approved commit"
+            exit 1
+          }
+
+      - name: Retrieve checksummed, verified CI APK files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 41808864174 --repo "$GITHUB_REPOSITORY" \
+            --name "MyTube-v2.2.2-ARM64-and-Universal" --dir dist
+          test -s dist/MyTube-v2.2.2-ARM64-debug.apk
+          test -s dist/MyTube-v2.2.2-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -t dist/MyTube-v2.2.2-ARM64-debug.apk >/dev/null
+          unzip -t dist/MyTube-v2.2.2-Universal-debug.apk >/dev/null
+          ls -lh dist/
+
+      - name: Publish separate ARM64 and Universal download assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.2.2-native-viewing-autosave-20261104"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::This release is immutable and already exists."
+            exit 0
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          # MyTube v2.2.2 — Native Viewing Mode Selection & Instant Settings Auto-Save
+
+          Corrective development prerelease for issues reproduced by the user on **v2.2.1 ARM64, SmartTube Pro theme and Native ExoPlayer**. Version **2.2.2** / versionCode **108**, update-compatible debug signing.
+
+          ## Native viewing modes
+          - All four modes (Normal, Lights Out, Cinema, Night) use full-width, remote/touch accessible radio rows in both the video viewing dialog and the player settings panel.
+          - A selected mode updates the actual player-local state immediately before preferences are persisted.
+          - The same texture-backed video view is retained across mode switches. Dimming directly changes the native video picture opacity against black, avoiding SurfaceView/Compose overlay-order failures.
+          - Dialog displays `Applied to native video: …` and the player shows a short mode confirmation after leaving the dialog. Night adds a warm visual treatment, Cinema hides distractions and enters immersive fullscreen.
+          - Working audio-only **Blackout** remains unchanged and separate from viewing mode treatments.
+
+          ## Settings: no manual save
+          - Changes to every user-editable configuration in Settings are automatically saved on change; no bottom Save and Apply button, and no separate theme Preview step.
+          - Theme, quality, playback, navigation, Home, download, protection and night preferences are included.
+          - Invalid folder picker selections cannot overwrite saved folder settings or block saving unrelated controls.
+          - Private Session remains intentionally session-only; authentication and destructive actions retain their own prompts.
+
+          ## Existing fixes retained
+          - v2.2.1 portrait moon button, continued video progress/resume, dynamic storyboard-based seek previews, TV D-pad and air-mouse enhancements and all 13 theme profiles.
+          - Low-resource/reduced-motion behavior, safe-area/notch corrections and signing/ABI package checks.
+
+          **Verification:** CI run 41808864174, commit 7e8b60846dfd21b501b419b8478efe9a1d30ba2f: ARM64 and Universal Kotlin unit tests, regression source guards, both APK compiles and ZIP/ABI/signature verification passed. Android lint was run as a non-blocking audit; reports are available in the CI artifacts.
+
+          **Still a prerelease:** An actual device test is needed to confirm the selection and dimming on the user's SmartTube Pro/native display. If the radio row label changes but picture remains unmodified, share the playback diagnostics from Settings -> Car player compatibility -> Copy playback report.
+          EOF
+          gh release create "$TAG" \
+            dist/MyTube-v2.2.2-ARM64-debug.apk \
+            dist/MyTube-v2.2.2-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 7e8b60846dfd21b501b419b8478efe9a1d30ba2f \
+            --title "MyTube v2.2.2 — Native Viewing Modes & Automatic Settings Save" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

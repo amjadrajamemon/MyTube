@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 97
-        versionName = "1.9.2"
+        versionCode = 109
+        versionName = "2.2.3"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
@@ -131,7 +131,6 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":novaiptv"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -146,11 +145,11 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     // Direct live-TV protocol engines, aligned to the existing Media3 version.
     implementation("androidx.media3:media3-exoplayer-dash:1.11.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.11.1")
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.documentfile)
     implementation(libs.coil.compose)
+    implementation("io.coil-kt:coil-gif:2.7.0")
     implementation(libs.newpipe.extractor)
     implementation(libs.mlkit.translate)
     // Bundled (~0.9 MB) language identification keeps Live Dub auto-detect fully on-device.
@@ -165,6 +164,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Only the pure Java QR encoder; no ZXing camera/activity/permission dependency.
+    implementation("com.google.zxing:core:3.5.3")
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

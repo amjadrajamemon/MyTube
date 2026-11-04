@@ -35,11 +35,14 @@ import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.auth.GoogleAccountSession
 import com.drivedeck.tubedeck.auth.YoutubeAuthorizationState
 import com.drivedeck.tubedeck.data.model.DownloadMode
+import com.drivedeck.tubedeck.data.model.ViewingMode
 import com.drivedeck.tubedeck.data.model.PlayerMode
 import com.drivedeck.tubedeck.data.model.TubeDeckSettings
 import com.drivedeck.tubedeck.player.YtDlpUpdateManager
 import com.drivedeck.tubedeck.player.PlaybackDiagnostics
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
+import com.drivedeck.tubedeck.ui.components.RemoteInputTrainingDialog
+import com.drivedeck.tubedeck.data.repository.TubeDeckRepository
 import com.drivedeck.tubedeck.ui.theme.*
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
@@ -52,6 +55,7 @@ fun SettingsScreen(
     onGoogleAccountClick: () -> Unit = {},
     onPreviewSettings: (TubeDeckSettings) -> Unit,
     onSaveSettings: (TubeDeckSettings) -> Unit,
+    onViewingPreferencesChanged: (ViewingMode, Int, Boolean) -> Unit = { _, _, _ -> },
     onResetAdBlockStats: () -> Unit,
     onClearWatchHistory: () -> Unit = {},
     onClose: () -> Unit,
@@ -107,6 +111,9 @@ fun SettingsScreen(
     var preferredPlaybackQualityHeight by remember { mutableIntStateOf(currentSettings.preferredPlaybackQualityHeight) }
     var preferredPlaybackSpeed by remember { mutableFloatStateOf(currentSettings.preferredPlaybackSpeed.coerceIn(0.25f, 5.0f)) }
     var seekIntervalSeconds by remember { mutableIntStateOf(currentSettings.seekIntervalSeconds.coerceIn(5, 60)) }
+    var viewingMode by remember { mutableStateOf(currentSettings.viewingMode) }
+    var viewingDimPercent by remember { mutableIntStateOf(currentSettings.viewingDimPercent.coerceIn(10, 85)) }
+    var nightAudioEnabled by remember { mutableStateOf(currentSettings.nightAudioEnabled) }
     
     var adBlockEnabled by remember { mutableStateOf(currentSettings.adBlockEnabled) }
     var blockVideoAds by remember { mutableStateOf(currentSettings.blockVideoAds) }
@@ -127,8 +134,20 @@ fun SettingsScreen(
     }
     var showRelevantShelf by remember { mutableStateOf(currentSettings.showRelevantShelf) }
     var showEpisodesShelf by remember { mutableStateOf(currentSettings.showEpisodesShelf) }
+    var floatingCardsMode by remember { mutableStateOf(currentSettings.floatingCardsMode) }
+    var animatedCardPreviews by remember { mutableStateOf(currentSettings.animatedCardPreviews) }
+    var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
+    var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
+    var resumeAfterInterruptions by remember { mutableStateOf(currentSettings.resumeAfterInterruptions) }
+    var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
+    var subtitleBottomInsetDp by remember { mutableIntStateOf(currentSettings.subtitleBottomInsetDp.coerceIn(0, 120)) }
+    var remoteNextKeyCode by remember { mutableIntStateOf(currentSettings.remoteNextKeyCode) }
+    var remotePreviousKeyCode by remember { mutableIntStateOf(currentSettings.remotePreviousKeyCode) }
+    var showRemoteTraining by remember { mutableStateOf(false) }
+    val repository = remember(context) { TubeDeckRepository.get(context) }
+    val privateSession by repository.privateSession.collectAsState()
 
-    var appearancePreset by remember { mutableStateOf(currentSettings.appearancePreset) }
+    var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
@@ -144,6 +163,68 @@ fun SettingsScreen(
             themeBackgroundArgb = themeBackgroundArgb,
             themeTextArgb = themeTextArgb
         )
+
+    // Every UI-editable preference is merged into the latest repository snapshot.
+    // No manual Save operation is required. The first composition is NOT a change.
+    val autoSaveDraft = currentSettings.copy(
+                            downloadDir = if (folderError == null) downloadDir else currentSettings.downloadDir,
+                            downloadTreeUri = if (folderError == null) downloadTreeUri else currentSettings.downloadTreeUri,
+                            instantMode = instantMode,
+                            instantQuality = instantQuality,
+                            customMode = customMode,
+                            customQuality = customQuality,
+                            playlistMode = playlistMode,
+                            playlistQuality = playlistQuality,
+                            playerMode = playerMode,
+                            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+                            forceTvNavigation = forceTvNavigation,
+                            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
+                            preferredPlaybackSpeed = preferredPlaybackSpeed,
+                            seekIntervalSeconds = seekIntervalSeconds,
+                            viewingMode = viewingMode,
+                            viewingDimPercent = viewingDimPercent.coerceIn(10, 85),
+                            nightAudioEnabled = nightAudioEnabled,
+                            autoRotatePlayback = autoRotatePlayback,
+                            homeSuggestionsEnabled = homeSuggestionsEnabled,
+                            homeHistoryEnabled = homeHistoryEnabled,
+                            homeTrendingEnabled = homeTrendingEnabled,
+                            adBlockEnabled = adBlockEnabled,
+                            blockVideoAds = blockVideoAds,
+                            blockBannerAds = blockBannerAds,
+                            blockTrackers = blockTrackers,
+                            blockShortsEnabled = blockShortsEnabled,
+                            sponsorBlockEnabled = sponsorBlockEnabled,
+                            pipEnabled = pipEnabled,
+                            autoLoadEpisodes = autoLoadEpisodes,
+                            autoLoadUpNext = autoLoadUpNext,
+                            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
+                            desktopYoutubeUiEnabled = desktopYoutubeUiEnabled,
+                            playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
+                            equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
+                            showRelevantShelf = showRelevantShelf,
+                            showEpisodesShelf = showEpisodesShelf,
+                            floatingCardsMode = floatingCardsMode,
+                            animatedCardPreviews = animatedCardPreviews,
+                            hideWatchedRecommendations = hideWatchedRecommendations,
+                            lowResourceMode = lowResourceMode,
+                            resumeAfterInterruptions = resumeAfterInterruptions,
+                            subtitleTextScale = subtitleTextScale,
+                            subtitleBottomInsetDp = subtitleBottomInsetDp,
+                            remoteNextKeyCode = remoteNextKeyCode,
+                            remotePreviousKeyCode = remotePreviousKeyCode,
+                            appearancePreset = appearancePreset,
+                            fontScale = fontScale.coerceIn(0.80f, 1.35f),
+                            themeAccentArgb = themeAccentArgb,
+                            themeBackgroundArgb = themeBackgroundArgb,
+                            themeTextArgb = themeTextArgb
+                        )
+    var lastAutoSaveDraft by remember { mutableStateOf(autoSaveDraft) }
+    LaunchedEffect(autoSaveDraft) {
+        if (autoSaveDraft != lastAutoSaveDraft) {
+            lastAutoSaveDraft = autoSaveDraft
+            onSaveSettings(autoSaveDraft)
+        }
+    }
 
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
 
@@ -186,11 +267,22 @@ fun SettingsScreen(
         )
     }
 
+    if (showRemoteTraining) {
+        RemoteInputTrainingDialog(
+            nextCode = remoteNextKeyCode,
+            previousCode = remotePreviousKeyCode,
+            onNextCode = { remoteNextKeyCode = it },
+            onPreviousCode = { remotePreviousKeyCode = it },
+            onDismiss = { showRemoteTraining = false }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(TubeDeckBackground)
-            .statusBarsPadding()
+            .deckScreenBackground()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
     ) {
         // Top Header
         Surface(
@@ -238,8 +330,8 @@ fun SettingsScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(54.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .height(166.dp)
+                                    .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
                                     .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
                                         appearancePreset = preset.name
@@ -252,7 +344,7 @@ fun SettingsScreen(
                                     .border(
                                         width = if (selected) 2.dp else 1.dp,
                                         color = if (selected) Color(preset.accentArgb.toInt()) else TubeDeckBorder,
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = RoundedCornerShape(preset.cornerRadiusDp.dp)
                                     ),
                                 color = Color(preset.backgroundArgb.toInt())
                             ) {
@@ -263,14 +355,29 @@ fun SettingsScreen(
                                     Text(
                                         preset.name,
                                         color = Color(preset.textArgb.toInt()),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = preset.fontFamily
                                     )
-                                    Box(
-                                        Modifier.size(13.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(Color(preset.accentArgb.toInt()))
+                                    Spacer(Modifier.height(6.dp))
+                                    ThemeLayoutPreview(preset)
+                                    Text(
+                                        preset.subtitle.ifBlank { preset.homePresentation.name.replace('_', ' ') },
+                                        color = Color(preset.textArgb.toInt()).copy(alpha = .78f),
+                                        fontFamily = preset.fontFamily,
+                                        fontSize = 9.sp,
+                                        lineHeight = 11.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
+                                    Text(
+                                        "PLAYER  ·  " + preset.playerChrome.name.replace('_', ' '),
+                                        color = Color(preset.accentArgb.toInt()),
+                                        fontSize = 8.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+
                                 }
                             }
                         }
@@ -289,7 +396,7 @@ fun SettingsScreen(
                     value = fontScale,
                     onValueChange = {
                         fontScale = it.coerceIn(0.80f, 1.35f)
-                        appearancePreset = "Custom"
+                        // Keep the selected layout/font preset when the user fine-tunes text size.
                         previewApplied = false
                     },
                     valueRange = 0.80f..1.35f,
@@ -309,7 +416,7 @@ fun SettingsScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            appearancePreset = "Glass Midnight"
+                            appearancePreset = "Kodi Arctic"
                             fontScale = 1.0f
                             themeAccentArgb = 0xFF00D2FFL
                             themeBackgroundArgb = 0xFF080B11L
@@ -320,45 +427,32 @@ fun SettingsScreen(
                     ) {
                         Text("Reset appearance")
                     }
-                    OutlinedButton(
-                        onClick = {
-                            onPreviewSettings(appearanceOnlySettings())
-                            previewApplied = true
-                        },
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            2.dp,
-                            Color(themeAccentArgb.toInt())
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(themeBackgroundArgb.toInt()),
-                            contentColor = Color(themeTextArgb.toInt())
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.Visibility,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (previewApplied) "Preview active" else "Preview theme",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        "Theme preview and changes apply automatically.",
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             SettingsCard(title = "App interface") {
-                ToggleRow("Force Android TV remote / air-mouse mode", forceTvNavigation) {
-                    forceTvNavigation = it
+                ToggleRow("Private session · don't save new watches or searches", privateSession) {
+                    repository.setPrivateSession(it)
                 }
                 Text(
-                    "Enable on generic TV boxes if MyTube does not recognize the remote, air mouse, or physical keyboard. Supports native TV search and focus navigation without changing phone/car defaults.",
-                    color = TubeDeckTextSecondary,
-                    fontSize = 11.sp
+                    "Private session lasts until the application process closes. Existing history isn't deleted, and downloads and account activity are not anonymized.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
+                HorizontalDivider()
+                ToggleRow("Force TV remote mode (fallback)", forceTvNavigation) {
+                    forceTvNavigation = it
+                }
+                TextButton(onClick = { showRemoteTraining = true }) {
+                    Icon(Icons.Default.Keyboard, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Learn TV remote buttons and keyboard keys")
+                }
                 ToggleRow("YouTube desktop interface", desktopYoutubeUiEnabled) { desktopYoutubeUiEnabled = it }
                 Text(
                     "Use YouTube's desktop Home, search and watch pages with Standard and Theater views. Downloads and MyTube settings remain accessible. YouTube may restrict Google sign-in inside WebView.",
@@ -387,13 +481,8 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsCard(title = "XY AUTO car player") {
-                ToggleRow("XY AUTO compatibility", xyAutoCompatibilityMode) { xyAutoCompatibilityMode = it }
-                Text(
-                    "Use if native playback returns to search on your car unit. Prefers software decoding and lower video quality. Save settings before playing.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            SettingsCard(title = "Car player compatibility") {
+                ToggleRow("Force XY AUTO compatibility (fallback)", xyAutoCompatibilityMode) { xyAutoCompatibilityMode = it }
                 TextButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("MyTube playback report", PlaybackDiagnostics.report(context)))
@@ -522,10 +611,17 @@ fun SettingsScreen(
 
             SettingsCard(title = "Download folder") {
                 Text(
-                    "Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "No folder selected"}",
+                    "Selected: ${chosenFolderName ?: if (downloadTreeUri != null) "Selected folder" else "MyTube app storage (default)"}",
                     color = Color.White,
                     fontSize = 12.sp
                 )
+                if (downloadTreeUri == null) {
+                    Text(
+                        "Downloads work without selecting a folder. Files can be moved or copied from MyTube's Downloads screen; uninstalling may remove files in app storage.",
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
                 OutlinedButton(onClick = { folderPicker.launch(null) }) {
                     Text(if (downloadTreeUri == null) "Choose folder" else "Change folder")
                 }
@@ -553,6 +649,67 @@ fun SettingsScreen(
                 QualityGrid(selectedQuality = playlistQuality, onSelect = { playlistQuality = it }, qualities = qualities)
             }
 
+            SettingsCard(title = "Viewing & Night Audio") {
+                Text("Viewing mode", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    ViewingMode.values().forEach { mode ->
+                        val selected = viewingMode == mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .tvInputHighlight(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    viewingMode = mode
+                                    onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)
+                                }
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) TubeDeckAccentCyan else TubeDeckBorder,
+                                    RoundedCornerShape(10.dp)
+                                ).padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (selected) Icons.Default.RadioButtonChecked
+                                else Icons.Default.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (selected) TubeDeckAccentCyan else TubeDeckTextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                mode.label,
+                                color = if (selected) TubeDeckAccentCyan else TubeDeckTextPrimary,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+                if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
+                    Text("Video dimming · $viewingDimPercent%", color = TubeDeckTextPrimary)
+                    Slider(
+                        value = viewingDimPercent.toFloat(),
+                        onValueChange = {
+                            viewingDimPercent = it.toInt().coerceIn(10, 85)
+                            onViewingPreferencesChanged(viewingMode, viewingDimPercent, nightAudioEnabled)
+                        },
+                        valueRange = 10f..85f
+                    )
+                }
+                Text(
+                    "Selections apply immediately. Cinema focuses the player, Lights Out dims video and Night adds a warm tint. Full Blackout stays separate.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider()
+                ToggleRow("Night Audio · soften peaks and lift quiet speech", nightAudioEnabled) {
+                    nightAudioEnabled = it
+                    onViewingPreferencesChanged(viewingMode, viewingDimPercent, it)
+                }
+                Text(
+                    "Native player only. Uses session-scoped Android compression on supported devices; never overrides system volume. May be unavailable on car units or some TV firmware.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+            }
+
             SettingsCard(title = "Playback") {
                 ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
                 HorizontalDivider()
@@ -563,6 +720,53 @@ fun SettingsScreen(
 
                 ToggleRow("Swipe shelf · Relevant row", showRelevantShelf) { showRelevantShelf = it }
                 ToggleRow("Swipe shelf · Episodes row", showEpisodesShelf) { showEpisodesShelf = it }
+                ToggleRow("Hide played videos from recommendation cards", hideWatchedRecommendations) {
+                    hideWatchedRecommendations = it
+                }
+                Text("Floating recommendations", color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("Off", "Manual", "Last 15 seconds").forEach { mode ->
+                        FilterChip(
+                            selected = floatingCardsMode == mode,
+                            onClick = { floatingCardsMode = mode },
+                            label = { Text(mode, fontSize = 10.sp) }
+                        )
+                    }
+                }
+                Text(
+                    "Manual keeps the screen uncluttered. The 15-second mode opens suggestions only near the end; dismissing them keeps them hidden for that video.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                ToggleRow(
+                    "Animated thumbnail previews when a related card stays focused",
+                    animatedCardPreviews
+                ) { animatedCardPreviews = it }
+                Text(
+                    "Optional: tries YouTube's short animated WebP thumbnail after 1.1 seconds of focus. Uses no second video player; falls back to the static image. Disabled in Low Resource Mode or on older Android.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                ToggleRow("Ask to resume saved position after a restart or interruption", resumeAfterInterruptions) {
+                    resumeAfterInterruptions = it
+                }
+                ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
+                    lowResourceMode = it
+                }
+                Text(
+                    "Useful on low-RAM Android TV boxes and car units; manually selected quality remains available.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider()
+                Text("Subtitle size · ${(subtitleTextScale * 100).toInt()}%", color = TubeDeckTextPrimary)
+                Slider(
+                    value = subtitleTextScale, onValueChange = { subtitleTextScale = it },
+                    valueRange = .8f..1.8f, steps = 9
+                )
+                Text("Subtitle bottom clearance · ${subtitleBottomInsetDp} dp", color = TubeDeckTextPrimary)
+                Slider(
+                    value = subtitleBottomInsetDp.toFloat(),
+                    onValueChange = { subtitleBottomInsetDp = it.toInt() },
+                    valueRange = 0f..120f, steps = 11
+                )
                 HorizontalDivider()
 
                 Text(
@@ -676,85 +880,100 @@ fun SettingsScreen(
                 ToggleRow("Background PiP Mode", pipEnabled) { pipEnabled = it }
             }
 
-            Button(
-                onClick = {
-                    onSaveSettings(
-                        currentSettings.copy(
-                            downloadDir = downloadDir,
-                            downloadTreeUri = downloadTreeUri,
-                            instantMode = instantMode,
-                            instantQuality = instantQuality,
-                            customMode = customMode,
-                            customQuality = customQuality,
-                            playlistMode = playlistMode,
-                            playlistQuality = playlistQuality,
-                            playerMode = playerMode,
-                            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
-                            forceTvNavigation = forceTvNavigation,
-                            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
-                            preferredPlaybackSpeed = preferredPlaybackSpeed,
-                            seekIntervalSeconds = seekIntervalSeconds,
-                            autoRotatePlayback = autoRotatePlayback,
-                            homeSuggestionsEnabled = homeSuggestionsEnabled,
-                            homeHistoryEnabled = homeHistoryEnabled,
-                            homeTrendingEnabled = homeTrendingEnabled,
-                            adBlockEnabled = adBlockEnabled,
-                            blockVideoAds = blockVideoAds,
-                            blockBannerAds = blockBannerAds,
-                            blockTrackers = blockTrackers,
-                            blockShortsEnabled = blockShortsEnabled,
-                            sponsorBlockEnabled = sponsorBlockEnabled,
-                            pipEnabled = pipEnabled,
-                            autoLoadEpisodes = autoLoadEpisodes,
-                            autoLoadUpNext = autoLoadUpNext,
-                            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
-                            desktopYoutubeUiEnabled = desktopYoutubeUiEnabled,
-                            playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
-                            equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
-                            showRelevantShelf = showRelevantShelf,
-                            showEpisodesShelf = showEpisodesShelf,
-                            appearancePreset = appearancePreset,
-                            fontScale = fontScale.coerceIn(0.80f, 1.35f),
-                            themeAccentArgb = themeAccentArgb,
-                            themeBackgroundArgb = themeBackgroundArgb,
-                            themeTextArgb = themeTextArgb
-                        )
-                    )
-                    onClose()
-                },
-                enabled = folderError == null,
-                colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
-            ) {
-                Text("Save and Apply Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
+            Text(
+                "Settings are saved and applied automatically when changed. Close this screen at any time.",
+                color = TubeDeckTextSecondary,
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            )
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 
-private data class AppearancePreset(
-    val name: String,
-    val accentArgb: Long,
-    val backgroundArgb: Long,
-    val textArgb: Long = 0xFFFFFFFFL,
-    val fontScale: Float = 1.0f
-)
+/**
+ * Actual diagram of a theme's Home architecture, not a colored title card
+ * or marketing copy. Keeps the settings selector compact and scannable.
+ */
+@Composable
+private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
+    val ink = Color(profile.textArgb.toInt())
+    val accent = Color(profile.accentArgb.toInt())
+    val panel = ink.copy(alpha = 0.12f)
+    @Composable
+    fun Tile(width: androidx.compose.ui.Modifier, height: androidx.compose.ui.unit.Dp) {
+        Box(width.height(height).clip(RoundedCornerShape(3.dp)).background(panel))
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (profile.navigationPlacement == DeckNavigationPlacement.TOP) {
+            Box(Modifier.fillMaxWidth().height(6.dp).background(accent.copy(alpha = .8f)))
+        }
+        Row(Modifier.fillMaxWidth().height(57.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (profile.navigationPlacement == DeckNavigationPlacement.SIDE) {
+                Column(Modifier.width(12.dp).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    repeat(4) {
+                        Box(Modifier.fillMaxWidth().height(8.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(if (it == 0) accent else panel))
+                    }
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (profile.homePresentation) {
+                    DeckHomePresentation.THREE_COLUMN -> Row(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        repeat(3) { Box(Modifier.weight(1f).height(50.dp).background(panel)) }
+                    }
+                    DeckHomePresentation.DESKTOP_TABLE, DeckHomePresentation.AMOLED_INDEX,
+                    DeckHomePresentation.YOUTUBE_STANDARD -> repeat(3) {
+                        Box(Modifier.fillMaxWidth().height(if (it == 0) 20.dp else 12.dp)
+                            .background(if (it == 0) accent.copy(alpha = .35f) else panel))
+                    }
+                    DeckHomePresentation.YOUTUBE_DESKTOP, DeckHomePresentation.ARCADE_GALLERY -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 21.dp) }
+                        }
+                    }
+                    DeckHomePresentation.CINEMA_STRIPS, DeckHomePresentation.GLASS_CAROUSEL,
+                    DeckHomePresentation.MINIMAL_EDITORIAL -> {
+                        Box(Modifier.fillMaxWidth().height(29.dp)
+                            .background(accent.copy(alpha = .25f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 21.dp) }
+                        }
+                    }
+                    DeckHomePresentation.HUD_CONSOLE, DeckHomePresentation.IPTV_DASHBOARD -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(2f), 48.dp)
+                            Tile(Modifier.weight(1f), 48.dp)
+                        }
+                    }
+                    else -> repeat(2) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
+                        }
+                    }
+                }
+            }
+        }
+        if (profile.navigationPlacement == DeckNavigationPlacement.BOTTOM) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(5) {
+                    Box(Modifier.weight(1f).height(5.dp)
+                        .background(if (it == 0) accent else panel))
+                }
+            }
+        }
+    }
+}
 
-private val appearancePresets = listOf(
-    AppearancePreset("Glass Midnight", 0xFF00D2FFL, 0xFF080B11L),
-    AppearancePreset("Glass Slate", 0xFF7DD3FCL, 0xFF10151DL),
-    AppearancePreset("Neon Cyan", 0xFF00F5FFL, 0xFF02070AL),
-    AppearancePreset("Neon Purple", 0xFFD946EFL, 0xFF0A0614L),
-    AppearancePreset("Neon Lime", 0xFF39FF14L, 0xFF050806L),
-    AppearancePreset("Ocean Deep", 0xFF00B4D8L, 0xFF03111DL),
-    AppearancePreset("Ocean Teal", 0xFF2DD4BFL, 0xFF041716L),
-    AppearancePreset("HD Graphite", 0xFF60A5FAL, 0xFF0B0D10L),
-    AppearancePreset("HD Crimson", 0xFFFF4D6DL, 0xFF12070AL),
-    AppearancePreset("AMOLED Black", 0xFF00E5FFL, 0xFF000000L)
-)
+private val appearancePresets = DeckThemeCatalog.presets
 
 @Composable
 private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) -> Unit) {

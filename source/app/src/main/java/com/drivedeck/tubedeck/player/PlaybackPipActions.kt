@@ -26,12 +26,6 @@ internal object PlaybackPipActions {
         @Suppress("UNUSED_VARIABLE")
         val retainedForNamedCallCompatibility = activityClass
 
-        val keepAction = RemoteAction(
-            Icon.createWithResource(context, android.R.drawable.ic_media_play),
-            "Keep PiP",
-            "Keep picture-in-picture playing",
-            actionIntent(context, ACTION_KEEP_PIP, 7100)
-        )
         val audioAction = RemoteAction(
             Icon.createWithResource(context, android.R.drawable.ic_lock_silent_mode_off),
             "Audio",
@@ -45,19 +39,18 @@ internal object PlaybackPipActions {
             actionIntent(context, ACTION_CLOSE, 7102)
         )
 
-        // Android already renders the PiP close/X affordance. Do not also place our
-        // Close RemoteAction in the action row, otherwise users see two close symbols.
+        // Some Android TV firmware never shows its system X. Keep an explicit
+        // Close command first in the system PiP menu on all supported API levels.
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(aspectRatio)
-            .setActions(listOf(keepAction, audioAction))
+            .setActions(listOf(closeAction, audioAction))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(autoEnterEnabled)
             builder.setSeamlessResizeEnabled(true)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ invokes this before its own PiP X close. This gives MyTube a
-            // deterministic chance to stop ExoPlayer/WebView and any audio-only service.
+            // Android 13+ also invokes this same Close command for system dismissal.
             builder.setCloseAction(closeAction)
         }
         return builder.build()

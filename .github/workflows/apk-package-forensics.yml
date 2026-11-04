@@ -1,0 +1,64 @@
+name: Audit Published MyTube APK Packages
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - '.github/scripts/apk_package_audit.py'
+      - '.github/workflows/apk-package-forensics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-published-apks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout forensic inspection scripts
+        uses: actions/checkout@v4
+
+      - name: Install pinned Android APK inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="/usr/local/lib/android/sdk"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "build-tools;36.0.0"
+          test -x "$SDK_ROOT/build-tools/36.0.0/apksigner"
+          test -x "$SDK_ROOT/build-tools/36.0.0/aapt2"
+          test -x "$SDK_ROOT/build-tools/36.0.0/zipalign"
+
+      - name: Download exact publicly published v2.0.0 release APKs and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p forensic-apks
+          TAG="v2.0.0-modern-tv-suite-20261103"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir forensic-apks --pattern 'MyTube-v2.0.0-*.apk' --pattern 'SHA256SUMS.txt'
+          cd forensic-apks
+          sha256sum --check SHA256SUMS.txt
+          ls -lh
+
+      - name: Inspect published APK ZIP, resources, manifest, ABI and signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="/usr/local/lib/android/sdk/build-tools/36.0.0"
+          python3 .github/scripts/apk_package_audit.py --aapt2 "$ROOT/aapt2" --apksigner "$ROOT/apksigner" --zipalign "$ROOT/zipalign" --sha1-file .github/mytube-signing-sha1.txt --out-dir forensic-report forensic-apks/MyTube-v2.0.0-ARM64-debug.apk forensic-apks/MyTube-v2.0.0-Universal-debug.apk
+          cat forensic-report/APK_PACKAGE_FORENSICS.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reusable package forensic findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTube-v2.0.0-APK-Package-Forensics
+          path: forensic-report/
+          retention-days: 30
+          if-no-files-found: warn

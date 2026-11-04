@@ -66,7 +66,9 @@ object PlaybackHardwareButtonBridge {
         val pressedBefore = event.keyCode in pressedKeys
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                if (event.repeatCount != 0) return true
+                // Some OEMs emit only repeated DOWN packets: the first one
+                // seen is still a legitimate physical press.
+                if (event.repeatCount != 0 && pressedBefore) return true
                 pressedKeys.add(event.keyCode)
             }
             KeyEvent.ACTION_UP -> {

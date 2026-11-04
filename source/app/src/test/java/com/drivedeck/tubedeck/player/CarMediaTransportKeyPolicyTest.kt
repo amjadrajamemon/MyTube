@@ -60,6 +60,7 @@ class CarMediaTransportKeyPolicyTest {
     @Test fun normalDownUpAndOrphanUpDeliverExactlyOneAction() {
         assertTrue(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_DOWN, 0, false))
         assertFalse(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_DOWN, 1, true))
+        assertTrue(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_DOWN, 2, false))
         assertFalse(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_UP, 0, true))
         assertTrue(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_UP, 0, false))
         assertFalse(CarMediaTransportKeyPolicy.shouldTrigger(KeyEvent.ACTION_MULTIPLE, 0, false))

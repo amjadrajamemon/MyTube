@@ -1,4 +1,4 @@
-name: MyTube v2.2.1 Viewing / Resume / Seek Fix ARM64 + Universal
+name: MyTube v2.2.2 Native Viewing Mode Fix ARM64 + Universal
 
 on:
   push:
@@ -34,8 +34,8 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 107' source/app/build.gradle.kts
-          grep -Fq 'versionName = "2.2.1"' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 108' source/app/build.gradle.kts
+          grep -Fq 'versionName = "2.2.2"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
           HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
@@ -165,7 +165,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v2.2.1-Android-Lint
+          name: MyTube-v2.2.2-Android-Lint
           path: |
             source/app/build/reports/lint-results-arm64Debug.html
             source/app/build/reports/lint-results-arm64Debug.xml
@@ -195,11 +195,11 @@ jobs:
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
               if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/MyTube-v2.2.1-ARM64-debug.apk"
+              cp "$APK" "dist/MyTube-v2.2.2-ARM64-debug.apk"
             else
               unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/MyTube-v2.2.1-Universal-debug.apk"
+              cp "$APK" "dist/MyTube-v2.2.2-Universal-debug.apk"
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -208,12 +208,12 @@ jobs:
       - name: Upload installable dual-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MyTube-v2.2.1-ARM64-and-Universal
+          name: MyTube-v2.2.2-ARM64-and-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
 
-      # Pushing UI/package audit fixes must never republish or overwrite v2.2.1.
+      # Never republish a previous v2.2.2 release when source changes.
       # Workflow dispatch is a deliberate promotion step after device review.
       - name: Publish direct-download feature release
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/fix-next-autoplay-blackout-home-20261102'
@@ -222,13 +222,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v2.2.1-viewing-resume-seek-20261104"
+          TAG="v2.2.2-native-viewing-20261104"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists. Keeping published APKs unchanged; updated developer builds are available as GitHub Actions artifacts for this run."
             exit 0
           fi
-          gh release create "$TAG" dist/MyTube-v2.2.1-ARM64-debug.apk dist/MyTube-v2.2.1-Universal-debug.apk dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/MyTube-v2.2.2-ARM64-debug.apk dist/MyTube-v2.2.2-Universal-debug.apk dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MyTube v2.2.1 — Adaptive Immersive UI, 13 Themes, Motion and Navigation" \
-            --notes "MyTube v2.2.1 integrates ten genuinely different UI themes (ATV, Xtreamity, Android, Linux Desktop, Digital HUD, Cinema, Glass Midnight, AMOLED Black, Retro Neon and Focus Minimal), app-wide typography/navigation placement, responsive TV three-column Home, phone-width swipeable feed panels, horizontal cinema shelves, and no redundant orientation arrows, differentiated List/Tile cards with wrapped titles, real paged recommendations/trending, on-demand TV floating cards and fallback, customizable remotes, local video bookmarks with notes and QR handoff, private session, low resource mode, subtitle geometry, and playback diagnostics. Retains v1.9.7 stability, autoplay, blackout and IPTV removal fixes. Provider-authored timed i/end screen cards may be unavailable; device testing and lint reports remain necessary."
+            --title "MyTube v2.2.2 — Adaptive Immersive UI, 13 Themes, Motion and Navigation" \
+            --notes "MyTube v2.2.2 integrates ten genuinely different UI themes (ATV, Xtreamity, Android, Linux Desktop, Digital HUD, Cinema, Glass Midnight, AMOLED Black, Retro Neon and Focus Minimal), app-wide typography/navigation placement, responsive TV three-column Home, phone-width swipeable feed panels, horizontal cinema shelves, and no redundant orientation arrows, differentiated List/Tile cards with wrapped titles, real paged recommendations/trending, on-demand TV floating cards and fallback, customizable remotes, local video bookmarks with notes and QR handoff, private session, low resource mode, subtitle geometry, and playback diagnostics. Retains v1.9.7 stability, autoplay, blackout and IPTV removal fixes. Provider-authored timed i/end screen cards may be unavailable; device testing and lint reports remain necessary."

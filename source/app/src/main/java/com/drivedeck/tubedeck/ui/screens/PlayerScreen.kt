@@ -5474,15 +5474,33 @@ private fun PlayerViewingModesDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ViewingMode.values().forEach { mode ->
-                    FilterChip(
-                        selected = viewingMode == mode,
-                        onClick = { onChange(mode, dimPercent, nightAudioEnabled) },
-                        label = { Text(mode.label) },
-                        leadingIcon = {
-                            if (viewingMode == mode) Icon(Icons.Default.Check, null)
-                        },
+                    val selected = viewingMode == mode
+                    Row(
                         modifier = Modifier.fillMaxWidth()
-                    )
+                            .tvInputHighlight(RoundedCornerShape(10.dp))
+                            .clickable { onChange(mode, dimPercent, nightAudioEnabled) }
+                            .border(
+                                if (selected) 2.dp else 1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline,
+                                RoundedCornerShape(10.dp)
+                            ).padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (selected) Icons.Default.RadioButtonChecked
+                            else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            mode.label,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
                 if (viewingMode == ViewingMode.LIGHTS_OUT || viewingMode == ViewingMode.NIGHT) {
                     Text("Video dimming · ${dimPercent.coerceIn(10, 85)}%")

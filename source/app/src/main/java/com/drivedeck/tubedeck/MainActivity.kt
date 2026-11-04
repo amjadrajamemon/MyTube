@@ -1262,6 +1262,16 @@ class MainActivity : ComponentActivity() {
                                         repository.updateSettings(it)
                                         previewAppearance = null
                                     },
+                                    onViewingPreferencesChanged = { mode, dim, nightAudio ->
+                                        val latest = repository.settings.value
+                                        repository.updateSettings(
+                                            latest.copy(
+                                                viewingMode = mode,
+                                                viewingDimPercent = dim.coerceIn(10, 85),
+                                                nightAudioEnabled = nightAudio
+                                            )
+                                        )
+                                    },
                                     onResetAdBlockStats = { repository.resetBlockedAdsCount() },
                                     onClearWatchHistory = {
                                         repository.clearWatchHistory()

@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.view.InputDevice
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -13,6 +16,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.composed
@@ -21,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.drivedeck.tubedeck.ui.theme.TubeDeckAccentCyan
+import com.drivedeck.tubedeck.ui.theme.LocalDeckExperience
+import com.drivedeck.tubedeck.ui.theme.DeckBackdropStyle
 
 /**
  * Android TV, Google TV, and generic no-touch set-top boxes do not always advertise
@@ -97,13 +103,37 @@ fun Modifier.tvInputHighlight(shape: Shape = RoundedCornerShape(12.dp)): Modifie
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
     var focused by remember { mutableStateOf(false) }
-    val color = when {
-        focused -> TubeDeckAccentCyan
-        hovered -> TubeDeckAccentCyan.copy(alpha = 0.55f)
+    val design = LocalDeckExperience.current
+    val accent = TubeDeckAccentCyan
+    val targetBorder = when {
+        focused -> accent
+        hovered -> accent.copy(alpha = .65f)
         else -> Color.Transparent
     }
+    val targetScale = when {
+        focused -> design.focusScale
+        hovered -> design.hoverScale
+        else -> 1f
+    }
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = tween(design.motionDurationMs),
+        label = "Deck remote focus scale"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = targetBorder,
+        animationSpec = tween(design.motionDurationMs),
+        label = "Deck remote focus border"
+    )
+    val width = if (focused) design.focusBorderDp.dp else 1.5.dp
+    // Transform the child, not its parent layout. Navigation geometry and D-pad
+    // spatial search remain stable even when the focused card lifts slightly.
     this
         .onFocusChanged { focused = it.isFocused }
         .hoverable(hoverSource)
-        .border(if (focused) 3.dp else 2.dp, color, shape)
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .border(width, borderColor, shape)
 }

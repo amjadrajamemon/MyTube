@@ -1022,10 +1022,9 @@ fun NativeExoPlayer(
                 if (!nextLookupInProgress) {
                     val title = resolved?.title?.takeIf { it.isNotBlank() && it != "Now Playing" }
                         ?: media.title.takeIf { it.isNotBlank() && it != "Now Playing" }
-                    if (title == null) {
-                        Toast.makeText(context, "Next video is still loading", Toast.LENGTH_SHORT).show()
-                    } else {
-                        nextLookupInProgress = true
+                    // Hardware Next may arrive before the metadata/title resolver.
+                    // Watch-Next only requires the source video ID; title search is optional.
+                    nextLookupInProgress = true
                         playbackScope.launch {
                             try {
                                 // First use the current video's actual Watch-Next
@@ -1050,9 +1049,11 @@ fun NativeExoPlayer(
                                         mediaUri = "https://www.youtube.com/watch?v=${directNext.videoId}"
                                     )
                                 } else {
-                                    val candidates = withTimeoutOrNull(8_000L) {
-                                        YoutubeStreamResolver.searchVideos(title, 16)
-                                    }.orEmpty()
+                                    val candidates = if (title != null) {
+                                        withTimeoutOrNull(8_000L) {
+                                            YoutubeStreamResolver.searchVideos(title, 16)
+                                        }.orEmpty()
+                                    } else emptyList()
                                     candidates.firstOrNull {
                                         PlaylistQueuePolicy.nextUnplayed(
                                             listOf(it.videoId), sourceVideoId, playedVideoIds
@@ -1080,7 +1081,6 @@ fun NativeExoPlayer(
                                 nextLookupInProgress = false
                             }
                         }
-                    }
                 }
             }
         }

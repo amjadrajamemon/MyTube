@@ -20,6 +20,10 @@ enum class ViewingMode(val label: String) {
 
 /** Pure viewing policy: PiP must never inherit video dimming. */
 object ViewingModePolicy {
+    /** Final TextureView opacity. Underlying player container is opaque black. */
+    fun videoAlpha(mode: ViewingMode, level: Int, inPip: Boolean = false): Float =
+        (1f - videoDim(mode, level, inPip)).coerceIn(.25f, 1f)
+
     fun videoDim(mode: ViewingMode, level: Int, inPip: Boolean = false): Float {
         if (inPip) return 0f
         val amount = level.coerceIn(10, 85) / 100f

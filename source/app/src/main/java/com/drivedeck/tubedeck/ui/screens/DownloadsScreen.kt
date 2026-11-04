@@ -99,7 +99,7 @@ fun DownloadsScreen(
             .fillMaxSize()
             .background(TubeDeckBackground)
             .deckScreenBackground()
-            .statusBarsPadding() // FIX: Status Bar overlap
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) // FIX: Status Bar overlap
             .navigationBarsPadding() // FIX: Bottom Nav overlap
     ) {
         // Drawer Header

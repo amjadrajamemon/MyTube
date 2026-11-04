@@ -238,6 +238,26 @@ class BackgroundAudioPlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(returnToVideoPendingIntent())
             .setCallback(object : MediaSession.Callback {
+                override fun onPlayerInteractionFinished(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    playerCommands: Player.Commands
+                ) {
+                    // In background audio, car launchers can send seek-to-next
+                    // as a MediaController command instead of a media KeyEvent.
+                    if (playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT) ||
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) {
+                        PlaybackDiagnostics.record(this@BackgroundAudioPlaybackService,
+                            "car_controller_next", "background_audio")
+                        skipBackgroundAudioNext()
+                    } else if (
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS) ||
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    ) {
+                        player.seekTo(0L)
+                    }
+                }
+
                 override fun onMediaButtonEvent(
                     session: MediaSession,
                     controllerInfo: MediaSession.ControllerInfo,

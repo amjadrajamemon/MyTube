@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -706,6 +707,17 @@ fun NativeExoPlayer(
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
     var continuationEpisodesLoaded by remember(media.id) { mutableStateOf(false) }
     var scrubFraction by remember(media.id) { mutableStateOf<Float?>(null) }
+    var remoteSeekPreviewSequence by remember(media.id) { mutableIntStateOf(0) }
+    var remoteSeekPreviewActive by remember(media.id) { mutableStateOf(false) }
+    LaunchedEffect(remoteSeekPreviewSequence) {
+        if (remoteSeekPreviewSequence > 0) {
+            delay(1700L)
+            if (remoteSeekPreviewActive) {
+                scrubFraction = null
+                remoteSeekPreviewActive = false
+            }
+        }
+    }
     var gestureEnabled by remember { mutableStateOf(true) }
     var autoHideControls by remember { mutableStateOf(true) }
     var gestureOverlayVisible by remember { mutableStateOf(false) }
@@ -2138,17 +2150,25 @@ fun NativeExoPlayer(
                     TvPlayerKeyAction.SEEK_FORWARD -> {
                         val sign = if (actionDecision.action == TvPlayerKeyAction.SEEK_FORWARD) 1L else -1L
                         val seekMs = sign * actionDecision.multiplier * seekIntervalSeconds * 1000L
-                        exoPlayer.seekTo(
-                            (exoPlayer.currentPosition + seekMs)
-                                .coerceIn(0L, duration.coerceAtLeast(0L))
-                        )
-                        // Seek while the overlay is hidden, then reveal the position
-                        // on the next OK/Down rather than stealing directional focus.
+                        val target = (exoPlayer.currentPosition + seekMs)
+                            .coerceIn(0L, duration.coerceAtLeast(0L))
+                        exoPlayer.seekTo(target)
+                        if (duration > 0L) {
+                            scrubFraction = (target.toFloat() / duration).coerceIn(0f, 1f)
+                            remoteSeekPreviewActive = true
+                            remoteSeekPreviewSequence += 1
+                            controlsVisible = true
+                        }
                         true
                     }
                     TvPlayerKeyAction.SEEK_PERCENT -> {
                         if (duration > 0L) {
-                            exoPlayer.seekTo((duration * actionDecision.percent / 100L).coerceIn(0L, duration))
+                            val target = (duration * actionDecision.percent / 100L).coerceIn(0L, duration)
+                            exoPlayer.seekTo(target)
+                            scrubFraction = (target.toFloat() / duration).coerceIn(0f, 1f)
+                            remoteSeekPreviewActive = true
+                            remoteSeekPreviewSequence += 1
+                            controlsVisible = true
                         }
                         true
                     }
@@ -3142,7 +3162,10 @@ fun NativeExoPlayer(
                                     (segment.endTime * 1000f / duration.toFloat()).coerceIn(0f, 1f)
                                 )
                             },
-                            onScrubChange = { scrubFraction = it },
+                            onScrubChange = {
+                                remoteSeekPreviewActive = false
+                                scrubFraction = it
+                            },
                             onSeekFinished = { fraction ->
                                 exoPlayer.seekTo((fraction * duration).toLong())
                                 scrubFraction = null
@@ -5851,10 +5874,12 @@ private fun SeekPreviewThumbnail(
     val previewHeight = storyboardHeight.coerceIn(76.dp, 110.dp)
     val chapter = chapters.lastOrNull { it.startTimeSeconds * 1_000L <= positionMs }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // The preview follows the touched/hovered thumb, clamped at screen edges.
+        // This is a single overlay used by all player chrome/theme profiles.
+        val maxLeft = (maxWidth - previewWidth).coerceAtLeast(0.dp)
+        val left = (maxWidth * normalized - previewWidth / 2).coerceIn(0.dp, maxLeft)
+        Column(modifier = Modifier.offset(x = left).width(previewWidth)) {
         Surface(
             color = Color.Black.copy(alpha = .92f),
             shape = RoundedCornerShape(10.dp),
@@ -5925,6 +5950,7 @@ private fun SeekPreviewThumbnail(
             }
         }
         Spacer(Modifier.height(3.dp))
+        }
     }
 }
 
@@ -5955,7 +5981,28 @@ private fun CompactSeekBar(
     }
     Canvas(
         modifier = Modifier.fillMaxWidth()
-            .height(20.dp)
+            .height(26.dp)
+            .pointerInput("seek-preview-hover") {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.none { it.pressed } && size.width > 0) {
+                            when (event.type) {
+                                PointerEventType.Enter, PointerEventType.Move -> {
+                                    val point = event.changes.firstOrNull()
+                                    if (point != null) {
+                                        onScrubChange(
+                                            (point.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                        )
+                                    }
+                                }
+                                PointerEventType.Exit -> onScrubChange(null)
+                                else -> Unit
+                            }
+                        }
+                    }
+                }
+            }
             .pointerInput(chapterFractions, sponsorRanges) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)

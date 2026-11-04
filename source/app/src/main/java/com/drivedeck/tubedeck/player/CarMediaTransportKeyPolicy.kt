@@ -50,7 +50,7 @@ internal object CarMediaTransportKeyPolicy {
      * consumed without triggering a second track skip.
      */
     fun shouldTrigger(action: Int, repeatCount: Int, sawDown: Boolean): Boolean =
-        (action == KeyEvent.ACTION_DOWN && repeatCount == 0) ||
+        (action == KeyEvent.ACTION_DOWN && (repeatCount == 0 || !sawDown)) ||
             (action == KeyEvent.ACTION_UP && !sawDown)
 
     const val DUPLICATE_WINDOW_MS = 145L

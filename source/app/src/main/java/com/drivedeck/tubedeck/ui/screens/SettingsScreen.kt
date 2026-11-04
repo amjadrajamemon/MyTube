@@ -164,6 +164,68 @@ fun SettingsScreen(
             themeTextArgb = themeTextArgb
         )
 
+    // Every UI-editable preference is merged into the latest repository snapshot.
+    // No manual Save operation is required. The first composition is NOT a change.
+    val autoSaveDraft = currentSettings.copy(
+                            downloadDir = downloadDir,
+                            downloadTreeUri = downloadTreeUri,
+                            instantMode = instantMode,
+                            instantQuality = instantQuality,
+                            customMode = customMode,
+                            customQuality = customQuality,
+                            playlistMode = playlistMode,
+                            playlistQuality = playlistQuality,
+                            playerMode = playerMode,
+                            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
+                            forceTvNavigation = forceTvNavigation,
+                            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
+                            preferredPlaybackSpeed = preferredPlaybackSpeed,
+                            seekIntervalSeconds = seekIntervalSeconds,
+                            viewingMode = viewingMode,
+                            viewingDimPercent = viewingDimPercent.coerceIn(10, 85),
+                            nightAudioEnabled = nightAudioEnabled,
+                            autoRotatePlayback = autoRotatePlayback,
+                            homeSuggestionsEnabled = homeSuggestionsEnabled,
+                            homeHistoryEnabled = homeHistoryEnabled,
+                            homeTrendingEnabled = homeTrendingEnabled,
+                            adBlockEnabled = adBlockEnabled,
+                            blockVideoAds = blockVideoAds,
+                            blockBannerAds = blockBannerAds,
+                            blockTrackers = blockTrackers,
+                            blockShortsEnabled = blockShortsEnabled,
+                            sponsorBlockEnabled = sponsorBlockEnabled,
+                            pipEnabled = pipEnabled,
+                            autoLoadEpisodes = autoLoadEpisodes,
+                            autoLoadUpNext = autoLoadUpNext,
+                            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
+                            desktopYoutubeUiEnabled = desktopYoutubeUiEnabled,
+                            playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
+                            equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
+                            showRelevantShelf = showRelevantShelf,
+                            showEpisodesShelf = showEpisodesShelf,
+                            floatingCardsMode = floatingCardsMode,
+                            animatedCardPreviews = animatedCardPreviews,
+                            hideWatchedRecommendations = hideWatchedRecommendations,
+                            lowResourceMode = lowResourceMode,
+                            resumeAfterInterruptions = resumeAfterInterruptions,
+                            subtitleTextScale = subtitleTextScale,
+                            subtitleBottomInsetDp = subtitleBottomInsetDp,
+                            remoteNextKeyCode = remoteNextKeyCode,
+                            remotePreviousKeyCode = remotePreviousKeyCode,
+                            appearancePreset = appearancePreset,
+                            fontScale = fontScale.coerceIn(0.80f, 1.35f),
+                            themeAccentArgb = themeAccentArgb,
+                            themeBackgroundArgb = themeBackgroundArgb,
+                            themeTextArgb = themeTextArgb
+                        )
+    var lastAutoSaveDraft by remember { mutableStateOf(autoSaveDraft) }
+    LaunchedEffect(autoSaveDraft, folderError) {
+        if (folderError == null && autoSaveDraft != lastAutoSaveDraft) {
+            lastAutoSaveDraft = autoSaveDraft
+            onSaveSettings(autoSaveDraft)
+        }
+    }
+
     val qualities = listOf("Best", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p")
 
     if (showClearWatchHistoryConfirm) {
@@ -365,33 +427,12 @@ fun SettingsScreen(
                     ) {
                         Text("Reset appearance")
                     }
-                    OutlinedButton(
-                        onClick = {
-                            onPreviewSettings(appearanceOnlySettings())
-                            previewApplied = true
-                        },
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            2.dp,
-                            Color(themeAccentArgb.toInt())
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(themeBackgroundArgb.toInt()),
-                            contentColor = Color(themeTextArgb.toInt())
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.Visibility,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (previewApplied) "Preview active" else "Preview theme",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        "Theme preview and changes apply automatically.",
+                        color = TubeDeckTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
@@ -821,71 +862,12 @@ fun SettingsScreen(
                 ToggleRow("Background PiP Mode", pipEnabled) { pipEnabled = it }
             }
 
-            Button(
-                onClick = {
-                    onSaveSettings(
-                        currentSettings.copy(
-                            downloadDir = downloadDir,
-                            downloadTreeUri = downloadTreeUri,
-                            instantMode = instantMode,
-                            instantQuality = instantQuality,
-                            customMode = customMode,
-                            customQuality = customQuality,
-                            playlistMode = playlistMode,
-                            playlistQuality = playlistQuality,
-                            playerMode = playerMode,
-                            xyAutoCompatibilityMode = xyAutoCompatibilityMode,
-                            forceTvNavigation = forceTvNavigation,
-                            preferredPlaybackQualityHeight = preferredPlaybackQualityHeight,
-                            preferredPlaybackSpeed = preferredPlaybackSpeed,
-                            seekIntervalSeconds = seekIntervalSeconds,
-                            viewingMode = viewingMode,
-                            viewingDimPercent = viewingDimPercent.coerceIn(10, 85),
-                            nightAudioEnabled = nightAudioEnabled,
-                            autoRotatePlayback = autoRotatePlayback,
-                            homeSuggestionsEnabled = homeSuggestionsEnabled,
-                            homeHistoryEnabled = homeHistoryEnabled,
-                            homeTrendingEnabled = homeTrendingEnabled,
-                            adBlockEnabled = adBlockEnabled,
-                            blockVideoAds = blockVideoAds,
-                            blockBannerAds = blockBannerAds,
-                            blockTrackers = blockTrackers,
-                            blockShortsEnabled = blockShortsEnabled,
-                            sponsorBlockEnabled = sponsorBlockEnabled,
-                            pipEnabled = pipEnabled,
-                            autoLoadEpisodes = autoLoadEpisodes,
-                            autoLoadUpNext = autoLoadUpNext,
-                            sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
-                            desktopYoutubeUiEnabled = desktopYoutubeUiEnabled,
-                            playerControllerScale = playerControllerScale.coerceIn(0.85f, 1.50f),
-                            equalizerTextScale = equalizerTextScale.coerceIn(1.0f, 1.8f),
-                            showRelevantShelf = showRelevantShelf,
-                            showEpisodesShelf = showEpisodesShelf,
-                            floatingCardsMode = floatingCardsMode,
-                            animatedCardPreviews = animatedCardPreviews,
-                            hideWatchedRecommendations = hideWatchedRecommendations,
-                            lowResourceMode = lowResourceMode,
-                            resumeAfterInterruptions = resumeAfterInterruptions,
-                            subtitleTextScale = subtitleTextScale,
-                            subtitleBottomInsetDp = subtitleBottomInsetDp,
-                            remoteNextKeyCode = remoteNextKeyCode,
-                            remotePreviousKeyCode = remotePreviousKeyCode,
-                            appearancePreset = appearancePreset,
-                            fontScale = fontScale.coerceIn(0.80f, 1.35f),
-                            themeAccentArgb = themeAccentArgb,
-                            themeBackgroundArgb = themeBackgroundArgb,
-                            themeTextArgb = themeTextArgb
-                        )
-                    )
-                    onClose()
-                },
-                enabled = folderError == null,
-                colors = ButtonDefaults.buttonColors(containerColor = TubeDeckAccentCyan, contentColor = Color.Black),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
-            ) {
-                Text("Save and Apply Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
+            Text(
+                "Settings are saved and applied automatically when changed. Close this screen at any time.",
+                color = TubeDeckTextSecondary,
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            )
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

@@ -167,8 +167,8 @@ fun SettingsScreen(
     // Every UI-editable preference is merged into the latest repository snapshot.
     // No manual Save operation is required. The first composition is NOT a change.
     val autoSaveDraft = currentSettings.copy(
-                            downloadDir = downloadDir,
-                            downloadTreeUri = downloadTreeUri,
+                            downloadDir = if (folderError == null) downloadDir else currentSettings.downloadDir,
+                            downloadTreeUri = if (folderError == null) downloadTreeUri else currentSettings.downloadTreeUri,
                             instantMode = instantMode,
                             instantQuality = instantQuality,
                             customMode = customMode,
@@ -219,8 +219,8 @@ fun SettingsScreen(
                             themeTextArgb = themeTextArgb
                         )
     var lastAutoSaveDraft by remember { mutableStateOf(autoSaveDraft) }
-    LaunchedEffect(autoSaveDraft, folderError) {
-        if (folderError == null && autoSaveDraft != lastAutoSaveDraft) {
+    LaunchedEffect(autoSaveDraft) {
+        if (autoSaveDraft != lastAutoSaveDraft) {
             lastAutoSaveDraft = autoSaveDraft
             onSaveSettings(autoSaveDraft)
         }

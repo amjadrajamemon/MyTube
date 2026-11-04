@@ -617,7 +617,10 @@ fun NativeExoPlayer(
     val latestForegroundPlaybackAllowed by rememberUpdatedState(foregroundPlaybackAllowed)
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-    val controllerScale = playerControllerScale.coerceIn(0.85f, 1.50f)
+    // Portrait controls must leave room for the fixed Lights Out affordance.
+    // Cap the scale only here; landscape/TV retains its user-selected size.
+    val controllerScale = if (isPortrait) playerControllerScale.coerceIn(0.85f, 1.05f) * .88f
+        else playerControllerScale.coerceIn(0.85f, 1.50f)
     val controllerHeight = (34f * controllerScale).dp
     val controllerIconSize = (19f * controllerScale).dp
     val controllerFontSize = (11f * controllerScale).sp
@@ -1108,13 +1111,24 @@ fun NativeExoPlayer(
         } else null
     }
     var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
+    // Mutable holder is read when the stream actually starts, even if the user
+    // chooses Resume BEFORE the asynchronous stream resolver finishes.
+    val selectedResumeStart = remember(media.id) {
+        mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
+    }
+    val latestResumeEnabled by rememberUpdatedState(resumeEnabled)
+    val latestResumePrompt by rememberUpdatedState(showResumePrompt)
 
     LaunchedEffect(isPlaying, resumeEnabled, showResumePrompt, media.mediaUri) {
         if (resumeEnabled && !showResumePrompt && isPlaying) {
             while (isActive) {
                 delay(12_000L)
                 if (exoPlayer.isPlaying) {
-                    resumeStore.record(media.mediaUri, exoPlayer.currentPosition.coerceAtLeast(0L))
+                    resumeStore.record(
+                        media.mediaUri,
+                        exoPlayer.currentPosition.coerceAtLeast(0L),
+                        exoPlayer.duration
+                    )
                 }
             }
         }
@@ -1122,17 +1136,9 @@ fun NativeExoPlayer(
     LaunchedEffect(showResumePrompt, isPlaying) {
         if (showResumePrompt && isPlaying) exoPlayer.pause()
     }
-    DisposableEffect(exoPlayer, resumeEnabled) {
-        onDispose {
-            if (resumeEnabled) {
-                runCatching {
-                    val pos = if (exoPlayer.playbackState == Player.STATE_ENDED) 0L
-                        else exoPlayer.currentPosition.coerceAtLeast(0L)
-                    resumeStore.record(media.mediaUri, pos)
-                }
-            }
-        }
-    }
+    // The final resume snapshot is taken in the ExoPlayer release effect,
+    // BEFORE release(). A separate earlier DisposableEffect disposed too late
+    // on some Compose hosts and silently saved an IDLE/zero position.
     LaunchedEffect(privateSession) {
         if (privateSession) showResumePrompt = false
     }
@@ -1238,7 +1244,7 @@ fun NativeExoPlayer(
         val position = if (preservePosition) {
             exoPlayer.currentPosition
         } else {
-            initialPositionMs.coerceAtLeast(0L)
+            selectedResumeStart.longValue
         }
         PlaybackStartupTelemetry.markPrepare(media.mediaUri)
         isPreparing = true
@@ -1411,6 +1417,16 @@ fun NativeExoPlayer(
                 }
                 isPlaying = playing
                 if (!playing && !exoPlayer.playWhenReady && liveDubEnabled) liveDubEngine.pauseForPlayback()
+                // Save at an actual pause as well as the regular 12-second tick;
+                // do not clear an old position while the resume dialog is open.
+                if (!playing && latestResumeEnabled && !latestResumePrompt &&
+                    exoPlayer.playbackState == Player.STATE_READY
+                ) {
+                    val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    if (VideoResumePolicy.shouldSave(pos, exoPlayer.duration)) {
+                        resumeStore.record(media.mediaUri, pos, exoPlayer.duration)
+                    }
+                }
             }
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
@@ -1422,6 +1438,9 @@ fun NativeExoPlayer(
                     endActionDispatched = false
                     if (resolveError?.startsWith("Media3 playback error") == true) resolveError = null
                 } else if (state == Player.STATE_ENDED || state == Player.STATE_IDLE) {
+                    if (state == Player.STATE_ENDED && latestResumeEnabled) {
+                        resumeStore.record(media.mediaUri, 0L)
+                    }
                     isPreparing = false
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
@@ -1626,6 +1645,22 @@ fun NativeExoPlayer(
         PlaybackHardwareButtonBridge.register(exoPlayer, { currentDispatchNext() }, { currentDispatchPrevious() })
         if (!carHeadUnit) equalizerSnapshot = equalizerController.attach(exoPlayer.audioSessionId)
         onDispose {
+            if (latestResumeEnabled && !latestResumePrompt) {
+                runCatching {
+                    val completed = exoPlayer.playbackState == Player.STATE_ENDED
+                    val position = if (completed) 0L else exoPlayer.currentPosition.coerceAtLeast(0L)
+                    if (VideoResumePolicy.shouldSnapshot(
+                            exoPlayer.currentMediaItem != null &&
+                                exoPlayer.playbackState != Player.STATE_IDLE,
+                            false,
+                            position,
+                            completed
+                        )
+                    ) {
+                        resumeStore.record(media.mediaUri, position, exoPlayer.duration)
+                    }
+                }
+            }
             PlaybackHardwareButtonBridge.unregister(exoPlayer)
             exoPlayer.removeListener(listener)
             exoPlayer.removeAnalyticsListener(analytics)
@@ -1715,7 +1750,7 @@ fun NativeExoPlayer(
             firstFrameRendered = false
             exoPlayer.setMediaItem(
                 MediaItem.Builder().setUri(targetUri).setSubtitleConfigurations(subtitleConfigurations).build(),
-                initialPositionMs.coerceAtLeast(0L)
+                selectedResumeStart.longValue
             )
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
@@ -2127,11 +2162,16 @@ fun NativeExoPlayer(
                 Modifier.fillMaxSize().background(Color.Black)
             }
         ) {
-            key(carHeadUnit) {
+            // Compose dim/tint layers are not guaranteed to appear above a
+            // SurfaceView on Android TV. TextureView composites in the same layer.
+            // Reuse the existing faster SurfaceView when the mode is Normal.
+            key(carHeadUnit, viewingMode != ViewingMode.NORMAL) {
             AndroidView(
                 factory = { ctx ->
                     val view = if (carHeadUnit) {
                         LayoutInflater.from(ctx).inflate(R.layout.mytube_car_player_view, null, false) as PlayerView
+                    } else if (viewingMode != ViewingMode.NORMAL) {
+                        LayoutInflater.from(ctx).inflate(R.layout.mytube_viewing_player_view, null, false) as PlayerView
                     } else PlayerView(ctx)
                     PlaybackDiagnostics.record(ctx, "video_surface", view.videoSurfaceView?.javaClass?.simpleName.orEmpty())
                     view.apply {
@@ -3294,9 +3334,11 @@ fun NativeExoPlayer(
     if (showResumePrompt && savedResume != null) {
         AlertDialog(
             onDismissRequest = {
+                selectedResumeStart.longValue = 0L
                 showResumePrompt = false
                 resumeStore.record(media.mediaUri, 0L)
-                exoPlayer.play()
+                if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+                exoPlayer.playWhenReady = true
             },
             title = { Text("Resume previous video?") },
             text = {
@@ -3306,17 +3348,21 @@ fun NativeExoPlayer(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    selectedResumeStart.longValue = savedResume.positionMs
                     showResumePrompt = false
-                    exoPlayer.seekTo(savedResume.positionMs)
-                    exoPlayer.play()
+                    if (exoPlayer.currentMediaItem != null) {
+                        exoPlayer.seekTo(savedResume.positionMs)
+                    }
+                    exoPlayer.playWhenReady = true
                 }) { Text("Resume") }
             },
             dismissButton = {
                 TextButton(onClick = {
+                    selectedResumeStart.longValue = 0L
                     showResumePrompt = false
                     resumeStore.record(media.mediaUri, 0L)
-                    exoPlayer.seekTo(0L)
-                    exoPlayer.play()
+                    if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+                    exoPlayer.playWhenReady = true
                 }) { Text("Start over") }
             }
         )

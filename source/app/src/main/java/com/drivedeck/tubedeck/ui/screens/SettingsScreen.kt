@@ -267,7 +267,7 @@ fun SettingsScreen(
                             Surface(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(132.dp)
+                                    .height(166.dp)
                                     .clip(RoundedCornerShape(preset.cornerRadiusDp.dp))
                                     .tvInputHighlight(RoundedCornerShape(10.dp))
                                     .clickable {
@@ -298,6 +298,22 @@ fun SettingsScreen(
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     ThemeLayoutPreview(preset)
+                                    Text(
+                                        preset.subtitle.ifBlank { preset.homePresentation.name.replace('_', ' ') },
+                                        color = Color(preset.textArgb.toInt()).copy(alpha = .78f),
+                                        fontFamily = preset.fontFamily,
+                                        fontSize = 9.sp,
+                                        lineHeight = 11.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "PLAYER  ·  " + preset.playerChrome.name.replace('_', ' '),
+                                        color = Color(preset.accentArgb.toInt()),
+                                        fontSize = 8.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
 
                                 }
                             }

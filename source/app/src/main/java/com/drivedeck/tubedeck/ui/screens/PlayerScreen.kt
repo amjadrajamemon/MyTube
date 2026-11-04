@@ -2225,6 +2225,7 @@ fun NativeExoPlayer(
                     }
                     PlaybackDiagnostics.record(ctx, "video_surface", view.videoSurfaceView?.javaClass?.simpleName.orEmpty())
                     view.apply {
+                        setBackgroundColor(android.graphics.Color.BLACK)
                         player = exoPlayer
                         useController = false
                         setKeepContentOnPlayerReset(true)

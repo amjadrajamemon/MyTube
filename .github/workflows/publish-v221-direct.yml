@@ -1,0 +1,83 @@
+name: Publish MyTube v2.2.1 viewing-resume-seek direct APKs
+
+on:
+  push:
+    branches:
+      - feature/fix-next-autoplay-blackout-home-20261102
+    paths:
+      - .github/workflows/publish-v221-direct.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-tested-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Require successful source-identical v2.2.1 build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFIED_SHA="$(gh run view 41802891499 --repo "$GITHUB_REPOSITORY" --json headSha,conclusion --jq 'select(.conclusion == "success") | .headSha')"
+          test "$VERIFIED_SHA" = "4f7373dd7d8a0ca5c95c819e66c479fba42e0fbb" || {
+            echo "::error::The approved v2.2.1 build is not successful or has a different source SHA"
+            exit 1
+          }
+
+      - name: Download and reverify the exact successful APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 41802891499 --repo "$GITHUB_REPOSITORY" \
+            --name "MyTube-v2.2.1-ARM64-and-Universal" --dir dist
+          test -s dist/MyTube-v2.2.1-ARM64-debug.apk
+          test -s dist/MyTube-v2.2.1-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -t dist/MyTube-v2.2.1-ARM64-debug.apk >/dev/null
+          unzip -t dist/MyTube-v2.2.1-Universal-debug.apk >/dev/null
+          ls -lh dist
+
+      - name: Publish immutable ARM64 and Universal prerelease downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.2.1-viewing-resume-seek-20261104"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Release already exists; preserving published APK assets"
+            exit 0
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          # MyTube v2.2.1 — Viewing Modes, Portrait Controls, Resume and Seek Previews
+
+          Corrective prerelease based on v2.2.0; versionCode 107. **Blackout continues using its existing, previously working independent window implementation.**
+
+          - **Lights Out / Cinema / Night:** fixes a selection menu that overwrote fresh choices during dismissal. Uses a persistent, focusable viewing-mode dialog and immediate Settings persistence. Optional TextureView compositing allows native dim/tint layers to render above the video rather than beneath SurfaceView.
+          - **Portrait:** pins the moon/viewing-mode action before the scrolling control strip; caps adjacent toolbar control sizes on portrait devices. All thirteen theme player styles retain the same control.
+          - **Continue from last position:** canonicalizes the YouTube video identity across link forms and playlists, records progress on pause and before ExoPlayer release, avoids clearing saved progress while resuming, and preserves early Resume decisions until an asynchronous video loads. The last-position policy is independent of the separate interruption-resume setting. Private sessions do not record progress.
+          - **Interactive seek preview:** existing source-provided storyboard frames now follow the seek thumb and respond to touch dragging, air-mouse hover and D-pad seeking. When a video provides no storyboard, only its static poster fallback is available; it is not a synthesized frame preview.
+          - **13-theme audit:** new unit tests and source guards cover all thirteen profiles, control visibility, canonical resume identity and storyboard frame selection.
+
+          Both debug-signed ARM64 and Universal APKs are original, unchanged outputs from successful GitHub Actions build 41802891499, source commit 4f7373dd7d8a0ca5c95c819e66c479fba42e0fbb. Automated tests, package/ABI/signature checks and UI source guards passed. The lint report remains attached to the build.
+
+          **Not a physical-device certification.** Please validate the player on an actual Android phone, TV box, air mouse/D-pad remote and any car head unit, especially mode switching, seek preview and resume after exiting. WebView player fallback has different video/audio surface limitations and does not use native Night Audio processing.
+          EOF
+          gh release create "$TAG" \
+            dist/MyTube-v2.2.1-ARM64-debug.apk \
+            dist/MyTube-v2.2.1-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 4f7373dd7d8a0ca5c95c819e66c479fba42e0fbb \
+            --title "MyTube v2.2.1 — Viewing Modes, Portrait, Resume & Seek Fixes" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

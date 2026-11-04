@@ -157,12 +157,17 @@ fun DriveDeckScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(TubeDeckBackground)
-            .statusBarsPadding()
-    ) {
+    val homeScroll = rememberLazyListState()
+    val selectedArtwork = feeds.firstOrNull { it.first == focusFeed }?.second
+        ?.firstOrNull { it.videoId == focusVideoId }?.thumbnailUrl
+    Box(modifier = modifier.fillMaxSize().background(TubeDeckBackground).deckScreenBackground()) {
+        DeckArtworkHalo(
+            thumbnailUrl = selectedArtwork,
+            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
+        )
+        Column(
+            modifier = Modifier.fillMaxSize().statusBarsPadding()
+        ) {
         DriveDeckTopHeader(
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
@@ -184,6 +189,7 @@ fun DriveDeckScreen(
         )
 
         LazyColumn(
+            state = homeScroll,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -573,6 +579,7 @@ fun DriveDeckScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -813,6 +820,18 @@ private fun HomeSpotlight(
                     video,
                     Modifier.fillMaxWidth().aspectRatio(if (cinema) 2.3f else 16f / 9f)
                 )
+                if (LocalDeckExperience.current.artworkAtmosphere) {
+                    Box(
+                        Modifier.matchParentSize().background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = if (cinema) .45f else .20f)
+                                )
+                            )
+                        )
+                    )
+                }
                 if (!editorial) Surface(
                     modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
                     color = TubeDeckBackground.copy(alpha = .88f),

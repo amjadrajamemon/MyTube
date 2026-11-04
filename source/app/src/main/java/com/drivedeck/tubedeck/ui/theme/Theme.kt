@@ -32,9 +32,13 @@ fun TubeDeckTheme(
     backgroundArgb: Long = 0xFF080B11L,
     textArgb: Long = 0xFFFFFFFFL,
     appearancePreset: String = "Glass Midnight",
+    lowResourceMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val profile = DeckThemeCatalog.get(appearancePreset)
+    val experience = DeckExperienceCatalog.tokens(
+        profile, lowResourceMode, DeckExperienceCatalog.restrainedMotion(LocalContext.current)
+    )
     // Living-room displays need readable text at a distance; leave phones/cars alone.
     val tvInputMode = isTvLikeNavigationDevice(LocalContext.current)
     val boundedFontScale = (fontScale.coerceIn(0.80f, 1.35f) * if (tvInputMode) 1.18f else 1f)
@@ -132,6 +136,7 @@ fun TubeDeckTheme(
     )
     CompositionLocalProvider(
         LocalDeckThemeProfile provides profile,
+        LocalDeckExperience provides experience,
         LocalDensity provides Density(
             density = baseDensity.density,
             fontScale = baseDensity.fontScale * boundedFontScale

@@ -260,12 +260,7 @@ private fun DeckNavItem(
     // Motion only runs on a real selection change; never schedules idle frames.
     val animatedSelection by animateColorAsState(
         targetValue = selectedBackground,
-        animationSpec = tween(durationMillis = when (profile.motionStyle) {
-            DeckMotionStyle.INSTANT -> 0
-            DeckMotionStyle.SNAP -> 80
-            DeckMotionStyle.GLIDE -> 260
-            DeckMotionStyle.PULSE -> 165
-        }),
+        animationSpec = tween(durationMillis = LocalDeckExperience.current.motionDurationMs),
         label = "Theme navigation selection"
     )
     Box(
@@ -300,7 +295,8 @@ private fun DeckNavItem(
                 if (!iconOnly) Text(label, color = iconTint,
                     fontSize = if (profile.navVisual == DeckNavVisual.COMPACT) 9.sp else 10.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1)
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
     }
@@ -324,7 +320,7 @@ private fun YouTubeMobileTabs(
     Surface(
         modifier = modifier.fillMaxWidth().navigationBarsPadding()
             .border(0.5.dp, TubeDeckBorder),
-        color = Color(0xFF171717)
+        color = TubeDeckSurface
     ) {
         Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
             tabs.forEach { (screen, name, icon) ->
@@ -345,7 +341,7 @@ private fun YouTubeMobileTabs(
                             modifier = Modifier.size(22.dp))
                     }
                     Text(name, fontSize = 10.sp, maxLines = 1,
-                        color = if (selected) Color.White else Color.LightGray,
+                        color = if (selected) TubeDeckAccentCyan else TubeDeckTextSecondary,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                 }
             }
@@ -368,7 +364,7 @@ private fun YouTubeDesktopRail(
         Triple(ActiveScreen.OFFLINE_VAULT, "You", Icons.Default.VideoLibrary),
         Triple(ActiveScreen.SETTINGS, "Settings", Icons.Default.Settings)
     )
-    Surface(color = Color(0xFF171717), modifier = modifier.width(188.dp).fillMaxHeight()) {
+    Surface(color = TubeDeckSurface, modifier = modifier.width(188.dp).fillMaxHeight()) {
         Column(
             Modifier.fillMaxHeight().padding(horizontal = 8.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)

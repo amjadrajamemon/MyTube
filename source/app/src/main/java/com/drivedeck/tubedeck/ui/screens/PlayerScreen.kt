@@ -1120,6 +1120,30 @@ fun NativeExoPlayer(
         MediaSession.Builder(context, exoPlayer)
             .setId("drivedeck-${media.id}-${System.identityHashCode(exoPlayer)}")
             .setCallback(object : MediaSession.Callback {
+                override fun onPlayerInteractionFinished(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    playerCommands: Player.Commands
+                ) {
+                    // Some car launcher/media widgets issue controller skip
+                    // commands rather than KEYCODE_MEDIA_NEXT. Media3 would
+                    // seek inside the single-item ExoPlayer queue (no-op).
+                    // Translate the completed controller interaction to the
+                    // application's working on-screen Next/Previous actions.
+                    when {
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT) ||
+                            playerCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM) -> {
+                            PlaybackDiagnostics.record(context, "car_controller_next", "native")
+                            currentDispatchNext()
+                        }
+                        playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS) ||
+                            playerCommands.contains(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) -> {
+                            PlaybackDiagnostics.record(context, "car_controller_previous", "native")
+                            currentDispatchPrevious()
+                        }
+                    }
+                }
+
                 override fun onMediaButtonEvent(
                     session: MediaSession,
                     controllerInfo: MediaSession.ControllerInfo,

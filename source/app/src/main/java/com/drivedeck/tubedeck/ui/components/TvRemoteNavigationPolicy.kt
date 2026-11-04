@@ -59,12 +59,16 @@ internal object TvRemoteNavigationPolicy {
             } else ignore
 
             KeyEvent.KEYCODE_MEDIA_NEXT,
+            KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
             KeyEvent.KEYCODE_CHANNEL_UP,
             KeyEvent.KEYCODE_PAGE_UP -> if (repeatCount == 0) {
                 TvPlayerKeyDecision(TvPlayerKeyAction.NEXT)
             } else ignore
 
             KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+            KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD,
+            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
             KeyEvent.KEYCODE_CHANNEL_DOWN,
             KeyEvent.KEYCODE_PAGE_DOWN -> if (repeatCount == 0) {
                 TvPlayerKeyDecision(TvPlayerKeyAction.PREVIOUS)

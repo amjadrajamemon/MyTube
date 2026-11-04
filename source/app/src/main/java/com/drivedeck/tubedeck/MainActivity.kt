@@ -130,6 +130,25 @@ class MainActivity : ComponentActivity() {
     // androidx.core. OEM head units sometimes send media keys only to this hook.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Capture the raw scan/key code on compatible car units. This helps
+        // diagnose OEM keys that never reach the standard MediaSession path;
+        // no account, song title, URL, or personal input is logged.
+        if (::repository.isInitialized && playerActive &&
+            (repository.settings.value.xyAutoCompatibilityMode ||
+                com.drivedeck.tubedeck.player.CarHeadUnitPolicy.isCarHeadUnit(this)) &&
+            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            event.keyCode !in listOf(
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN
+            )
+        ) {
+            com.drivedeck.tubedeck.player.PlaybackDiagnostics.record(
+                this, "car_key_seen",
+                "code=${event.keyCode} scan=${event.scanCode} source=${event.source}"
+            )
+        }
         // STOP is a hardware-remote escape if the TV shell hides its PiP X.
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
             event.keyCode == KeyEvent.KEYCODE_MEDIA_STOP

@@ -25,6 +25,17 @@ grep -Fq 'Applied to native video:' "$PLAYER"
 grep -Fq 'Viewing mode: ' "$PLAYER"
 grep -Fq 'PlayerViewingModesDialog(' "$PLAYER"
 grep -Fq 'onViewingPreferencesChanged(mode, viewingDimPercent, nightAudioEnabled)' "$SETTINGS"
+# No theme-specific fallback may prevent mode selection; both in-player dialogs
+# and Settings use full-width touch/D-pad radio rows.
+grep -Fq 'RadioButtonChecked' "$SETTINGS"
+grep -Fq 'RadioButtonChecked' "$PLAYER"
+grep -Fq 'val autoSaveDraft = currentSettings.copy(' "$SETTINGS"
+grep -Fq 'LaunchedEffect(autoSaveDraft, folderError)' "$SETTINGS"
+grep -Fq 'onSaveSettings(autoSaveDraft)' "$SETTINGS"
+grep -Fq 'Settings are saved and applied automatically' "$SETTINGS"
+! grep -Fq 'Save and Apply Settings' "$SETTINGS"
+! grep -Fq 'onClick = { onPreviewSettings(appearanceOnlySettings()) }' "$SETTINGS"
+
 grep -Fq 'onViewingPreferencesChanged = { mode, dim, nightAudio ->' "$MAIN"
 grep -Fq 'selectedResumeStart.longValue' "$PLAYER"
 grep -Fq 'VideoResumePolicy.mediaKey' "$VIDEO_STORE"

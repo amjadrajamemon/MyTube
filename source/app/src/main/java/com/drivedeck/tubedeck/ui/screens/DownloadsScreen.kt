@@ -98,6 +98,7 @@ fun DownloadsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(TubeDeckBackground)
+            .deckScreenBackground()
             .statusBarsPadding() // FIX: Status Bar overlap
             .navigationBarsPadding() // FIX: Bottom Nav overlap
     ) {

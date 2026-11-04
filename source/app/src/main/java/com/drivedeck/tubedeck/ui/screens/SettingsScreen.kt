@@ -218,6 +218,7 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(TubeDeckBackground)
+            .deckScreenBackground()
             .statusBarsPadding()
     ) {
         // Top Header

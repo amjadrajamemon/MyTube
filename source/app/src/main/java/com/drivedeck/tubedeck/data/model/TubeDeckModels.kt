@@ -170,6 +170,9 @@ data class TubeDeckSettings(
     val studioNavigation: String = "Preset",
     val studioPlayer: String = "Preset",
     val studioMotion: String = "Preset",
+    val studioDensity: String = "Preset",
+    val studioCorners: String = "Preset",
+    val studioGlow: String = "Preset",
 
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",

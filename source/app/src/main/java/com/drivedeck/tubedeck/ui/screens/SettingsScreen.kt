@@ -155,6 +155,9 @@ fun SettingsScreen(
     var studioNavigation by remember { mutableStateOf(currentSettings.studioNavigation) }
     var studioPlayer by remember { mutableStateOf(currentSettings.studioPlayer) }
     var studioMotion by remember { mutableStateOf(currentSettings.studioMotion) }
+    var studioDensity by remember { mutableStateOf(currentSettings.studioDensity) }
+    var studioCorners by remember { mutableStateOf(currentSettings.studioCorners) }
+    var studioGlow by remember { mutableStateOf(currentSettings.studioGlow) }
     var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
@@ -173,7 +176,10 @@ fun SettingsScreen(
             studioHomeLayout = studioHomeLayout,
             studioNavigation = studioNavigation,
             studioPlayer = studioPlayer,
-            studioMotion = studioMotion
+            studioMotion = studioMotion,
+            studioDensity = studioDensity,
+            studioCorners = studioCorners,
+            studioGlow = studioGlow
         )
 
     // Every UI-editable preference is merged into the latest repository snapshot.
@@ -232,6 +238,9 @@ fun SettingsScreen(
                             studioNavigation = studioNavigation,
                             studioPlayer = studioPlayer,
                             studioMotion = studioMotion,
+                            studioDensity = studioDensity,
+                            studioCorners = studioCorners,
+                            studioGlow = studioGlow,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
                             themeAccentArgb = themeAccentArgb,
@@ -471,7 +480,7 @@ fun SettingsScreen(
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 StudioChoiceRow(
                     "Home architecture",
-                    listOf("Preset", "Glass Lounge", "Cinematic", "Dashboard", "Editorial", "Compact"),
+                    listOf("Preset", "Glass Lounge", "Cinematic", "Dashboard", "Editorial", "Compact", "TV Lounge", "Cyber HUD"),
                     studioHomeLayout
                 ) { studioHomeLayout = it }
                 StudioChoiceRow(
@@ -489,11 +498,29 @@ fun SettingsScreen(
                     listOf("Preset", "Off", "Snappy", "Smooth", "Pulse"),
                     studioMotion
                 ) { studioMotion = it }
+                StudioChoiceRow(
+                    "Spacing",
+                    listOf("Preset", "Compact", "Airy"),
+                    studioDensity
+                ) { studioDensity = it }
+                StudioChoiceRow(
+                    "Corner geometry",
+                    listOf("Preset", "Sharp", "Soft", "Rounded"),
+                    studioCorners
+                ) { studioCorners = it }
+                StudioChoiceRow(
+                    "Ambient illumination",
+                    listOf("Preset", "Off", "Rich"),
+                    studioGlow
+                ) { studioGlow = it }
                 OutlinedButton(onClick = {
                     studioHomeLayout = "Preset"
                     studioNavigation = "Preset"
                     studioPlayer = "Preset"
                     studioMotion = "Preset"
+                    studioDensity = "Preset"
+                    studioCorners = "Preset"
+                    studioGlow = "Preset"
                 }) { Text("Reset Studio overrides") }
             }
 

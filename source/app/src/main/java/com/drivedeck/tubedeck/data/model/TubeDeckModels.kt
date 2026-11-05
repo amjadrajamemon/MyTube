@@ -160,6 +160,17 @@ data class TubeDeckSettings(
     val remoteNextKeyCode: Int = 0,
     val remotePreviousKeyCode: Int = 0,
 
+    // Experience Studio: opt-in device-aware layouts, a parked-use car dashboard,
+    // independent home/feed appearance, and structural theme controls.
+    val adaptiveExperienceEnabled: Boolean = false,
+    val carDashboardEnabled: Boolean = false,
+    val homeFeedOrder: String = "History,Relevant,Trending",
+    val homeDisplayMode: String = "Theme",
+    val studioHomeLayout: String = "Preset",
+    val studioNavigation: String = "Preset",
+    val studioPlayer: String = "Preset",
+    val studioMotion: String = "Preset",
+
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",
     val fontScale: Float = 1.0f,

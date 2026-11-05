@@ -2527,11 +2527,16 @@ fun NativeExoPlayer(
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    // Theater mode uses the reference-style right-side episode tray
+                    // in landscape; compact portraits retain the familiar bottom sheet.
+                    .align(if (cinematicPlayer && !compactPortrait)
+                        Alignment.CenterEnd else Alignment.BottomCenter)
+                    .then(if (cinematicPlayer && !compactPortrait)
+                        Modifier.widthIn(max = 430.dp) else Modifier)
                     .padding(
                         start = 10.dp,
                         end = 10.dp,
-                        bottom = if (compactPortrait) 70.dp else 78.dp
+                        bottom = if (compactPortrait) 70.dp else if (cinematicPlayer) 6.dp else 78.dp
                     )
                     .pointerInput(showPlaybackModeCards) {
                         var downwardDrag = 0f
@@ -2713,7 +2718,19 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .onFocusChanged { tvControlsFocused = it.hasFocus }
-                        .background(Color.Black.copy(alpha = playerOverlayOpacity))
+                        .then(
+                            if (cinematicPlayer) Modifier.background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Black.copy(alpha = .56f),
+                                        Color.Black.copy(alpha = .08f),
+                                        Color.Black.copy(alpha = .68f)
+                                    )
+                                )
+                            ) else Modifier.background(
+                                Color.Black.copy(alpha = playerOverlayOpacity)
+                            )
+                        )
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
                     Row(
@@ -2738,6 +2755,10 @@ fun NativeExoPlayer(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            if (cinematicPlayer && !compactPortrait) {
+                                Text("CINEMA  •  NOW PLAYING", color = TubeDeckAccentCyan,
+                                    fontSize = 9.sp, maxLines = 1)
+                            }
                             Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
                                 themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||

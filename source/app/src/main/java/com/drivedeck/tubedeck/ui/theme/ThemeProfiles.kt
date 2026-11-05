@@ -212,4 +212,57 @@ object DeckThemeCatalog {
         } ?: presets.first { it.name == "Kodi Arctic" }
 }
 
+/** Immutable, per-render theme override; no global mutable UI state. */
+object DeckStudioPolicy {
+    fun resolve(
+        base: DeckThemeProfile,
+        home: String,
+        navigation: String,
+        player: String,
+        motion: String
+    ): DeckThemeProfile {
+        val homeMode = when (home) {
+            "Cinematic" -> DeckHomePresentation.CINEMA_DECK_STAGE
+            "Glass Lounge" -> DeckHomePresentation.NEO_GLASS_LOUNGE
+            "Dashboard" -> DeckHomePresentation.COMMAND_DRIVE
+            "Editorial" -> DeckHomePresentation.MIDNIGHT_EDITORIAL
+            "Compact" -> DeckHomePresentation.AMOLED_INDEX
+            else -> base.homePresentation
+        }
+        val nav = when (navigation) {
+            "Top" -> DeckNavigationPlacement.TOP
+            "Bottom" -> DeckNavigationPlacement.BOTTOM
+            "Sidebar" -> DeckNavigationPlacement.SIDE
+            else -> base.navigationPlacement
+        }
+        val chrome = when (player) {
+            "Cinema" -> DeckPlayerChrome.THEATER
+            "Glass" -> DeckPlayerChrome.GLASS
+            "Dashboard" -> DeckPlayerChrome.HUD
+            "Minimal" -> DeckPlayerChrome.APPLE_FLOAT
+            "Technical" -> DeckPlayerChrome.CYBER
+            else -> base.playerChrome
+        }
+        val animation = when (motion) {
+            "Off" -> DeckMotionStyle.INSTANT
+            "Snappy" -> DeckMotionStyle.SNAP
+            "Smooth" -> DeckMotionStyle.GLIDE
+            "Pulse" -> DeckMotionStyle.PULSE
+            else -> base.motionStyle
+        }
+        return base.copy(
+            homePresentation = homeMode,
+            navigationPlacement = nav,
+            playerChrome = chrome,
+            motionStyle = animation,
+            navVisual = when (navigation) {
+                "Top" -> DeckNavVisual.COMMAND
+                "Sidebar" -> DeckNavVisual.TV_CLASSIC
+                "Bottom" -> DeckNavVisual.PILL
+                else -> base.navVisual
+            }
+        )
+    }
+}
+
 val LocalDeckThemeProfile = compositionLocalOf { DeckThemeCatalog.get("Kodi Arctic") }

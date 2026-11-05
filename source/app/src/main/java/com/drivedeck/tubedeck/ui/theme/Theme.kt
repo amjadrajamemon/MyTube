@@ -41,6 +41,9 @@ fun TubeDeckTheme(
     studioNavigation: String = "Preset",
     studioPlayer: String = "Preset",
     studioMotion: String = "Preset",
+    studioDensity: String = "Preset",
+    studioCorners: String = "Preset",
+    studioGlow: String = "Preset",
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -54,19 +57,27 @@ fun TubeDeckTheme(
         adaptiveExperienceEnabled && tvDevice -> "StreamPlus Luxe TV"
         adaptiveExperienceEnabled && LocalConfiguration.current.screenWidthDp >= 780 ->
             "NeoGlass Luxe"
+        adaptiveExperienceEnabled -> "Midnight Editorial Pro"
         else -> appearancePreset
     }
     val baseProfile = DeckThemeCatalog.get(autoName)
     val profile = DeckStudioPolicy.resolve(
-        baseProfile, studioHomeLayout, studioNavigation, studioPlayer, studioMotion
+        baseProfile, studioHomeLayout, studioNavigation, studioPlayer, studioMotion,
+        studioDensity, studioCorners
     )
     val devicePalette = baseProfile.name != selectedProfile.name
     val activeAccent = if (devicePalette) profile.accentArgb else accentArgb
     val activeBackground = if (devicePalette) profile.backgroundArgb else backgroundArgb
     val activeText = if (devicePalette) profile.textArgb else textArgb
-    val experience = DeckExperienceCatalog.tokens(
+    val baseExperience = DeckExperienceCatalog.tokens(
         profile, lowResourceMode, DeckExperienceCatalog.restrainedMotion(LocalContext.current)
     )
+    val experience = when (studioGlow) {
+        "Off" -> baseExperience.copy(surfaceGlow = 0f, artworkAtmosphere = false)
+        "Rich" -> if (lowResourceMode) baseExperience else
+            baseExperience.copy(surfaceGlow = .20f, artworkAtmosphere = true)
+        else -> baseExperience
+    }
     // Living-room displays need readable text at a distance; leave phones/cars alone.
     val tvInputMode = isTvLikeNavigationDevice(LocalContext.current)
     val boundedFontScale = (fontScale.coerceIn(0.80f, 1.35f) * if (tvInputMode) 1.18f else 1f)

@@ -13,7 +13,9 @@ enum class DeckCardGeometry { SQUARE, COMPACT, ROUNDED, CINEMA, TERMINAL }
 /** Real screen structures instead of palette-only variations. */
 enum class DeckHomePresentation {
     THREE_COLUMN, IPTV_DASHBOARD, STACKED_SHELVES, DESKTOP_TABLE, HUD_CONSOLE,
-    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL, SMARTTUBE_TV, YOUTUBE_STANDARD, YOUTUBE_DESKTOP
+    CINEMA_STRIPS, GLASS_CAROUSEL, AMOLED_INDEX, ARCADE_GALLERY, MINIMAL_EDITORIAL, SMARTTUBE_TV, YOUTUBE_STANDARD, YOUTUBE_DESKTOP,
+    NEO_GLASS_LOUNGE, CINEMA_DECK_STAGE, COMMAND_DRIVE, STREAMPLUS_LOUNGE,
+    MIDNIGHT_EDITORIAL, CYBER_COMMAND
 }
 enum class DeckPlayerChrome { CLASSIC, GLASS, THEATER, ARCADE, CONSOLE, HUD, TV_CLASSIC, YOUTUBE_MOBILE, YOUTUBE_DESKTOP, PLEX, KODI, MX_GESTURE, VLC_COMPACT, MATERIAL, APPLE_FLOAT, CYBER }
 enum class DeckNavVisual { ICONS, COMPACT, PILL, MINIMAL, COMMAND, TV_CLASSIC, YOUTUBE_MOBILE, YOUTUBE_DESKTOP }
@@ -134,7 +136,60 @@ object DeckThemeCatalog {
             homePresentation = DeckHomePresentation.SMARTTUBE_TV,
             playerChrome = DeckPlayerChrome.TV_CLASSIC, navVisual = DeckNavVisual.TV_CLASSIC,
             motionStyle = DeckMotionStyle.SNAP,
-            subtitle = "TV-first sidebar · full-width video rails · focused playback")
+            subtitle = "TV-first sidebar · full-width video rails · focused playback"),
+        // Six premium identities. Each has a unique Home structure, control shape,
+        // navigation behavior and motion profile. All use original UI assets.
+        DeckThemeProfile("NeoGlass Luxe", 0xFF82DDFBL, 0xFF0B1528L,
+            fontScale = 1.06f, cornerRadiusDp = 26, contentGapDp = 16,
+            navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 56,
+            geometry = DeckCardGeometry.ROUNDED,
+            homePresentation = DeckHomePresentation.NEO_GLASS_LOUNGE,
+            playerChrome = DeckPlayerChrome.GLASS, navVisual = DeckNavVisual.PILL,
+            motionStyle = DeckMotionStyle.GLIDE,
+            subtitle = "Floating frosted lounge · glowing hero · glass discovery trays"),
+        DeckThemeProfile("Cinema Deck", 0xFFFFC67BL, 0xFF0C1019L,
+            fontScale = 1.13f, fontFamily = FontFamily.Serif,
+            cornerRadiusDp = 20, contentGapDp = 18,
+            navigationPlacement = DeckNavigationPlacement.BOTTOM, navigationHeightDp = 70,
+            geometry = DeckCardGeometry.CINEMA,
+            homePresentation = DeckHomePresentation.CINEMA_DECK_STAGE,
+            playerChrome = DeckPlayerChrome.THEATER, navVisual = DeckNavVisual.MINIMAL,
+            motionStyle = DeckMotionStyle.GLIDE,
+            subtitle = "Immersive widescreen stage · episodes · cinema playback"),
+        DeckThemeProfile("CommandDrive Auto", 0xFF4DE5D0L, 0xFF071A22L,
+            fontScale = 1.12f, cornerRadiusDp = 14, contentGapDp = 12,
+            navigationPlacement = DeckNavigationPlacement.BOTTOM, navigationHeightDp = 82,
+            geometry = DeckCardGeometry.COMPACT,
+            homePresentation = DeckHomePresentation.COMMAND_DRIVE,
+            playerChrome = DeckPlayerChrome.HUD, navVisual = DeckNavVisual.ICONS,
+            motionStyle = DeckMotionStyle.SNAP,
+            subtitle = "Landscape car command panel · large audio-first actions"),
+        DeckThemeProfile("StreamPlus Luxe TV", 0xFF5EA9FFL, 0xFF101725L,
+            fontScale = 1.16f, cornerRadiusDp = 20, contentGapDp = 16,
+            navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 84,
+            geometry = DeckCardGeometry.CINEMA,
+            homePresentation = DeckHomePresentation.STREAMPLUS_LOUNGE,
+            playerChrome = DeckPlayerChrome.PLEX, navVisual = DeckNavVisual.TV_CLASSIC,
+            motionStyle = DeckMotionStyle.GLIDE,
+            subtitle = "Luxury TV spotlight · left rail · continuing side lounge"),
+        DeckThemeProfile("Midnight Editorial Pro", 0xFFE7BDA7L, 0xFF13121AL,
+            fontScale = 1.06f, fontFamily = FontFamily.Serif,
+            cornerRadiusDp = 9, contentGapDp = 21,
+            navigationPlacement = DeckNavigationPlacement.TOP, navigationHeightDp = 46,
+            geometry = DeckCardGeometry.COMPACT,
+            homePresentation = DeckHomePresentation.MIDNIGHT_EDITORIAL,
+            playerChrome = DeckPlayerChrome.APPLE_FLOAT, navVisual = DeckNavVisual.MINIMAL,
+            motionStyle = DeckMotionStyle.INSTANT,
+            subtitle = "Quiet midnight magazine · typography · curated browse cards"),
+        DeckThemeProfile("Cyber Console X", 0xFF7EFFC7L, 0xFF040D13L,
+            fontScale = 1.03f, fontFamily = FontFamily.Monospace,
+            cornerRadiusDp = 3, contentGapDp = 9,
+            navigationPlacement = DeckNavigationPlacement.SIDE, navigationHeightDp = 64,
+            geometry = DeckCardGeometry.TERMINAL,
+            homePresentation = DeckHomePresentation.CYBER_COMMAND,
+            playerChrome = DeckPlayerChrome.CYBER, navVisual = DeckNavVisual.COMMAND,
+            motionStyle = DeckMotionStyle.PULSE,
+            subtitle = "Precision HUD workspace · data panels · technical player")
     )
 
     // Older app installations retain their chosen preset after structural redesign.

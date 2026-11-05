@@ -1027,7 +1027,7 @@ fun NativeExoPlayer(
                     // Hardware Next may arrive before the metadata/title resolver.
                     // Watch-Next only requires the source video ID; title search is optional.
                     nextLookupInProgress = true
-                        playbackScope.launch {
+                    playbackScope.launch {
                             try {
                                 // First use the current video's actual Watch-Next
                                 // recommendations. Only fall back to title search when the

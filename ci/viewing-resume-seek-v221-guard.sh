@@ -11,9 +11,9 @@ SEEK=source/app/src/main/java/com/drivedeck/tubedeck/player/SeekPreviewPolicy.kt
 THEMES=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/ThemeProfiles.kt
 VIDEO_VIEW=source/app/src/main/res/layout/mytube_viewing_player_view.xml
 
-test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 13
-grep -Fq 'versionCode = 109' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.2.3"' source/app/build.gradle.kts
+test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
+grep -Fq 'versionCode = 110' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.0"' source/app/build.gradle.kts
 grep -Fq 'surface_type="texture_view"' "$VIDEO_VIEW"
 grep -Fq 'key(carHeadUnit)' "$PLAYER"
 ! grep -Fq 'key(carHeadUnit, viewingMode != ViewingMode.NORMAL)' "$PLAYER"
@@ -60,7 +60,7 @@ assert 'val controllerScale = if (isPortrait)' in p, 'portrait buttons not scale
 assert 'PlayerViewingModesDialog(' in p, 'selection dialog missing'
 assert p.index('resumeStore.record(media.mediaUri, position, exoPlayer.duration)') < p.index('exoPlayer.release()'), 'resume snapshot must precede engine release'
 assert 'onScrubChange = { scrubFraction = it }' not in p, 'remote seek source not separated'
-print('PASS: 13-theme shared player, persistent portrait moon button, no stale dismissal, resume order, interactive previews')
+print('PASS: 19-theme shared player, persistent portrait moon button, no stale dismissal, resume order, interactive previews')
 PY
 test -f source/app/src/test/java/com/drivedeck/tubedeck/player/VideoResumePolicyTest.kt
 test -f source/app/src/test/java/com/drivedeck/tubedeck/player/SeekPreviewPolicyTest.kt

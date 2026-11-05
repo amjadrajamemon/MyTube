@@ -13,8 +13,8 @@ TV=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TvRemoteNavigat
 
 test -f "$KEYS"
 test -f source/app/src/test/java/com/drivedeck/tubedeck/player/CarMediaTransportKeyPolicyTest.kt
-grep -Fq 'versionCode = 109' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.2.3"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 110' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.0"' source/app/build.gradle.kts
 grep -Fq 'KEYCODE_MEDIA_SKIP_FORWARD' "$KEYS"
 grep -Fq 'KEYCODE_MEDIA_STEP_FORWARD' "$KEYS"
 grep -Fq 'KeyEvent.ACTION_UP' "$BRIDGE"
@@ -48,5 +48,5 @@ assert 'fun dispatchNextKey(): Boolean' in p
 assert 'PlaybackHardwareButtonBridge.register(' in p
 assert 'PlaybackHardwareButtonBridge.unregister(exoPlayer)' in p
 assert 'private var lastNextDispatchTime' in Path('source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackHardwareButtonBridge.kt').read_text()
-print('PASS: same next queue for touch and car, unified MediaSession/Activity, OEM UP-only, 13-theme shared player')
+print('PASS: same next queue for touch and car, unified MediaSession/Activity, OEM UP-only, 19-theme shared player')
 PY

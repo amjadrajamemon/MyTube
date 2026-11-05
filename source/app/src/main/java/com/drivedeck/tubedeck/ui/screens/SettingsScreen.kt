@@ -147,6 +147,14 @@ fun SettingsScreen(
     val repository = remember(context) { TubeDeckRepository.get(context) }
     val privateSession by repository.privateSession.collectAsState()
 
+    var adaptiveExperienceEnabled by remember { mutableStateOf(currentSettings.adaptiveExperienceEnabled) }
+    var carDashboardEnabled by remember { mutableStateOf(currentSettings.carDashboardEnabled) }
+    var homeFeedOrder by remember { mutableStateOf(currentSettings.homeFeedOrder) }
+    var homeDisplayMode by remember { mutableStateOf(currentSettings.homeDisplayMode) }
+    var studioHomeLayout by remember { mutableStateOf(currentSettings.studioHomeLayout) }
+    var studioNavigation by remember { mutableStateOf(currentSettings.studioNavigation) }
+    var studioPlayer by remember { mutableStateOf(currentSettings.studioPlayer) }
+    var studioMotion by remember { mutableStateOf(currentSettings.studioMotion) }
     var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
@@ -161,7 +169,11 @@ fun SettingsScreen(
             fontScale = fontScale.coerceIn(0.80f, 1.35f),
             themeAccentArgb = themeAccentArgb,
             themeBackgroundArgb = themeBackgroundArgb,
-            themeTextArgb = themeTextArgb
+            themeTextArgb = themeTextArgb,
+            studioHomeLayout = studioHomeLayout,
+            studioNavigation = studioNavigation,
+            studioPlayer = studioPlayer,
+            studioMotion = studioMotion
         )
 
     // Every UI-editable preference is merged into the latest repository snapshot.
@@ -212,6 +224,14 @@ fun SettingsScreen(
                             subtitleBottomInsetDp = subtitleBottomInsetDp,
                             remoteNextKeyCode = remoteNextKeyCode,
                             remotePreviousKeyCode = remotePreviousKeyCode,
+                            adaptiveExperienceEnabled = adaptiveExperienceEnabled,
+                            carDashboardEnabled = carDashboardEnabled,
+                            homeFeedOrder = homeFeedOrder,
+                            homeDisplayMode = homeDisplayMode,
+                            studioHomeLayout = studioHomeLayout,
+                            studioNavigation = studioNavigation,
+                            studioPlayer = studioPlayer,
+                            studioMotion = studioMotion,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
                             themeAccentArgb = themeAccentArgb,
@@ -434,6 +454,47 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+
+            SettingsCard(title = "TubeDeck Experience Studio") {
+                Text("Build an interface, not just a color palette. Preset retains the selected theme's original design.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                ToggleRow("Morphing UI · adapt to TV, car and wide screens", adaptiveExperienceEnabled) {
+                    adaptiveExperienceEnabled = it
+                }
+                ToggleRow("Car dashboard on detected head units", carDashboardEnabled) {
+                    carDashboardEnabled = it
+                }
+                Text("Car dashboard is an audio-first parked-use layout, not a vehicle-speed interlock.",
+                    color = TubeDeckTextSecondary, fontSize = 10.sp)
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                StudioChoiceRow(
+                    "Home architecture",
+                    listOf("Preset", "Glass Lounge", "Cinematic", "Dashboard", "Editorial", "Compact"),
+                    studioHomeLayout
+                ) { studioHomeLayout = it }
+                StudioChoiceRow(
+                    "Navigation architecture",
+                    listOf("Preset", "Top", "Bottom", "Sidebar"),
+                    studioNavigation
+                ) { studioNavigation = it }
+                StudioChoiceRow(
+                    "Player controls",
+                    listOf("Preset", "Cinema", "Glass", "Dashboard", "Minimal", "Technical"),
+                    studioPlayer
+                ) { studioPlayer = it }
+                StudioChoiceRow(
+                    "Motion",
+                    listOf("Preset", "Off", "Snappy", "Smooth", "Pulse"),
+                    studioMotion
+                ) { studioMotion = it }
+                OutlinedButton(onClick = {
+                    studioHomeLayout = "Preset"
+                    studioNavigation = "Preset"
+                    studioPlayer = "Preset"
+                    studioMotion = "Preset"
+                }) { Text("Reset Studio overrides") }
             }
 
             SettingsCard(title = "App interface") {
@@ -849,6 +910,33 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Home layout") {
+                Text("Choose how the three feed sections are presented and arranged.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp)
+                StudioChoiceRow("Card presentation", listOf("Theme", "Compact", "Cards", "Cinematic"),
+                    homeDisplayMode) { homeDisplayMode = it }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                com.drivedeck.tubedeck.ui.screens.HomeFeedArrangement.normalize(homeFeedOrder)
+                    .forEachIndexed { position, feed ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(feed, modifier = Modifier.weight(1f), color = TubeDeckTextPrimary)
+                            IconButton(
+                                enabled = position > 0,
+                                onClick = {
+                                    homeFeedOrder = HomeFeedArrangement.move(homeFeedOrder, feed, -1)
+                                }
+                            ) { Icon(Icons.Default.KeyboardArrowUp, "Move $feed earlier") }
+                            IconButton(
+                                enabled = position < 2,
+                                onClick = {
+                                    homeFeedOrder = HomeFeedArrangement.move(homeFeedOrder, feed, 1)
+                                }
+                            ) { Icon(Icons.Default.KeyboardArrowDown, "Move $feed later") }
+                        }
+                    }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 ToggleRow("Relevant", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
                 ToggleRow("History", homeHistoryEnabled) { homeHistoryEnabled = it }
                 ToggleRow("Trending", homeTrendingEnabled) { homeTrendingEnabled = it }
@@ -969,6 +1057,28 @@ private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
                         .background(if (it == 0) accent else panel))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StudioChoiceRow(
+    title: String,
+    choices: List<String>,
+    current: String,
+    onSelect: (String) -> Unit
+) {
+    Text(title, color = TubeDeckTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        choices.forEach { choice ->
+            FilterChip(
+                selected = current == choice,
+                onClick = { onSelect(choice) },
+                label = { Text(choice, fontSize = 11.sp) }
+            )
         }
     }
 }

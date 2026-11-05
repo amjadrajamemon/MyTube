@@ -59,6 +59,12 @@ object DeckExperienceCatalog {
             "Apple TV Inspired" -> DeckBackdropStyle.EDITORIAL
             "YouTube Standard" -> DeckBackdropStyle.MOBILE
             "YouTube Desktop" -> DeckBackdropStyle.DESKTOP_VIDEO
+            "NeoGlass Luxe" -> DeckBackdropStyle.FROSTED_GLASS
+            "Cinema Deck" -> DeckBackdropStyle.CINEMA
+            "CommandDrive Auto" -> DeckBackdropStyle.BROADCAST_GRID
+            "StreamPlus Luxe TV" -> DeckBackdropStyle.TV_SPOTLIGHT
+            "Midnight Editorial Pro" -> DeckBackdropStyle.EDITORIAL
+            "Cyber Console X" -> DeckBackdropStyle.DIGITAL_HUD
             "SmartTube Pro" -> DeckBackdropStyle.TV_RAILS
             else -> DeckBackdropStyle.FROSTED_GLASS
         }

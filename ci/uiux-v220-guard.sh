@@ -16,8 +16,8 @@ TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 110' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.0"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 111' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.1"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"

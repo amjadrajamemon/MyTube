@@ -348,7 +348,10 @@ fun SettingsScreen(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(6.dp))
+                Text("SIGNATURE COLLECTION  •  SIX PREMIUM EXPERIENCES",
+                    color = TubeDeckAccentCyan, fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 appearancePresets.chunked(2).forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1069,6 +1072,54 @@ private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
                             Tile(Modifier.weight(1f), 48.dp)
                         }
                     }
+                    DeckHomePresentation.NEO_GLASS_LOUNGE -> {
+                        Box(Modifier.fillMaxWidth().height(28.dp)
+                            .clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = .22f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Tile(Modifier.weight(1f), 22.dp)
+                            Tile(Modifier.weight(1f), 22.dp)
+                        }
+                    }
+                    DeckHomePresentation.CINEMA_DECK_STAGE -> {
+                        Box(Modifier.fillMaxWidth().height(36.dp)
+                            .clip(RoundedCornerShape(6.dp)).background(accent.copy(alpha = .28f)))
+                        Tile(Modifier.fillMaxWidth(), 6.dp)
+                        Tile(Modifier.fillMaxWidth(), 6.dp)
+                    }
+                    DeckHomePresentation.COMMAND_DRIVE -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(1f), 53.dp)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Tile(Modifier.fillMaxWidth(), 24.dp)
+                                Tile(Modifier.fillMaxWidth(), 24.dp)
+                            }
+                        }
+                    }
+                    DeckHomePresentation.STREAMPLUS_LOUNGE -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(3f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(4) { Tile(Modifier.weight(1f), 8.dp) }
+                        }
+                    }
+                    DeckHomePresentation.MIDNIGHT_EDITORIAL -> {
+                        Tile(Modifier.fillMaxWidth(.6f), 8.dp)
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(accent))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(2f), 32.dp)
+                            Tile(Modifier.weight(1f), 32.dp)
+                        }
+                    }
+                    DeckHomePresentation.CYBER_COMMAND -> {
+                        Box(Modifier.fillMaxWidth().height(7.dp).background(accent.copy(alpha = .6f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Tile(Modifier.weight(2f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                        }
+                    }
                     else -> repeat(2) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
@@ -1110,7 +1161,13 @@ private fun StudioChoiceRow(
     }
 }
 
-private val appearancePresets = DeckThemeCatalog.presets
+private val premiumThemeNames = setOf(
+    "NeoGlass Luxe", "Cinema Deck", "CommandDrive Auto",
+    "StreamPlus Luxe TV", "Midnight Editorial Pro", "Cyber Console X"
+)
+private val appearancePresets = DeckThemeCatalog.presets.sortedBy {
+    if (it.name in premiumThemeNames) 0 else 1
+}
 
 @Composable
 private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) -> Unit) {

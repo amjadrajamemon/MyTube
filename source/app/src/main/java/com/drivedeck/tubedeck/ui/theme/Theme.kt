@@ -52,14 +52,14 @@ fun TubeDeckTheme(
     val selectedProfile = DeckThemeCatalog.get(appearancePreset)
     // Explicit manual selections are preserved unless device adaptation is opted in.
     // A car takes precedence over TV-like input detection on aftermarket head units.
-    val autoName = when {
-        (carDashboardEnabled || adaptiveExperienceEnabled) && carDevice -> "CommandDrive Auto"
-        adaptiveExperienceEnabled && tvDevice -> "StreamPlus Luxe TV"
-        adaptiveExperienceEnabled && LocalConfiguration.current.screenWidthDp >= 780 ->
-            "NeoGlass Luxe"
-        adaptiveExperienceEnabled -> "Midnight Editorial Pro"
-        else -> appearancePreset
-    }
+    val autoName = DeckDeviceModePolicy.theme(
+        selected = appearancePreset,
+        adaptive = adaptiveExperienceEnabled,
+        carDashboard = carDashboardEnabled,
+        carDetected = carDevice,
+        tvDetected = tvDevice,
+        viewportWidthDp = LocalConfiguration.current.screenWidthDp
+    )
     val baseProfile = DeckThemeCatalog.get(autoName)
     val profile = DeckStudioPolicy.resolve(
         baseProfile, studioHomeLayout, studioNavigation, studioPlayer, studioMotion,

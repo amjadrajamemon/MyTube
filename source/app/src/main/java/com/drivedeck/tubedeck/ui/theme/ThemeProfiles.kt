@@ -229,6 +229,8 @@ object DeckStudioPolicy {
             "Dashboard" -> DeckHomePresentation.COMMAND_DRIVE
             "Editorial" -> DeckHomePresentation.MIDNIGHT_EDITORIAL
             "Compact" -> DeckHomePresentation.AMOLED_INDEX
+            "TV Lounge" -> DeckHomePresentation.STREAMPLUS_LOUNGE
+            "Cyber HUD" -> DeckHomePresentation.CYBER_COMMAND
             else -> base.homePresentation
         }
         val nav = when (navigation) {

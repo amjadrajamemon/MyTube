@@ -373,6 +373,7 @@ fun DriveDeckScreen(
                                 (suggestedVideos.firstOrNull() ?: trendingVideos.firstOrNull())?.let {
                                     HomeSpotlight(it, "NOW SHOWING", onOpenVideo)
                                 }
+                                ThemeDiscoveryPills(onExecuteSearch, listOf("Trailers", "Movies", "Music", "Documentaries"))
                                 Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
                                 Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
                                 Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
@@ -740,6 +741,29 @@ fun DriveDeckScreen(
     }
 }
 
+/** Responsive, keyboard/TV-focusable quick discovery lane for premium themes. */
+@Composable
+private fun ThemeDiscoveryPills(
+    onSearch: (String) -> Unit,
+    terms: List<String> = listOf("Music", "Technology", "Film", "Gaming", "Travel", "Science")
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp)
+    ) {
+        items(terms.size) { index ->
+            val term = terms[index]
+            FilterChip(
+                selected = false,
+                onClick = { onSearch(term) },
+                label = { Text(term, maxLines = 1) },
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(16.dp))
+            )
+        }
+    }
+}
+
 /** Full-screen, measured-width video discovery grid for YouTube-style modes. */
 @Composable
 private fun YouTubeFeedGrid(
@@ -954,8 +978,12 @@ private fun HomeSpotlight(
     onOpenVideo: (HomeVideo) -> Unit
 ) {
     val profile = LocalDeckThemeProfile.current
-    val editorial = profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL
-    val cinema = profile.homePresentation == DeckHomePresentation.CINEMA_STRIPS
+    val editorial = profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL ||
+        profile.homePresentation == DeckHomePresentation.MIDNIGHT_EDITORIAL
+    val cinema = profile.homePresentation in setOf(
+        DeckHomePresentation.CINEMA_STRIPS, DeckHomePresentation.CINEMA_DECK_STAGE,
+        DeckHomePresentation.STREAMPLUS_LOUNGE
+    )
     val shape = RoundedCornerShape(if (editorial) 0.dp else profile.cornerRadiusDp.dp)
     Surface(
         color = if (editorial) TubeDeckBackground else TubeDeckSurfaceVariant,

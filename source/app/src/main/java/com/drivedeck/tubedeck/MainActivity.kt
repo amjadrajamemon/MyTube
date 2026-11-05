@@ -223,7 +223,16 @@ class MainActivity : ComponentActivity() {
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
                 textArgb = activeAppearance.themeTextArgb,
                 appearancePreset = activeAppearance.appearancePreset,
-                lowResourceMode = settings.lowResourceMode
+                lowResourceMode = settings.lowResourceMode,
+                adaptiveExperienceEnabled = activeAppearance.adaptiveExperienceEnabled,
+                carDashboardEnabled = activeAppearance.carDashboardEnabled,
+                studioHomeLayout = activeAppearance.studioHomeLayout,
+                studioNavigation = activeAppearance.studioNavigation,
+                studioPlayer = activeAppearance.studioPlayer,
+                studioMotion = activeAppearance.studioMotion,
+                studioDensity = activeAppearance.studioDensity,
+                studioCorners = activeAppearance.studioCorners,
+                studioGlow = activeAppearance.studioGlow
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
@@ -1189,6 +1198,8 @@ class MainActivity : ComponentActivity() {
                                     suggestionsEnabled = settings.homeSuggestionsEnabled,
                                     historyEnabled = settings.homeHistoryEnabled,
                                     trendingEnabled = settings.homeTrendingEnabled,
+                                    homeFeedOrder = settings.homeFeedOrder,
+                                    homeDisplayMode = settings.homeDisplayMode,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,
                                     viewStateKey = currentScreen.name,

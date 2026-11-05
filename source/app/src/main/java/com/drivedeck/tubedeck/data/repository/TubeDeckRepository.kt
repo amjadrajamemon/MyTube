@@ -189,6 +189,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putInt("subtitleBottomInsetDp", next.subtitleBottomInsetDp.coerceIn(0, 120))
             putInt("remoteNextKeyCode", next.remoteNextKeyCode.coerceAtLeast(0))
             putInt("remotePreviousKeyCode", next.remotePreviousKeyCode.coerceAtLeast(0))
+            putBoolean("adaptiveExperienceEnabled", next.adaptiveExperienceEnabled)
+            putBoolean("carDashboardEnabled", next.carDashboardEnabled)
+            putString("homeFeedOrder", next.homeFeedOrder)
+            putString("homeDisplayMode", next.homeDisplayMode)
+            putString("studioHomeLayout", next.studioHomeLayout)
+            putString("studioNavigation", next.studioNavigation)
+            putString("studioPlayer", next.studioPlayer)
+            putString("studioMotion", next.studioMotion)
+            putString("studioDensity", next.studioDensity)
+            putString("studioCorners", next.studioCorners)
+            putString("studioGlow", next.studioGlow)
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
@@ -263,6 +274,17 @@ class TubeDeckRepository private constructor(private val context: Context) {
         subtitleBottomInsetDp = prefs.getInt("subtitleBottomInsetDp", 0).coerceIn(0, 120),
         remoteNextKeyCode = prefs.getInt("remoteNextKeyCode", 0).coerceAtLeast(0),
         remotePreviousKeyCode = prefs.getInt("remotePreviousKeyCode", 0).coerceAtLeast(0),
+        adaptiveExperienceEnabled = prefs.getBoolean("adaptiveExperienceEnabled", false),
+        carDashboardEnabled = prefs.getBoolean("carDashboardEnabled", false),
+        homeFeedOrder = prefs.getString("homeFeedOrder", "History,Relevant,Trending") ?: "History,Relevant,Trending",
+        homeDisplayMode = prefs.getString("homeDisplayMode", "Theme") ?: "Theme",
+        studioHomeLayout = prefs.getString("studioHomeLayout", "Preset") ?: "Preset",
+        studioNavigation = prefs.getString("studioNavigation", "Preset") ?: "Preset",
+        studioPlayer = prefs.getString("studioPlayer", "Preset") ?: "Preset",
+        studioMotion = prefs.getString("studioMotion", "Preset") ?: "Preset",
+        studioDensity = prefs.getString("studioDensity", "Preset") ?: "Preset",
+        studioCorners = prefs.getString("studioCorners", "Preset") ?: "Preset",
+        studioGlow = prefs.getString("studioGlow", "Preset") ?: "Preset",
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),

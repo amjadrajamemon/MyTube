@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import androidx.compose.ui.platform.LocalContext
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import androidx.compose.ui.platform.LocalView
@@ -33,20 +35,57 @@ fun TubeDeckTheme(
     textArgb: Long = 0xFFFFFFFFL,
     appearancePreset: String = "Glass Midnight",
     lowResourceMode: Boolean = false,
+    adaptiveExperienceEnabled: Boolean = false,
+    carDashboardEnabled: Boolean = false,
+    studioHomeLayout: String = "Preset",
+    studioNavigation: String = "Preset",
+    studioPlayer: String = "Preset",
+    studioMotion: String = "Preset",
+    studioDensity: String = "Preset",
+    studioCorners: String = "Preset",
+    studioGlow: String = "Preset",
     content: @Composable () -> Unit
 ) {
-    val profile = DeckThemeCatalog.get(appearancePreset)
-    val experience = DeckExperienceCatalog.tokens(
+    val context = LocalContext.current
+    val carDevice = CarHeadUnitPolicy.isCarHeadUnit(context)
+    val tvDevice = isTvLikeNavigationDevice(context)
+    val selectedProfile = DeckThemeCatalog.get(appearancePreset)
+    // Explicit manual selections are preserved unless device adaptation is opted in.
+    // A car takes precedence over TV-like input detection on aftermarket head units.
+    val autoName = DeckDeviceModePolicy.theme(
+        selected = appearancePreset,
+        adaptive = adaptiveExperienceEnabled,
+        carDashboard = carDashboardEnabled,
+        carDetected = carDevice,
+        tvDetected = tvDevice,
+        viewportWidthDp = LocalConfiguration.current.screenWidthDp
+    )
+    val baseProfile = DeckThemeCatalog.get(autoName)
+    val profile = DeckStudioPolicy.resolve(
+        baseProfile, studioHomeLayout, studioNavigation, studioPlayer, studioMotion,
+        studioDensity, studioCorners
+    )
+    val devicePalette = baseProfile.name != selectedProfile.name
+    val activeAccent = if (devicePalette) profile.accentArgb else accentArgb
+    val activeBackground = if (devicePalette) profile.backgroundArgb else backgroundArgb
+    val activeText = if (devicePalette) profile.textArgb else textArgb
+    val baseExperience = DeckExperienceCatalog.tokens(
         profile, lowResourceMode, DeckExperienceCatalog.restrainedMotion(LocalContext.current)
     )
+    val experience = when (studioGlow) {
+        "Off" -> baseExperience.copy(surfaceGlow = 0f, artworkAtmosphere = false)
+        "Rich" -> if (lowResourceMode) baseExperience else
+            baseExperience.copy(surfaceGlow = .20f, artworkAtmosphere = true)
+        else -> baseExperience
+    }
     // Living-room displays need readable text at a distance; leave phones/cars alone.
     val tvInputMode = isTvLikeNavigationDevice(LocalContext.current)
     val boundedFontScale = (fontScale.coerceIn(0.80f, 1.35f) * if (tvInputMode) 1.18f else 1f)
         .coerceAtMost(1.60f)
     TubeDeckRuntimeStyle.apply(
-        backgroundArgb = backgroundArgb,
-        accentArgb = accentArgb,
-        textArgb = textArgb
+        backgroundArgb = activeBackground,
+        accentArgb = activeAccent,
+        textArgb = activeText
     )
 
     val background = TubeDeckBackground

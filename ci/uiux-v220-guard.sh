@@ -15,9 +15,9 @@ DL=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DownloadsScreen.kt
 TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
-test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 13
-grep -Fq 'versionCode = 109' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.2.3"' source/app/build.gradle.kts
+test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
+grep -Fq 'versionCode = 111' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.1"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"
@@ -41,4 +41,4 @@ grep -Fq 'lowResourceMode = settings.lowResourceMode' source/app/src/main/java/c
 grep -Fq 'nightAudioEnabled = settings.nightAudioEnabled' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
 grep -Fq 'enableScreenBlackout()' "$PLAYER"
 
-echo "PASS: v2.2.0, 13 themes, shared tokens, backdrop, focus, motion, insets, existing night/blackout controls"
+echo "PASS: v2.2.0, 19 themes, shared tokens, backdrop, focus, motion, insets, existing night/blackout controls"

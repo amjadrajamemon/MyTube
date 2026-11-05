@@ -84,6 +84,8 @@ fun DriveDeckScreen(
     suggestionsEnabled: Boolean = true,
     historyEnabled: Boolean = true,
     trendingEnabled: Boolean = true,
+    homeFeedOrder: String = "History,Relevant,Trending",
+    homeDisplayMode: String = "Theme",
     countryCode: String = "US",
     trendingStatus: String = "",
     viewStateKey: String = "home",
@@ -99,9 +101,13 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     val deckTheme = LocalDeckThemeProfile.current
-    var listView by rememberSaveable(viewStateKey, deckTheme.name) {
-        mutableStateOf(deckTheme.geometry == DeckCardGeometry.COMPACT ||
-            deckTheme.geometry == DeckCardGeometry.TERMINAL)
+    var listView by rememberSaveable(viewStateKey, deckTheme.name, homeDisplayMode) {
+        mutableStateOf(when (homeDisplayMode) {
+            "Compact" -> true
+            "Cards", "Cinematic" -> false
+            else -> deckTheme.geometry == DeckCardGeometry.COMPACT ||
+                deckTheme.geometry == DeckCardGeometry.TERMINAL
+        })
     }
     // Navigation is gesture-driven: phone users swipe between Home feed panels,
     // while theme-specific stacked shelves use horizontal video rails.
@@ -131,11 +137,14 @@ fun DriveDeckScreen(
     // SaveableStateProvider in MainActivity restores this when returning from video.
     var selectedHomeFeed by rememberSaveable(viewStateKey) { mutableStateOf("") }
     var selectedHomeVideoId by rememberSaveable(viewStateKey) { mutableStateOf("") }
-    val feeds = listOf(
-        "History" to if (historyEnabled) watchHistory else emptyList(),
-        "Relevant" to if (suggestionsEnabled) suggestedVideos else emptyList(),
-        "Trending" to if (trendingEnabled) trendingVideos else emptyList()
-    )
+    val feedOrder = HomeFeedArrangement.normalize(homeFeedOrder)
+    val feeds = feedOrder.map { name ->
+        name to when (name) {
+            "History" -> if (historyEnabled) watchHistory else emptyList()
+            "Relevant" -> if (suggestionsEnabled) suggestedVideos else emptyList()
+            else -> if (trendingEnabled) trendingVideos else emptyList()
+        }
+    }
     val selectedIsAvailable = feeds.any { (feed, videos) ->
         feed == selectedHomeFeed && videos.any { it.videoId == selectedHomeVideoId }
     }
@@ -260,8 +269,8 @@ fun DriveDeckScreen(
 
                         @Composable
                         fun Feed(index: Int, feedModifier: Modifier, horizontalCards: Boolean) {
-                            when (index) {
-                                0 -> HomeFeedColumn(
+                            when (feedOrder.getOrElse(index) { "Trending" }) {
+                                "History" -> HomeFeedColumn(
                                     title = "History",
                                     horizontal = horizontalCards,
                                     loadMoreEnabled = "History" !in moreFeedsExhausted,
@@ -281,7 +290,7 @@ fun DriveDeckScreen(
                                     },
                                     modifier = feedModifier
                                 )
-                                1 -> HomeFeedColumn(
+                                "Relevant" -> HomeFeedColumn(
                                     title = "Relevant",
                                     horizontal = horizontalCards,
                                     moreLoading = "Relevant" in moreFeedsLoading,
@@ -327,6 +336,155 @@ fun DriveDeckScreen(
                         }
 
                         when (deckTheme.homePresentation) {
+                            DeckHomePresentation.NEO_GLASS_LOUNGE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = TubeDeckSurfaceVariant.copy(alpha = .82f),
+                                    tonalElevation = 5.dp,
+                                    modifier = Modifier.fillMaxWidth().border(
+                                        1.dp, TubeDeckAccentCyan.copy(alpha = .40f), RoundedCornerShape(24.dp)
+                                    )
+                                ) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("NEOGLASS   /   YOUR SCREEN, REIMAGINED",
+                                            color = TubeDeckAccentCyan, fontSize = 11.sp)
+                                        suggestedVideos.firstOrNull()?.let { HomeSpotlight(it, "Tonight's highlight", onOpenVideo) }
+                                    }
+                                }
+                                if (availableWidth >= 800.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Feed(0, Modifier.weight(1f), horizontalCards = false)
+                                        Feed(1, Modifier.weight(1f), horizontalCards = false)
+                                    }
+                                } else {
+                                    Feed(0, Modifier.fillMaxWidth(), horizontalCards = true)
+                                    Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                            }
+
+                            DeckHomePresentation.CINEMA_DECK_STAGE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                Text("CINEMA DECK  /  FEATURE PRESENTATION",
+                                    color = TubeDeckAccentCyan, fontSize = 11.sp)
+                                (suggestedVideos.firstOrNull() ?: trendingVideos.firstOrNull())?.let {
+                                    HomeSpotlight(it, "NOW SHOWING", onOpenVideo)
+                                }
+                                ThemeDiscoveryPills(onExecuteSearch, listOf("Trailers", "Movies", "Music", "Documentaries"))
+                                Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                                Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
+                            }
+
+                            DeckHomePresentation.COMMAND_DRIVE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    color = TubeDeckSurfaceVariant,
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(18.dp)) {
+                                        Text("COMMAND DRIVE  /  AUDIO-FIRST",
+                                            color = TubeDeckAccentCyan,
+                                            fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text("For parked browsing only. Keep video hidden while driving.",
+                                            color = TubeDeckTextSecondary, fontSize = 12.sp)
+                                        Spacer(Modifier.height(10.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            Button(onClick = onOpenDownloads) { Text("Offline library") }
+                                            OutlinedButton(onClick = { onExecuteSearch("music") }) {
+                                                Text("Music")
+                                            }
+                                        }
+                                    }
+                                }
+                                if (availableWidth >= 820.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        Feed(0, Modifier.weight(1f), horizontalCards = false)
+                                        Column(Modifier.weight(1.2f)) {
+                                            Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                            Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                                        }
+                                    }
+                                } else {
+                                    repeat(3) { Feed(it, Modifier.fillMaxWidth(), horizontalCards = true) }
+                                }
+                            }
+
+                            DeckHomePresentation.STREAMPLUS_LOUNGE -> Column(
+                                verticalArrangement = Arrangement.spacedBy(18.dp)
+                            ) {
+                                Text("STREAMPLUS   •   YOUR LIVING ROOM",
+                                    color = TubeDeckAccentCyan, fontWeight = FontWeight.Bold)
+                                if (availableWidth >= 840.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        Column(Modifier.weight(1.65f)) {
+                                            (suggestedVideos.firstOrNull() ?: trendingVideos.firstOrNull())?.let {
+                                                HomeSpotlight(it, "FEATURED TONIGHT", onOpenVideo)
+                                            }
+                                        }
+                                        Feed(0, Modifier.weight(1f), horizontalCards = false)
+                                    }
+                                } else {
+                                    suggestedVideos.firstOrNull()?.let {
+                                        HomeSpotlight(it, "FEATURED", onOpenVideo)
+                                    }
+                                    Feed(0, Modifier.fillMaxWidth(), horizontalCards = true)
+                                }
+                                Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                            }
+
+                            DeckHomePresentation.MIDNIGHT_EDITORIAL -> Column(
+                                verticalArrangement = Arrangement.spacedBy(26.dp)
+                            ) {
+                                Text("THE MIDNIGHT EDITION",
+                                    color = TubeDeckTextPrimary,
+                                    fontWeight = FontWeight.Light, fontSize = 25.sp)
+                                HorizontalDivider(color = TubeDeckAccentCyan.copy(alpha = .65f))
+                                (suggestedVideos.firstOrNull() ?: trendingVideos.firstOrNull())?.let {
+                                    HomeSpotlight(it, "THE FEATURE", onOpenVideo)
+                                }
+                                if (availableWidth >= 850.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                                        Feed(1, Modifier.weight(1.45f), horizontalCards = true)
+                                        Feed(0, Modifier.weight(1f), horizontalCards = false)
+                                    }
+                                } else {
+                                    Feed(1, Modifier.fillMaxWidth(), horizontalCards = true)
+                                    Feed(0, Modifier.fillMaxWidth(), horizontalCards = false)
+                                }
+                                Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                            }
+
+                            DeckHomePresentation.CYBER_COMMAND -> Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(color = TubeDeckAccentCyan.copy(alpha = .13f),
+                                    shape = RoundedCornerShape(3.dp)) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("TUBEDECK  //  COMMAND CONSOLE", color = TubeDeckAccentCyan)
+                                        Text("SIGNAL: READY", color = TubeDeckTextPrimary)
+                                    }
+                                }
+                                if (availableWidth >= 880.dp) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Feed(1, Modifier.weight(1.5f), horizontalCards = false)
+                                        Column(Modifier.weight(1f)) {
+                                            Feed(2, Modifier.fillMaxWidth(), horizontalCards = true)
+                                            Feed(0, Modifier.fillMaxWidth(), horizontalCards = true)
+                                        }
+                                    }
+                                } else {
+                                    repeat(3) { Feed(it, Modifier.fillMaxWidth(), horizontalCards = false) }
+                                }
+                            }
+
                             DeckHomePresentation.THREE_COLUMN -> when (layout) {
                                 HomeLayoutPolicy.Layout.WIDE_COLUMNS -> Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -583,6 +741,29 @@ fun DriveDeckScreen(
     }
 }
 
+/** Responsive, keyboard/TV-focusable quick discovery lane for premium themes. */
+@Composable
+private fun ThemeDiscoveryPills(
+    onSearch: (String) -> Unit,
+    terms: List<String> = listOf("Music", "Technology", "Film", "Gaming", "Travel", "Science")
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp)
+    ) {
+        items(terms.size) { index ->
+            val term = terms[index]
+            FilterChip(
+                selected = false,
+                onClick = { onSearch(term) },
+                label = { Text(term, maxLines = 1) },
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(16.dp))
+            )
+        }
+    }
+}
+
 /** Full-screen, measured-width video discovery grid for YouTube-style modes. */
 @Composable
 private fun YouTubeFeedGrid(
@@ -797,8 +978,12 @@ private fun HomeSpotlight(
     onOpenVideo: (HomeVideo) -> Unit
 ) {
     val profile = LocalDeckThemeProfile.current
-    val editorial = profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL
-    val cinema = profile.homePresentation == DeckHomePresentation.CINEMA_STRIPS
+    val editorial = profile.homePresentation == DeckHomePresentation.MINIMAL_EDITORIAL ||
+        profile.homePresentation == DeckHomePresentation.MIDNIGHT_EDITORIAL
+    val cinema = profile.homePresentation in setOf(
+        DeckHomePresentation.CINEMA_STRIPS, DeckHomePresentation.CINEMA_DECK_STAGE,
+        DeckHomePresentation.STREAMPLUS_LOUNGE
+    )
     val shape = RoundedCornerShape(if (editorial) 0.dp else profile.cornerRadiusDp.dp)
     Surface(
         color = if (editorial) TubeDeckBackground else TubeDeckSurfaceVariant,

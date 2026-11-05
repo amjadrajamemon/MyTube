@@ -730,6 +730,8 @@ fun NativeExoPlayer(
     var fallbackRecommendationsAttempted by remember(media.id) { mutableStateOf(false) }
     var fallbackRecommendationsError by remember(media.id) { mutableStateOf(false) }
     var manualRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
+    // Playback Doctor: quality fallback is explicit and only applies on a user tap.
+    var recoveryQualityHeight by remember(media.id) { mutableIntStateOf(0) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
@@ -1025,7 +1027,7 @@ fun NativeExoPlayer(
                     // Hardware Next may arrive before the metadata/title resolver.
                     // Watch-Next only requires the source video ID; title search is optional.
                     nextLookupInProgress = true
-                        playbackScope.launch {
+                    playbackScope.launch {
                             try {
                                 // First use the current video's actual Watch-Next
                                 // recommendations. Only fall back to title search when the
@@ -1765,7 +1767,9 @@ fun NativeExoPlayer(
                 if (tvSafePlayback) {
                     // TV boxes frequently ship fragile vendor codecs. Start on a single-file MP4
                     // representation at a conservative height; higher qualities remain selectable.
-                    val requestedTarget = if (preferredPlaybackQualityHeight > 0) {
+                    val requestedTarget = if (recoveryQualityHeight > 0) {
+                        recoveryQualityHeight
+                    } else if (preferredPlaybackQualityHeight > 0) {
                         preferredPlaybackQualityHeight
                     } else {
                         chooseAutoHeight(
@@ -1780,13 +1784,13 @@ fun NativeExoPlayer(
                     loadResolvedStream(
                         result,
                         safeTarget,
-                        autoSelected = preferredPlaybackQualityHeight <= 0,
+                        autoSelected = recoveryQualityHeight == 0 && preferredPlaybackQualityHeight <= 0,
                         preservePosition = false
                     )
-                } else if (preferredPlaybackQualityHeight > 0) {
+                } else if (recoveryQualityHeight > 0 || preferredPlaybackQualityHeight > 0) {
                     loadResolvedStream(
                         result,
-                        preferredPlaybackQualityHeight,
+                        recoveryQualityHeight.takeIf { it > 0 } ?: preferredPlaybackQualityHeight,
                         autoSelected = false,
                         preservePosition = false
                     )
@@ -2523,11 +2527,16 @@ fun NativeExoPlayer(
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    // Theater mode uses the reference-style right-side episode tray
+                    // in landscape; compact portraits retain the familiar bottom sheet.
+                    .align(if (cinematicPlayer && !compactPortrait)
+                        Alignment.CenterEnd else Alignment.BottomCenter)
+                    .then(if (cinematicPlayer && !compactPortrait)
+                        Modifier.widthIn(max = 430.dp) else Modifier)
                     .padding(
                         start = 10.dp,
                         end = 10.dp,
-                        bottom = if (compactPortrait) 70.dp else 78.dp
+                        bottom = if (compactPortrait) 70.dp else if (cinematicPlayer) 6.dp else 78.dp
                     )
                     .pointerInput(showPlaybackModeCards) {
                         var downwardDrag = 0f
@@ -2709,7 +2718,19 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .onFocusChanged { tvControlsFocused = it.hasFocus }
-                        .background(Color.Black.copy(alpha = playerOverlayOpacity))
+                        .then(
+                            if (cinematicPlayer) Modifier.background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Black.copy(alpha = .56f),
+                                        Color.Black.copy(alpha = .08f),
+                                        Color.Black.copy(alpha = .68f)
+                                    )
+                                )
+                            ) else Modifier.background(
+                                Color.Black.copy(alpha = playerOverlayOpacity)
+                            )
+                        )
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
                     Row(
@@ -2734,6 +2755,10 @@ fun NativeExoPlayer(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            if (cinematicPlayer && !compactPortrait) {
+                                Text("CINEMA  •  NOW PLAYING", color = TubeDeckAccentCyan,
+                                    fontSize = 9.sp, maxLines = 1)
+                            }
                             Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
                                 themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
@@ -3319,7 +3344,7 @@ fun NativeExoPlayer(
                     Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(42.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("Native stream unavailable", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Playback Doctor", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
                         Text(advice.message, color = Color.White.copy(alpha = .95f), fontSize = 13.sp)
                         Spacer(Modifier.height(5.dp))
@@ -3330,9 +3355,31 @@ fun NativeExoPlayer(
                             TextButton(
                                 onClick = { manualRecoveryAttempts += 1 },
                                 enabled = manualRecoveryAttempts < 3
-                            ) { Text("Retry stream") }
-                            TextButton(onClick = { showBookmarks = true }) { Text("Saved moments") }
+                            ) { Text("Retry") }
+                            if (advice.cause == PlaybackErrorAdvisor.Cause.DECODER ||
+                                advice.cause == PlaybackErrorAdvisor.Cause.UNKNOWN ||
+                                advice.cause == PlaybackErrorAdvisor.Cause.EXPIRED_STREAM
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        recoveryQualityHeight = 360
+                                        manualRecoveryAttempts += 1
+                                    },
+                                    enabled = manualRecoveryAttempts < 3 &&
+                                        YoutubeUrls.videoId(media.mediaUri) != null
+                                ) { Text("Try 360p") }
+                            }
+                            TextButton(onClick = { showBookmarks = true }) { Text("Moments") }
                         }
+                        TextButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(
+                                "TubeDeck Playback Doctor",
+                                PlaybackDiagnostics.report(context) + "\nFailure: " + resolveError.orEmpty()
+                            ))
+                            Toast.makeText(context, "Playback report copied", Toast.LENGTH_SHORT).show()
+                        }) { Text("Copy diagnostics") }
                         Spacer(Modifier.height(12.dp))
                         if (YoutubeUrls.videoId(media.mediaUri) != null) {
                             Text("The web player may work for this video.", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)

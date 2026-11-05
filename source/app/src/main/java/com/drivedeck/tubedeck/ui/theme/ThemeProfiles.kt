@@ -219,7 +219,9 @@ object DeckStudioPolicy {
         home: String,
         navigation: String,
         player: String,
-        motion: String
+        motion: String,
+        density: String = "Preset",
+        corners: String = "Preset"
     ): DeckThemeProfile {
         val homeMode = when (home) {
             "Cinematic" -> DeckHomePresentation.CINEMA_DECK_STAGE
@@ -255,6 +257,17 @@ object DeckStudioPolicy {
             navigationPlacement = nav,
             playerChrome = chrome,
             motionStyle = animation,
+            contentGapDp = when (density) {
+                "Compact" -> (base.contentGapDp - 5).coerceAtLeast(4)
+                "Airy" -> (base.contentGapDp + 7).coerceAtMost(32)
+                else -> base.contentGapDp
+            },
+            cornerRadiusDp = when (corners) {
+                "Sharp" -> 2
+                "Soft" -> 12
+                "Rounded" -> 26
+                else -> base.cornerRadiusDp
+            },
             navVisual = when (navigation) {
                 "Top" -> DeckNavVisual.COMMAND
                 "Sidebar" -> DeckNavVisual.TV_CLASSIC

@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import androidx.compose.ui.platform.LocalContext
 import com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice
 import androidx.compose.ui.platform.LocalView
@@ -33,9 +35,35 @@ fun TubeDeckTheme(
     textArgb: Long = 0xFFFFFFFFL,
     appearancePreset: String = "Glass Midnight",
     lowResourceMode: Boolean = false,
+    adaptiveExperienceEnabled: Boolean = false,
+    carDashboardEnabled: Boolean = false,
+    studioHomeLayout: String = "Preset",
+    studioNavigation: String = "Preset",
+    studioPlayer: String = "Preset",
+    studioMotion: String = "Preset",
     content: @Composable () -> Unit
 ) {
-    val profile = DeckThemeCatalog.get(appearancePreset)
+    val context = LocalContext.current
+    val carDevice = CarHeadUnitPolicy.isCarHeadUnit(context)
+    val tvDevice = isTvLikeNavigationDevice(context)
+    val selectedProfile = DeckThemeCatalog.get(appearancePreset)
+    // Explicit manual selections are preserved unless device adaptation is opted in.
+    // A car takes precedence over TV-like input detection on aftermarket head units.
+    val autoName = when {
+        (carDashboardEnabled || adaptiveExperienceEnabled) && carDevice -> "CommandDrive Auto"
+        adaptiveExperienceEnabled && tvDevice -> "StreamPlus Luxe TV"
+        adaptiveExperienceEnabled && LocalConfiguration.current.screenWidthDp >= 780 ->
+            "NeoGlass Luxe"
+        else -> appearancePreset
+    }
+    val baseProfile = DeckThemeCatalog.get(autoName)
+    val profile = DeckStudioPolicy.resolve(
+        baseProfile, studioHomeLayout, studioNavigation, studioPlayer, studioMotion
+    )
+    val devicePalette = baseProfile.name != selectedProfile.name
+    val activeAccent = if (devicePalette) profile.accentArgb else accentArgb
+    val activeBackground = if (devicePalette) profile.backgroundArgb else backgroundArgb
+    val activeText = if (devicePalette) profile.textArgb else textArgb
     val experience = DeckExperienceCatalog.tokens(
         profile, lowResourceMode, DeckExperienceCatalog.restrainedMotion(LocalContext.current)
     )
@@ -44,9 +72,9 @@ fun TubeDeckTheme(
     val boundedFontScale = (fontScale.coerceIn(0.80f, 1.35f) * if (tvInputMode) 1.18f else 1f)
         .coerceAtMost(1.60f)
     TubeDeckRuntimeStyle.apply(
-        backgroundArgb = backgroundArgb,
-        accentArgb = accentArgb,
-        textArgb = textArgb
+        backgroundArgb = activeBackground,
+        accentArgb = activeAccent,
+        textArgb = activeText
     )
 
     val background = TubeDeckBackground

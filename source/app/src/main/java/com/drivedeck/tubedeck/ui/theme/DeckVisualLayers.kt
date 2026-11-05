@@ -14,6 +14,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
  */
 fun Modifier.deckScreenBackground(): Modifier = composed {
     val tokens = LocalDeckExperience.current
+    val activeProfile = LocalDeckThemeProfile.current
     val base = TubeDeckBackground
     val accent = TubeDeckAccentCyan
     val strength = when (tokens.backdrop) {
@@ -51,6 +53,27 @@ fun Modifier.deckScreenBackground(): Modifier = composed {
                 listOf(lerp(base, accent, strength), base, base)
             )
         )
+        // Premium lounge lighting uses one static radial brush, never a
+        // continuously running shader or backdrop bitmap.
+        val premium = activeProfile.name in setOf(
+            "NeoGlass Luxe", "Cinema Deck", "StreamPlus Luxe TV",
+            "Midnight Editorial Pro", "Cyber Console X"
+        )
+        if (premium && tokens.surfaceGlow > 0f) {
+            val center = when (activeProfile.name) {
+                "StreamPlus Luxe TV" -> Offset(size.width * .75f, size.height * .24f)
+                "Cinema Deck" -> Offset(size.width * .50f, size.height * .04f)
+                else -> Offset(size.width * .84f, size.height * .10f)
+            }
+            drawRect(
+                brush = Brush.radialGradient(
+                    listOf(accent.copy(alpha = tokens.surfaceGlow.coerceIn(0f, .20f)),
+                        Color.Transparent),
+                    center = center,
+                    radius = (size.width * .95f).coerceAtLeast(1f)
+                )
+            )
+        }
     }
 }
 

@@ -197,6 +197,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("studioNavigation", next.studioNavigation)
             putString("studioPlayer", next.studioPlayer)
             putString("studioMotion", next.studioMotion)
+            putString("studioDensity", next.studioDensity)
+            putString("studioCorners", next.studioCorners)
+            putString("studioGlow", next.studioGlow)
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
             putLong("themeAccentArgb", next.themeAccentArgb)
@@ -279,6 +282,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
         studioNavigation = prefs.getString("studioNavigation", "Preset") ?: "Preset",
         studioPlayer = prefs.getString("studioPlayer", "Preset") ?: "Preset",
         studioMotion = prefs.getString("studioMotion", "Preset") ?: "Preset",
+        studioDensity = prefs.getString("studioDensity", "Preset") ?: "Preset",
+        studioCorners = prefs.getString("studioCorners", "Preset") ?: "Preset",
+        studioGlow = prefs.getString("studioGlow", "Preset") ?: "Preset",
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),

@@ -5,11 +5,14 @@ internal object AutoPlayableOptionsPolicy {
     fun choices(
         options: List<YoutubeStreamResolver.VideoOption>,
         progressiveOptions: List<YoutubeStreamResolver.VideoOption>,
-        compatibilityMode: Boolean
+        compatibilityMode: Boolean,
+        downloadOptions: List<YoutubeStreamResolver.VideoOption> = emptyList()
     ): List<YoutubeStreamResolver.VideoOption> {
         if (!compatibilityMode) return options.filter { it.height > 0 }
             .distinctBy { it.height }
-        val combined = progressiveOptions + options
+        // Download options preserve MP4 alternatives sometimes dropped by the
+        // resolver's display-quality grouping (which may prefer WebM).
+        val combined = progressiveOptions + downloadOptions + options
         // Car firmware is more reliable with MP4 and <=480p. Unlike the
         // previous "progressive if any" preference, we must keep lower MP4
         // adaptive streams as candidates for network degradation.

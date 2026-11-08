@@ -16,8 +16,8 @@ TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 114' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.4"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 115' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.5"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"
@@ -81,4 +81,21 @@ grep -Fq 'allowUpgrade = resourceLimits.allowAdaptiveUpgrade' "$PLAYER"
 test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/VideoTitleTypographyPolicyTest.kt
 test -f source/app/src/test/java/com/drivedeck/tubedeck/player/AdaptiveQualityPolicyTest.kt
 
-echo "PASS: v2.3.4, on-demand search, no startup keyboard, 19 themes, readable titles, adaptive quality"
+# Prevent two regressions: unrelated video resume popups, and intermittent
+# playback repeatedly trying the same incompatible high-res URL.
+RESUME=source/app/src/main/java/com/drivedeck/tubedeck/player/VideoResumePolicy.kt
+STORE=source/app/src/main/java/com/drivedeck/tubedeck/player/VideoResumeStore.kt
+OPTIONS=source/app/src/main/java/com/drivedeck/tubedeck/player/AutoPlayableOptionsPolicy.kt
+grep -Fq 'const val DEFAULT_PROMPT_SECONDS = 3' "$RESUME"
+grep -Fq 'fun shouldOfferPrompt(' "$RESUME"
+grep -Fq 'VideoResumePolicy.shouldOfferPrompt(' "$STORE"
+grep -Fq 'resumeDecisionSeconds = settings.resumeDecisionSeconds' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
+grep -Fq 'resumeCountdownSeconds' "$PLAYER"
+grep -Fq 'autoDownshifted = true' "$PLAYER"
+grep -Fq 'source.downloadOptions' "$PLAYER"
+grep -Fq 'AutoPlayableOptionsPolicy.choices(' "$PLAYER"
+grep -Fq 'downloadOptions' "$OPTIONS"
+test -f source/app/src/test/java/com/drivedeck/tubedeck/player/AutoPlayableOptionsPolicyTest.kt
+test -f source/app/src/test/java/com/drivedeck/tubedeck/player/VideoResumePolicyTest.kt
+
+echo "PASS: v2.3.5, 3-second resume, compatible Auto downshifts, one-line recent search, no startup keyboard"

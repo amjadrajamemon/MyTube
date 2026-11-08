@@ -1,4 +1,4 @@
-name: TubeDeck v2.3.5 Network Recovery + 3s Resume — Signed APKs
+name: TubeDeck v2.3.6 Install-Verified ARM64 ARMv7 and Universal
 
 on:
   push:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   dual-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 85
+    timeout-minutes: 115
     steps:
       - name: Checkout the actual feature branch
         uses: actions/checkout@v4
@@ -35,8 +35,8 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 115' source/app/build.gradle.kts
-          grep -Fq 'versionName = "2.3.5"' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 116' source/app/build.gradle.kts
+          grep -Fq 'versionName = "2.3.6"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
           HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
@@ -160,8 +160,8 @@ jobs:
           curl -fL --retry 3 --retry-delay 3 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin -o "$MODEL"
           echo "2827a03e495b1ed3048ef28a6a4620537db4ee51  $MODEL" | sha1sum -c -
 
-      - name: Run ARM64 and universal unit tests
-        run: gradle -p source testArm64DebugUnitTest testUniversalDebugUnitTest --no-parallel --max-workers=2 --stacktrace
+      - name: Run ARM64 ARMv7 and Universal unit tests
+        run: gradle -p source testArm64DebugUnitTest testArmv7DebugUnitTest testUniversalDebugUnitTest --no-parallel --max-workers=2 --stacktrace
 
       - name: Run Android lint audit (required gate)
         run: gradle -p source lintArm64Debug --no-parallel --max-workers=2 --stacktrace
@@ -170,7 +170,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.5-Android-Lint
+          name: TubeDeck-v2.3.6-Android-Lint
           path: |
             source/app/build/reports/lint-results-arm64Debug.html
             source/app/build/reports/lint-results-arm64Debug.xml
@@ -181,39 +181,85 @@ jobs:
       - name: Compile ARM64 APK
         run: gradle -p source assembleArm64Debug --no-parallel --max-workers=2 --stacktrace
 
+      - name: Compile 32-bit ARMv7 APK
+        run: |
+          gradle --stop
+          gradle -p source assembleArmv7Debug --no-parallel --max-workers=2 --stacktrace
+
       - name: Compile Universal APK
         run: |
           gradle --stop
           gradle -p source assembleUniversalDebug --no-parallel --max-workers=2 --stacktrace
 
-      - name: Verify ABI, signing, manifest and produce SHA256 files
+      - name: Verify APK ZIP, signatures, ABIs, package identity and manifest
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          for FLAVOR in arm64 universal; do
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          for FLAVOR in arm64 armv7 universal; do
             APK="source/app/build/outputs/apk/$FLAVOR/debug/app-$FLAVOR-debug.apk"
             test -s "$APK"
             unzip -t "$APK" >/dev/null
-            "$SIGNER" verify --verbose "$APK"
+            "$ZIPALIGN" -c -v 4 "$APK" >/dev/null
+            SIGNATURE_REPORT="$("$SIGNER" verify --verbose --print-certs --min-sdk-version 24 "$APK")"
+            echo "$SIGNATURE_REPORT"
+            echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v1 scheme (JAR signing): true'
+            echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true'
+            echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true'
+            PACKAGE_INFO="$("$AAPT" dump badging "$APK")"
+            echo "$PACKAGE_INFO" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd' versionCode='116' versionName='2.3.6'"
+            echo "$PACKAGE_INFO" | grep -Fq "sdkVersion:'24'"
             if [ "$FLAVOR" = "arm64" ]; then
-              unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/TubeDeck-v2.3.5-ARM64-debug.apk"
+              unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
+              ! unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
+              cp "$APK" dist/TubeDeck-v2.3.6-ARM64-debug.apk
+            elif [ "$FLAVOR" = "armv7" ]; then
+              unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
+              ! unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
+              cp "$APK" dist/TubeDeck-v2.3.6-ARMv7-debug.apk
             else
-              unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
-              unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/TubeDeck-v2.3.5-Universal-debug.apk"
+              unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
+              unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
+              cp "$APK" dist/TubeDeck-v2.3.6-Universal-debug.apk
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           ls -lh dist
 
-      - name: Upload installable dual-APK artifacts
+      - name: Install Universal APK on real Android emulator with ADB and launch app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: bash ci/apk-install-smoke.sh dist/TubeDeck-v2.3.6-Universal-debug.apk dist/
+
+      - name: Preserve emulator installation report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.5-ARM64-and-Universal
+          name: TubeDeck-v2.3.6-Installation-Diagnostics
+          path: |
+            dist/install-clean.log
+            dist/install-update.log
+            dist/installed-paths.txt
+            dist/package-dumpsys.txt
+            dist/launch.txt
+            dist/activities.txt
+            dist/logcat-startup.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload installable triple-APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TubeDeck-v2.3.6-ARM64-ARMv7-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -221,24 +267,25 @@ jobs:
       # Explicitly publish this verified development build as a GitHub
       # prerelease. Never overwrite another tag or promote this PR to main.
       # This provides independently downloadable ARM64/Universal APK links.
-      - name: Publish v2.3.5 preview with two direct APK download links
+      - name: Publish v2.3.6 preview with three direct APK download links
         if: github.ref == 'refs/heads/feature/tubedeck-six-experiences-20261105' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v2.3.5-smooth-buffer-resume-20261108"
+          TAG="v2.3.6-installation-compat-20261108"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists; retaining immutable APK assets."
             exit 0
           fi
           gh release create "$TAG" \
-            dist/TubeDeck-v2.3.5-ARM64-debug.apk \
-            dist/TubeDeck-v2.3.5-Universal-debug.apk \
+            dist/TubeDeck-v2.3.6-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.6-Universal-debug.apk \
+            dist/TubeDeck-v2.3.6-ARMv7-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "TubeDeck v2.3.5 — Network-Resilient Auto Quality + 3s Resume (ARM64 + Universal)" \
-            --notes "PREVIEW / DEVICE TESTING BUILD. Auto-quality recovery: detects low buffer and startup stalls earlier, selects genuinely compatible lower MP4 variants including those exposed only in download formats, avoids immediately upgrading after a stall, and uses a healthier rebuffer threshold. Fixed-quality extracted YouTube URLs require media-source reprepare, so zero-delay seamless bitrate switching cannot be guaranteed; HLS uses native Media3 adaptation. Resume: only meaningfully unfinished videos offer Resume vs Start Over, configurable 1-15 second countdown defaults to 3 seconds and automatically starts over if no selection; legacy missing-duration saves are excluded. Search UI rework: persistent Home/Browser text fields removed, single-row launchers in portrait and landscape, bounded transient search dialog with recent history, automatic startup keyboard focus eliminated, landscape IME hides suggestion rows. Previous fixes: readable 15-24sp sans-serif video titles with larger channel metadata, responsive card widths and optional independent title-size adjustment; fixed Auto quality downshifts on weak networks even on resource-constrained car head units. Previous fix: landscape car tablets use a compact one-row search header, history remains collapsed until opened, and capped search suggestions float over content without consuming layout height. Six premium themes: NeoGlass Luxe, Cinema Deck, CommandDrive Auto, StreamPlus Luxe TV, Midnight Editorial Pro and Cyber Console X. Includes approved ideas #1 Morphing UI, #3 Car Mode, #4 Cinema Engine, #6 Smart Home, #7 Playback Doctor and #10 Theme Studio. Excludes ideas #2, #5, #8, #9. versionCode 115; Android Lint, both APK builds, tests and signature/ABI verification are mandatory CI gates. Physical-device validation is still required. This prerelease is generated from the isolated feature branch and is NOT a production/main release."
+            --title "TubeDeck v2.3.6 — Installation Compatibility: ARM64 + ARMv7 + Universal" \
+            --notes "PREVIEW / DEVICE TESTING BUILD. Packaging: same long-lived signing certificate, v1+v2+v3 signature schemes, 32-bit ARMv7-only APK, verified install/update and cold-start on Android 11 emulator; OEM Android/car firmware must still be tested. Auto-quality recovery: detects low buffer and startup stalls earlier, selects genuinely compatible lower MP4 variants including those exposed only in download formats, avoids immediately upgrading after a stall, and uses a healthier rebuffer threshold. Fixed-quality extracted YouTube URLs require media-source reprepare, so zero-delay seamless bitrate switching cannot be guaranteed; HLS uses native Media3 adaptation. Resume: only meaningfully unfinished videos offer Resume vs Start Over, configurable 1-15 second countdown defaults to 3 seconds and automatically starts over if no selection; legacy missing-duration saves are excluded. Search UI rework: persistent Home/Browser text fields removed, single-row launchers in portrait and landscape, bounded transient search dialog with recent history, automatic startup keyboard focus eliminated, landscape IME hides suggestion rows. Previous fixes: readable 15-24sp sans-serif video titles with larger channel metadata, responsive card widths and optional independent title-size adjustment; fixed Auto quality downshifts on weak networks even on resource-constrained car head units. Previous fix: landscape car tablets use a compact one-row search header, history remains collapsed until opened, and capped search suggestions float over content without consuming layout height. Six premium themes: NeoGlass Luxe, Cinema Deck, CommandDrive Auto, StreamPlus Luxe TV, Midnight Editorial Pro and Cyber Console X. Includes approved ideas #1 Morphing UI, #3 Car Mode, #4 Cinema Engine, #6 Smart Home, #7 Playback Doctor and #10 Theme Studio. Excludes ideas #2, #5, #8, #9. versionCode 116; Android Lint, both APK builds, tests and signature/ABI verification are mandatory CI gates. Physical-device validation is still required. This prerelease is generated from the isolated feature branch and is NOT a production/main release."

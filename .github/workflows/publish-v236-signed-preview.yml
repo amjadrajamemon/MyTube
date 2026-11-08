@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.6 signed test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v236-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Retrieve the APKs from the verified build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.6-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42511245171
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Verify the exact signed build bytes and archive integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.6-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.6-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.6-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" >/dev/null; done
+          ls -lh dist
+
+      - name: Publish separate direct APK downloads as a TEST prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v2.3.6-signed-preview-20261108
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Test prerelease already exists; keeping immutable assets.'
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.6-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.6-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.6-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 97bac9e542a63e40ad64df9b1b1316604c4d254d \
+            --prerelease \
+            --title 'TubeDeck v2.3.6 signed TEST APKs (ARM64, ARMv7, Universal)' \
+            --notes 'TEST BUILD, NOT DEVICE-VALIDATED. All three APKs compiled, passed unit tests, lint, v1/v2/v3 APK signature verification, ZIP alignment, and ABI/manifest checks in GitHub Actions run 42511245171. The Android 11 emulator booted but its Android package-manager service returned Broken pipe (32) during ADB installation; therefore emulator installation was NOT verified. Test on a physical Android phone/TV before trusting this build. Download/check SHA256SUMS.txt. Release is from the isolated feature branch, not main, and does not claim production readiness.'

@@ -167,6 +167,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
 import com.drivedeck.tubedeck.player.AdaptiveQualityPolicy
+import com.drivedeck.tubedeck.player.AutoPlayableOptionsPolicy
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
 import com.drivedeck.tubedeck.player.SeekPreviewPolicy
 import com.drivedeck.tubedeck.player.VideoResumePolicy
@@ -781,6 +782,8 @@ fun NativeExoPlayer(
     var isPreparing by remember(media.id) { mutableStateOf(true) }
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
+    // A stalled Auto stream must not rebound to an unusable high bitrate.
+    var autoDownshifted by remember(media.id) { mutableStateOf(false) }
     var autoStableSamples by remember(media.id) { mutableIntStateOf(0) }
     var autoLowBufferSamples by remember(media.id) { mutableIntStateOf(0) }
     var autoUpgradeCount by remember(media.id) { mutableIntStateOf(0) }
@@ -825,8 +828,10 @@ fun NativeExoPlayer(
             .setBufferDurationsMs(
                 resourceLimits.minBufferMs,
                 resourceLimits.maxBufferMs,
-                500,
-                1_250
+                if (resourceLimits.constrained) 1_000 else 1_500,
+                // Resuming after only 1.25 seconds caused short play/stall/play
+                // cycles on fluctuating LTE car head-unit connections.
+                if (resourceLimits.constrained) 3_500 else 2_750
             )
             .setTargetBufferBytes(if (resourceLimits.constrained) resourceLimits.targetBufferBytes else C.LENGTH_UNSET)
             .setPrioritizeTimeOverSizeThresholds(!resourceLimits.constrained)
@@ -1394,10 +1399,21 @@ fun NativeExoPlayer(
             return
         }
         if (height == null) {
-            val target = chooseAutoHeight(context, sourceMedia.options.map { it.height }, bandwidthMeter.bitrateEstimate)
+            // Explicitly choosing Auto starts a fresh quality evaluation.
+            autoDownshifted = false
+            autoUpgradeCount = 0
+            autoLowBufferSamples = 0
+            autoStableSamples = 0
+            val playable = AutoPlayableOptionsPolicy.choices(
+                sourceMedia.options, sourceMedia.progressiveOptions, carHeadUnit
+            )
+            val target = chooseAutoHeight(
+                context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
+            )
             loadResolvedStream(sourceMedia, target, autoSelected = true, preservePosition = true)
             onPlaybackPreferenceChanged(playbackSpeed, 0, seekIntervalSeconds)
         } else {
+            autoDownshifted = false
             loadResolvedStream(sourceMedia, height, autoSelected = false, preservePosition = true)
             onPlaybackPreferenceChanged(playbackSpeed, height, seekIntervalSeconds)
         }
@@ -1710,7 +1726,9 @@ fun NativeExoPlayer(
                             val target = when {
                                 decoderFailure && decoderSafeHeight != null -> decoderSafeHeight
                                 autoQuality -> {
-                                    val heights = fresh.options.map { it.height }
+                                    val heights = AutoPlayableOptionsPolicy.choices(
+                                        fresh.options, fresh.progressiveOptions, carHeadUnit
+                                    ).map { it.height }
                                     val networkTarget = chooseAutoHeight(
                                         context, heights, bandwidthMeter.bitrateEstimate
                                     )
@@ -1724,12 +1742,16 @@ fun NativeExoPlayer(
                                     ?: 720
                             }
 
+                            val previousHeight = selectedHeight
                             loadResolvedStream(
                                 sourceMedia = fresh,
                                 requestedHeight = target,
                                 autoSelected = if (decoderFailure) false else autoQuality,
                                 preservePosition = true
                             )
+                            if (autoQuality && selectedHeight < previousHeight) {
+                                autoDownshifted = true
+                            }
                         } catch (cancel: CancellationException) {
                             throw cancel
                         } catch (recoveryError: Throwable) {
@@ -1913,11 +1935,14 @@ fun NativeExoPlayer(
             resolved = fresh
             hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
             val target = if (autoQuality) {
-                chooseAutoHeight(
-                    context,
-                    fresh.options.map { it.height },
-                    bandwidthMeter.bitrateEstimate
+                val playable = AutoPlayableOptionsPolicy.choices(
+                    fresh.options, fresh.progressiveOptions, carHeadUnit
                 )
+                val estimated = chooseAutoHeight(
+                    context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
+                )
+                if (autoDownshifted && selectedHeight > 0) minOf(estimated, selectedHeight)
+                else estimated
             } else {
                 selectedHeight.takeIf { it > 0 }
                     ?: fresh.options.maxOfOrNull { it.height }
@@ -1938,41 +1963,50 @@ fun NativeExoPlayer(
     }
 
     LaunchedEffect(firstFrameRendered, autoQuality, resolved, inPictureInPicture) {
-        // Standard extracted YouTube options are individual video URLs, not
-        // a single multi-representation DASH manifest. Media3 cannot ABR-switch
-        // between those URLs internally. Auto quality therefore monitors the
-        // meter + buffered position and re-prepares the cheaper URL when needed.
-        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture) {
+        // Extracted YouTube URLs are generally fixed-quality media, not a
+        // multi-representation DASH manifest. Changing them re-prepares the
+        // media source at the current position; do not claim seamless ABR.
+        if (!autoQuality || !youtubeVideo || inPictureInPicture) {
             return@LaunchedEffect
         }
-        // IMPORTANT: hardware/resource limits may disallow upgrades but must
-        // NEVER prevent safety downshifts on weak mobile/car networks.
+        // Monitor BEFORE the first frame as well: slow startup previously
+        // bypassed this entire loop and stayed stalled at the high resolution.
         while (isActive && autoQuality) {
-            delay(3_000)
+            delay(1_250L)
             val source = resolved ?: continue
             if (source.isLive && !source.liveManifestUrl.isNullOrBlank()) {
-                // Let Media3 handle HLS adaptive playback natively.
+                // ExoPlayer handles adaptive HLS live streams natively.
                 continue
             }
-            val heights = source.options.map { it.height }.filter { it > 0 }
+            if (!exoPlayer.playWhenReady || showResumePrompt ||
+                exoPlayer.currentMediaItem == null) {
+                autoLowBufferSamples = 0
+                autoStableSamples = 0
+                continue
+            }
+            val heights = AutoPlayableOptionsPolicy.choices(
+                source.options, source.progressiveOptions, carHeadUnit
+            ).map { it.height }
             if (heights.isEmpty()) continue
             val current = selectedHeight.takeIf { it > 0 } ?: continue
-            val recommended = chooseAutoHeight(context, heights, bandwidthMeter.bitrateEstimate)
+            val recommended = chooseAutoHeight(
+                context, heights, bandwidthMeter.bitrateEstimate
+            )
             val bufferedAheadMs = (exoPlayer.bufferedPosition - exoPlayer.currentPosition)
                 .coerceAtLeast(0L)
             val bufferingNow = exoPlayer.playbackState == Player.STATE_BUFFERING
-            val lowBuffer = bufferingNow || bufferedAheadMs < 4_000L
+            val lowBuffer = bufferingNow || bufferedAheadMs < 6_000L
             autoLowBufferSamples = if (lowBuffer) {
-                (autoLowBufferSamples + 1).coerceAtMost(10)
+                (autoLowBufferSamples + 1).coerceAtMost(12)
             } else 0
-            val stableUpgrade =
+            val stableUpgrade = !autoDownshifted &&
                 resourceLimits.allowAdaptiveUpgrade &&
                 autoUpgradeCount < 1 &&
                 recommended > current &&
-                bufferedAheadMs >= 30_000L &&
+                bufferedAheadMs >= 35_000L &&
                 exoPlayer.isPlaying
             autoStableSamples = if (stableUpgrade) {
-                (autoStableSamples + 1).coerceAtMost(10)
+                (autoStableSamples + 1).coerceAtMost(20)
             } else 0
             val now = android.os.SystemClock.elapsedRealtime()
             val decision = AdaptiveQualityPolicy.decide(
@@ -1985,21 +2019,27 @@ fun NativeExoPlayer(
                 stableSamples = autoStableSamples,
                 upgradesSoFar = autoUpgradeCount,
                 allowUpgrade = resourceLimits.allowAdaptiveUpgrade,
-                millisSinceLastSwitch = now - lastAutoSwitchMs
+                millisSinceLastSwitch = now - lastAutoSwitchMs,
+                downshiftedBefore = autoDownshifted
             )
-            if (decision != null) {
-                PlaybackDiagnostics.record(
-                    context, "auto_quality",
-                    "${current}p -> ${decision.targetHeight}p; " +
-                        "buffer=${bufferedAheadMs}ms; bandwidth=${bandwidthMeter.bitrateEstimate}"
-                )
+            if (decision != null && decision.targetHeight != current) {
+                val previousHeight = selectedHeight
                 loadResolvedStream(
                     sourceMedia = source,
                     requestedHeight = decision.targetHeight,
                     autoSelected = true,
                     preservePosition = true
                 )
-                if (decision.upgrade) autoUpgradeCount += 1
+                val switchedHeight = selectedHeight
+                PlaybackDiagnostics.record(
+                    context, "auto_quality",
+                    "${previousHeight}p -> ${switchedHeight}p; " +
+                        "buffer=${bufferedAheadMs}ms; " +
+                        "bandwidth=${bandwidthMeter.bitrateEstimate}; " +
+                        "startup=${!firstFrameRendered}"
+                )
+                if (switchedHeight < previousHeight) autoDownshifted = true
+                if (decision.upgrade && switchedHeight > previousHeight) autoUpgradeCount += 1
                 lastAutoSwitchMs = now
                 autoStableSamples = 0
                 autoLowBufferSamples = 0
@@ -6370,11 +6410,9 @@ private fun selectResolvedOption(
     requestedHeight: Int,
     compatibilityMode: Boolean
 ): YoutubeStreamResolver.VideoOption? {
-    val candidates = if (compatibilityMode) {
-        resolved.progressiveOptions.filter { it.videoMimeType == "video/mp4" && it.height <= 480 }
-            .ifEmpty { resolved.options.filter { it.videoMimeType == "video/mp4" } }
-            .ifEmpty { resolved.options }
-    } else resolved.options
+    val candidates = AutoPlayableOptionsPolicy.choices(
+        resolved.options, resolved.progressiveOptions, compatibilityMode
+    )
     val height = PlaybackQualityPolicy.chooseHeight(candidates.map { it.height }, requestedHeight, compatibilityMode)
     return candidates.firstOrNull { it.height == height }
 }

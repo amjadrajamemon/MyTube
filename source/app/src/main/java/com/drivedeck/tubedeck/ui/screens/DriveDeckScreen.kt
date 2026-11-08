@@ -1668,7 +1668,11 @@ private fun VideoViews(viewCount: Long) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * A fixed-height search launcher, never an editable field in the Home page.
+ * It stays one row in portrait AND landscape. Creating the search dialog only
+ * from a user action avoids Android restoring IME focus when Home launches.
+ */
 @Composable
 fun DriveDeckTopHeader(
     searchQuery: String,
@@ -1686,175 +1690,99 @@ fun DriveDeckTopHeader(
 ) {
     val profile = LocalDeckThemeProfile.current
     val configuration = LocalConfiguration.current
-    val context = LocalContext.current
-    val compactLandscapeHeader = SearchCompactPolicy.useSingleRowHeader(
-        widthDp = configuration.screenWidthDp,
-        heightDp = configuration.screenHeightDp,
-        isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-        carHeadUnit = CarHeadUnitPolicy.isCarHeadUnit(context)
-    )
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) {
-        if (!autoFocus) {
-            focusManager.clearFocus(force = true)
-            keyboardController?.hide()
-        }
+    var searchDialogMode by remember { mutableStateOf<String?>(null) }
+    // Do not preserve a focused search dialog across app relaunch, back stack
+    // restoration or orientation changes.
+    LaunchedEffect(configuration.orientation) {
+        searchDialogMode = null
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
     }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = TubeDeckSurface,
-        tonalElevation = if (profile.navVisual == DeckNavVisual.ICONS) 0.dp else 8.dp
+        tonalElevation = if (profile.navVisual == DeckNavVisual.ICONS) 0.dp else 4.dp
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val desktopCommand = profile.navVisual == DeckNavVisual.COMMAND && maxWidth >= 700.dp
-            val youtubeDesktop = profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP && maxWidth >= 680.dp
-            val youtubePhone = profile.navVisual == DeckNavVisual.YOUTUBE_MOBILE ||
-                (profile.navVisual == DeckNavVisual.YOUTUBE_DESKTOP && !youtubeDesktop)
-            val zen = profile.navVisual == DeckNavVisual.MINIMAL
-            val horizontalPadding = if (profile.navVisual == DeckNavVisual.COMPACT) 6.dp else 12.dp
-            val search: @Composable (Modifier) -> Unit = { searchModifier ->
-                SearchAssistField(
-                    query = searchQuery,
-                    onQueryChange = onSearchQueryChange,
-                    onSearch = onSearch,
-                    recentSearches = recentSearches,
-                    onRemoveRecentSearch = onRemoveRecentSearch,
-                    onClearRecentSearches = onClearRecentSearches,
-                    placeholder = searchPlaceholder,
-                    showRecentChips = false,
-                    autoFocus = autoFocus,
-                    compactLandscape = compactLandscapeHeader,
-                    modifier = searchModifier
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = if (landscape) 8.dp else 10.dp, vertical = 4.dp)
+                .heightIn(min = 46.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                Icons.Default.SmartDisplay, contentDescription = null,
+                tint = TubeDeckAccentCyan, modifier = Modifier.size(23.dp)
+            )
+            if (!landscape) {
+                Text(
+                    "MyTube", color = TubeDeckTextPrimary,
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold
                 )
             }
-            if (compactLandscapeHeader) {
-                // Single-row header for short landscape car tablets and TV boxes.
-                // Search history appears only as a floating overlay, not a second
-                // permanent row that steals valuable video browsing space.
+            val searchShape = RoundedCornerShape(14.dp)
+            Surface(
+                modifier = Modifier.weight(1f)
+                    .height(42.dp)
+                    .tvInputHighlight(searchShape)
+                    .clickable { searchDialogMode = "search" },
+                color = TubeDeckSurfaceVariant,
+                shape = searchShape
+            ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        tint = TubeDeckAccentCyan,
-                        modifier = Modifier.size(22.dp)
+                        Icons.Default.Search, contentDescription = null,
+                        tint = TubeDeckAccentCyan, modifier = Modifier.size(19.dp)
                     )
-                    search(Modifier.weight(1f))
-                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
-                        Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
-                    }
-                }
-            } else if (youtubeDesktop) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Icon(Icons.Default.Menu, contentDescription = null,
-                        tint = TubeDeckTextPrimary, modifier = Modifier.size(22.dp))
-                    Icon(Icons.Default.SmartDisplay, contentDescription = null,
-                        tint = TubeDeckAccentCyan, modifier = Modifier.size(26.dp))
-                    Text("MyTube", color = TubeDeckTextPrimary,
-                        fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
-                    Spacer(Modifier.width(4.dp))
-                    search(Modifier.weight(1f))
-                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
-                        Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
-                    }
-                }
-            } else if (youtubePhone) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.SmartDisplay, contentDescription = null,
-                            tint = TubeDeckAccentCyan, modifier = Modifier.size(26.dp))
-                        Text("MyTube", color = TubeDeckTextPrimary,
-                            fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.weight(1f).padding(start = 5.dp))
-                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
-                            Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
-                        }
-                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                    }
-                    search(Modifier.fillMaxWidth())
-                }
-            } else if (desktopCommand) {
-                // A real desktop command strip: search and actions share the toolbar row.
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Default.Terminal, "Command workspace",
-                        tint = TubeDeckAccentCyan, modifier = Modifier.size(27.dp))
-                    Text("MyTube", color = TubeDeckTextPrimary,
-                        fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    search(Modifier.weight(1f))
-                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckAccentCyan)
-                    }
-                }
-            } else if (zen) {
-                // Content-first header: search is dominant; secondary actions stay compact.
-                Column(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 5.dp)) {
-                    search(Modifier.fillMaxWidth())
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("MyTube", color = TubeDeckTextSecondary,
-                            fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckTextSecondary)
-                        }
-                    }
-                }
-            } else {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = horizontalPadding,
-                        vertical = if (profile.navVisual == DeckNavVisual.COMPACT) 4.dp else 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val headerIcon = when (profile.playerChrome) {
-                            DeckPlayerChrome.HUD -> Icons.Default.Dashboard
-                            DeckPlayerChrome.ARCADE -> Icons.Default.SportsEsports
-                            DeckPlayerChrome.THEATER -> Icons.Default.Movie
-                            DeckPlayerChrome.GLASS -> Icons.Default.PlayCircleFilled
-                            DeckPlayerChrome.CONSOLE -> Icons.Default.Terminal
-                            DeckPlayerChrome.CLASSIC -> Icons.Default.PlayCircleFilled
-                            DeckPlayerChrome.TV_CLASSIC -> Icons.Default.Tv
-                            DeckPlayerChrome.YOUTUBE_MOBILE, DeckPlayerChrome.YOUTUBE_DESKTOP -> Icons.Default.SmartDisplay
-                            DeckPlayerChrome.PLEX -> Icons.Default.Movie
-                            DeckPlayerChrome.KODI -> Icons.Default.Theaters
-                            DeckPlayerChrome.MX_GESTURE -> Icons.Default.PlayCircleFilled
-                            DeckPlayerChrome.VLC_COMPACT -> Icons.Default.VideoLibrary
-                            DeckPlayerChrome.MATERIAL -> Icons.Default.SmartDisplay
-                            DeckPlayerChrome.APPLE_FLOAT -> Icons.Default.LiveTv
-                            DeckPlayerChrome.CYBER -> Icons.Default.Dashboard
-                        }
-                        Icon(headerIcon, null, tint = TubeDeckAccentCyan,
-                            modifier = Modifier.size(if (profile.navVisual == DeckNavVisual.COMPACT) 24.dp else 30.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text("MyTube", color = TubeDeckTextPrimary,
-                            fontSize = if (profile.navVisual == DeckNavVisual.COMPACT) 17.sp else 21.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.weight(1f))
-                        GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
-                        IconButton(onClick = onOpenDownloads, modifier = Modifier.size(42.dp)) {
-                            Icon(Icons.Default.FileDownload, "Downloads", tint = TubeDeckTextPrimary)
-                        }
-                    }
-                    search(Modifier.fillMaxWidth())
+                    Text(
+                        if (searchQuery.isBlank()) searchPlaceholder else searchQuery,
+                        color = TubeDeckTextSecondary,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
+            if (recentSearches.isNotEmpty()) {
+                IconButton(
+                    onClick = { searchDialogMode = "history" },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.History, contentDescription = "Recent searches",
+                        tint = TubeDeckTextPrimary
+                    )
+                }
+            }
+            GoogleAccountButton(
+                account = googleAccount,
+                onClick = onGoogleAccountClick,
+                showLabelWhenSignedOut = false
+            )
+            IconButton(onClick = onOpenDownloads, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
+            }
         }
+    }
+    if (searchDialogMode != null) {
+        com.drivedeck.tubedeck.ui.components.CompactSearchPanel(
+            query = searchQuery,
+            onQueryChange = onSearchQueryChange,
+            onSubmit = onSearch,
+            recentSearches = recentSearches,
+            onRemoveRecentSearch = onRemoveRecentSearch,
+            onClearRecentSearches = onClearRecentSearches,
+            onDismiss = { searchDialogMode = null },
+            placeholder = searchPlaceholder,
+            startWithKeyboard = searchDialogMode == "search"
+        )
     }
 }

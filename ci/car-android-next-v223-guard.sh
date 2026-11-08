@@ -13,8 +13,8 @@ TV=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TvRemoteNavigat
 
 test -f "$KEYS"
 test -f source/app/src/test/java/com/drivedeck/tubedeck/player/CarMediaTransportKeyPolicyTest.kt
-grep -Fq 'versionCode = 111' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.1"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 112' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.2"' source/app/build.gradle.kts
 grep -Fq 'KEYCODE_MEDIA_SKIP_FORWARD' "$KEYS"
 grep -Fq 'KEYCODE_MEDIA_STEP_FORWARD' "$KEYS"
 grep -Fq 'KeyEvent.ACTION_UP' "$BRIDGE"

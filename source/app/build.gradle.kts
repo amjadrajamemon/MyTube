@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 115
-        versionName = "2.3.5"
+        versionCode = 116
+        versionName = "2.3.6"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
@@ -60,6 +60,12 @@ android {
         create("arm64") {
             dimension = "abi"
             ndk { abiFilters += "arm64-v8a" }
+        }
+        create("armv7") {
+            dimension = "abi"
+            // 32-bit ARM-only installer, for car tablets whose Android OS has
+            // no 64-bit app runtime, without the very large Universal package.
+            ndk { abiFilters += "armeabi-v7a" }
         }
         create("universal") {
             dimension = "abi"
@@ -76,6 +82,12 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // Some vendor car package installers fail to recognize v2-only
+            // signatures, despite a sufficiently recent advertised Android.
+            // Dual-sign while retaining the SAME certificate/update identity.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
         if (productionSigningReady) {
             create("production") {

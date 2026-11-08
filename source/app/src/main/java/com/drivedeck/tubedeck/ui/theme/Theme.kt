@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -27,9 +28,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
 
+/** Separately tune media-title readability without magnifying navigation. */
+val LocalVideoTitleScale = compositionLocalOf { 1f }
+
 @Composable
 fun TubeDeckTheme(
     fontScale: Float = 1.0f,
+    videoTitleScale: Float = 1.0f,
     accentArgb: Long = 0xFF00D2FFL,
     backgroundArgb: Long = 0xFF080B11L,
     textArgb: Long = 0xFFFFFFFFL,
@@ -175,6 +180,7 @@ fun TubeDeckTheme(
     )
     CompositionLocalProvider(
         LocalDeckThemeProfile provides profile,
+        LocalVideoTitleScale provides videoTitleScale.coerceIn(1f, 1.5f),
         LocalDeckExperience provides experience,
         LocalDensity provides Density(
             density = baseDensity.density,

@@ -247,6 +247,14 @@ jobs:
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           ls -lh dist
 
+      - name: Upload installable triple-APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TubeDeck-v2.3.6-ARM64-ARMv7-Universal
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Install Universal APK on real Android emulator with ADB and launch app
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -254,7 +262,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          disable-animations: true
+          # Keep emulator-runner's animation-setting ADB calls disabled: Android 11
+          # image sometimes returns 'settings: Broken pipe (32)' after boot.
           emulator-boot-timeout: 600
           script: bash ci/apk-install-smoke.sh dist/TubeDeck-v2.3.6-Universal-debug.apk dist/
 
@@ -273,14 +282,6 @@ jobs:
             dist/logcat-startup.txt
           if-no-files-found: ignore
           retention-days: 30
-
-      - name: Upload installable triple-APK artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: TubeDeck-v2.3.6-ARM64-ARMv7-Universal
-          path: dist/
-          retention-days: 30
-          if-no-files-found: error
 
       # Explicitly publish this verified development build as a GitHub
       # prerelease. Never overwrite another tag or promote this PR to main.

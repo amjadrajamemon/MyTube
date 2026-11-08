@@ -177,6 +177,8 @@ data class TubeDeckSettings(
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",
     val fontScale: Float = 1.0f,
+    // Separate video-title size. Does not magnify toolbars/controls.
+    val videoTitleScale: Float = 1.0f,
     val themeAccentArgb: Long = 0xFF00D2FFL,
     val themeBackgroundArgb: Long = 0xFF080B11L,
     val themeTextArgb: Long = 0xFFFFFFFFL

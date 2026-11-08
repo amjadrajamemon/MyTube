@@ -191,7 +191,7 @@ jobs:
           gradle --stop
           gradle -p source assembleUniversalDebug --no-parallel --max-workers=2 --stacktrace
 
-      - name: Verify APK ZIP, signatures, ABIs, package identity and manifest
+      - name: Apply legacy + modern signatures and verify installable APKs
         shell: bash
         run: |
           set -euo pipefail
@@ -199,31 +199,49 @@ jobs:
           SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          KEYSTORE="$HOME/.android/debug.keystore"
+          test -s "$KEYSTORE"
           for FLAVOR in arm64 armv7 universal; do
-            APK="source/app/build/outputs/apk/$FLAVOR/debug/app-$FLAVOR-debug.apk"
-            test -s "$APK"
-            unzip -t "$APK" >/dev/null
-            "$ZIPALIGN" -c -v 4 "$APK" >/dev/null
-            SIGNATURE_REPORT="$("$SIGNER" verify --verbose --print-certs --min-sdk-version 24 "$APK")"
+            RAW="source/app/build/outputs/apk/$FLAVOR/debug/app-$FLAVOR-debug.apk"
+            test -s "$RAW"
+            unzip -t "$RAW" >/dev/null
+            "$ZIPALIGN" -c -v 4 "$RAW" >/dev/null
+            case "$FLAVOR" in
+              arm64) FINAL="dist/TubeDeck-v2.3.6-ARM64-debug.apk";;
+              armv7) FINAL="dist/TubeDeck-v2.3.6-ARMv7-debug.apk";;
+              universal) FINAL="dist/TubeDeck-v2.3.6-Universal-debug.apk";;
+            esac
+            # AGP correctly emits v2+v3 for minSdk 24 but optimizes away
+            # legacy JAR signing despite enableV1Signing=true. Explicitly
+            # re-sign with a minSdk 23 signer policy to add v1, using the
+            # ORIGINAL cached certificate (unchanged package identity).
+            "$SIGNER" sign \
+              --ks "$KEYSTORE" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android \
+              --min-sdk-version 23 \
+              --v1-signing-enabled true --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "$FINAL" "$RAW"
+            test -s "$FINAL"
+            unzip -t "$FINAL" >/dev/null
+            "$ZIPALIGN" -c -v 4 "$FINAL" >/dev/null
+            SIGNATURE_REPORT="$("$SIGNER" verify --verbose --print-certs --min-sdk-version 23 "$FINAL")"
             echo "$SIGNATURE_REPORT"
             echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v1 scheme (JAR signing): true'
             echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true'
             echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true'
-            PACKAGE_INFO="$("$AAPT" dump badging "$APK")"
+            PACKAGE_INFO="$("$AAPT" dump badging "$FINAL")"
             echo "$PACKAGE_INFO" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd' versionCode='116' versionName='2.3.6'"
             echo "$PACKAGE_INFO" | grep -Fq "sdkVersion:'24'"
             if [ "$FLAVOR" = "arm64" ]; then
-              unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
-              ! unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
-              cp "$APK" dist/TubeDeck-v2.3.6-ARM64-debug.apk
+              unzip -l "$FINAL" | grep 'lib/arm64-v8a/' >/dev/null
+              ! unzip -l "$FINAL" | grep 'lib/armeabi-v7a/' >/dev/null
             elif [ "$FLAVOR" = "armv7" ]; then
-              unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
-              ! unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
-              cp "$APK" dist/TubeDeck-v2.3.6-ARMv7-debug.apk
+              unzip -l "$FINAL" | grep 'lib/armeabi-v7a/' >/dev/null
+              ! unzip -l "$FINAL" | grep 'lib/arm64-v8a/' >/dev/null
             else
-              unzip -l "$APK" | grep 'lib/armeabi-v7a/' >/dev/null
-              unzip -l "$APK" | grep 'lib/arm64-v8a/' >/dev/null
-              cp "$APK" dist/TubeDeck-v2.3.6-Universal-debug.apk
+              unzip -l "$FINAL" | grep 'lib/armeabi-v7a/' >/dev/null
+              unzip -l "$FINAL" | grep 'lib/arm64-v8a/' >/dev/null
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -266,7 +284,7 @@ jobs:
 
       # Explicitly publish this verified development build as a GitHub
       # prerelease. Never overwrite another tag or promote this PR to main.
-      # This provides independently downloadable ARM64/Universal APK links.
+      # This provides independently downloadable ARM64, ARMv7 and Universal APK links.
       - name: Publish v2.3.6 preview with three direct APK download links
         if: github.ref == 'refs/heads/feature/tubedeck-six-experiences-20261105' && github.event_name == 'push'
         env:

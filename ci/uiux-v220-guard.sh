@@ -16,8 +16,8 @@ TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 112' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.2"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 113' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.3"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"
@@ -51,4 +51,18 @@ grep -Fq 'if (!compactLandscape && hasSearchFocus && choices.isNotEmpty())' "$SE
 test -f "$POLICY"
 test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/SearchCompactPolicyTest.kt
 
-echo "PASS: v2.3.2, 19 themes, short-landscape compact search overlay, backdrop, focus, insets, blackout"
+# Titles and stream resilience share testable policies; no tiny, hardcoded
+# 12sp Home video titles and no resource-mode suppression of downshifts.
+TITLE=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/VideoTitleTypography.kt
+ADAPTIVE=source/app/src/main/java/com/drivedeck/tubedeck/player/AdaptiveQualityPolicy.kt
+test -f "$TITLE"
+test -f "$ADAPTIVE"
+grep -Fq 'ReadableVideoTitle(video.title)' "$HOME"
+grep -Fq 'ReadableVideoMetadata(video.channelTitle' "$HOME"
+grep -Fq 'videoTitleScale' "$SETTINGS"
+grep -Fq 'AdaptiveQualityPolicy.decide(' "$PLAYER"
+grep -Fq 'allowUpgrade = resourceLimits.allowAdaptiveUpgrade' "$PLAYER"
+test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/VideoTitleTypographyPolicyTest.kt
+test -f source/app/src/test/java/com/drivedeck/tubedeck/player/AdaptiveQualityPolicyTest.kt
+
+echo "PASS: v2.3.3, 19 themes, readable adaptive titles, slow-network downshifts, compact landscape search"

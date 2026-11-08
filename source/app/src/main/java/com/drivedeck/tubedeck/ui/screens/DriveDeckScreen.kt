@@ -1743,7 +1743,7 @@ fun DriveDeckTopHeader(
                         tint = TubeDeckAccentCyan, modifier = Modifier.size(19.dp)
                     )
                     Text(
-                        if (searchQuery.isBlank()) searchPlaceholder else searchQuery,
+                        searchPlaceholder,
                         color = TubeDeckTextSecondary,
                         fontSize = 14.sp,
                         maxLines = 1,
@@ -1782,7 +1782,8 @@ fun DriveDeckTopHeader(
             onClearRecentSearches = onClearRecentSearches,
             onDismiss = { searchDialogMode = null },
             placeholder = searchPlaceholder,
-            startWithKeyboard = searchDialogMode == "search"
+            startWithKeyboard = searchDialogMode == "search",
+            historyFirst = searchDialogMode == "history"
         )
     }
 }

@@ -144,7 +144,8 @@ fun TopNavBar(
             onClearRecentSearches = onClearRecentSearches,
             onDismiss = { searchDialogMode = null },
             placeholder = "Search or enter HTTPS URL",
-            startWithKeyboard = searchDialogMode == "search"
+            startWithKeyboard = searchDialogMode == "search",
+            historyFirst = searchDialogMode == "history"
         )
     }
 }

@@ -29,7 +29,10 @@ import androidx.compose.ui.unit.sp
 import com.drivedeck.tubedeck.ui.theme.*
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Browser navigation never mounts an editable search box until explicitly
+ * requested. The fixed row leaves the web page readable in both orientations.
+ */
 @Composable
 fun TopNavBar(
     currentUrl: String,
@@ -56,108 +59,92 @@ fun TopNavBar(
     includeStatusBarInset: Boolean = true
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
-    val focusManager = LocalFocusManager.current
+    var searchDialogMode by remember { mutableStateOf<String?>(null) }
     val configuration = LocalConfiguration.current
-    val context = LocalContext.current
-    val compactLandscapeHeader = SearchCompactPolicy.useSingleRowHeader(
-        widthDp = configuration.screenWidthDp,
-        heightDp = configuration.screenHeightDp,
-        isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
-        carHeadUnit = CarHeadUnitPolicy.isCarHeadUnit(context)
-    )
-
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val focusManager = LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(configuration.orientation) {
+        searchDialogMode = null
+        keyboard?.hide()
+        focusManager.clearFocus(force = true)
+    }
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
             .windowInsetsPadding(
                 WindowInsets.safeDrawing.only(
-                    if (includeStatusBarInset)
-                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    if (includeStatusBarInset) WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                     else WindowInsetsSides.Horizontal
                 )
             ),
         color = TubeDeckSurface,
-        tonalElevation = 8.dp
+        tonalElevation = 4.dp
     ) {
-        if (compactLandscapeHeader) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = 5.dp, vertical = 3.dp)
+                .heightIn(min = 46.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(38.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                    tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
+            }
+            IconButton(onClick = onForward, enabled = canGoForward, modifier = Modifier.size(38.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward",
+                    tint = if (canGoForward) TubeDeckTextPrimary else Color.DarkGray)
+            }
+            val shape = RoundedCornerShape(13.dp)
+            Surface(
+                modifier = Modifier.weight(1f).height(42.dp)
+                    .tvInputHighlight(shape)
+                    .clickable { searchDialogMode = "search" },
+                color = TubeDeckSurfaceVariant, shape = shape
             ) {
-                IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
-                        tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
+                Row(
+                    Modifier.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, tint = TubeDeckAccentCyan,
+                        modifier = Modifier.size(18.dp))
+                    Text(
+                        currentUrl.ifBlank { "Search or enter URL" },
+                        fontSize = 13.sp, color = TubeDeckTextSecondary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 }
-                IconButton(onClick = onForward, enabled = canGoForward, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward",
-                        tint = if (canGoForward) TubeDeckTextPrimary else Color.DarkGray)
+            }
+            if (recentSearches.isNotEmpty() && !landscape) {
+                IconButton(onClick = { searchDialogMode = "history" }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.History, "Recent searches", tint = TubeDeckTextPrimary)
                 }
-                SearchAssistField(
-                    query = queryText,
-                    onQueryChange = { queryText = it },
-                    onSearch = onNavigate,
-                    recentSearches = recentSearches,
-                    onRemoveRecentSearch = onRemoveRecentSearch,
-                    onClearRecentSearches = onClearRecentSearches,
-                    placeholder = "Search or enter URL...",
-                    compactLandscape = true,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onReload, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.Refresh, "Reload", tint = TubeDeckTextPrimary)
-                }
+            }
+            IconButton(onClick = onReload, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Refresh, "Reload", tint = TubeDeckTextPrimary)
+            }
+            if (!landscape) {
                 GoogleAccountButton(
                     account = googleAccount,
                     onClick = onGoogleAccountClick,
                     showLabelWhenSignedOut = false
                 )
             }
-        } else Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End
-            ) {
-                // ALL ICONS/TITLES REMOVED FROM TOP LEFT as requested. 
-                // Only Nav controls on the right.
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GoogleAccountButton(
-                        account = googleAccount,
-                        onClick = onGoogleAccountClick,
-                        showLabelWhenSignedOut = true
-                    )
-                    IconButton(onClick = onBack, enabled = canGoBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
-                    }
-                    IconButton(onClick = onForward, enabled = canGoForward) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward", tint = if (canGoForward) TubeDeckTextPrimary else Color.DarkGray)
-                    }
-                    IconButton(onClick = onReload) {
-                        Icon(Icons.Default.Refresh, "Reload", tint = TubeDeckTextPrimary)
-                    }
-                }
-            }
-
-            // High Visibility Search Bar - Unified Design
-            SearchAssistField(
-                query = queryText,
-                onQueryChange = { queryText = it },
-                onSearch = onNavigate,
-                recentSearches = recentSearches,
-                onRemoveRecentSearch = onRemoveRecentSearch,
-                onClearRecentSearches = onClearRecentSearches,
-                placeholder = "Search or enter HTTPS URL...",
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-            )
         }
     }
+    if (searchDialogMode != null) {
+        CompactSearchPanel(
+            query = queryText,
+            onQueryChange = { queryText = it },
+            onSubmit = onNavigate,
+            recentSearches = recentSearches,
+            onRemoveRecentSearch = onRemoveRecentSearch,
+            onClearRecentSearches = onClearRecentSearches,
+            onDismiss = { searchDialogMode = null },
+            placeholder = "Search or enter HTTPS URL",
+            startWithKeyboard = searchDialogMode == "search"
+        )
+    }
 }
-

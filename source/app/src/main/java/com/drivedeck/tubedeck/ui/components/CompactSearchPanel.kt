@@ -63,7 +63,8 @@ fun CompactSearchPanel(
     onClearRecentSearches: () -> Unit,
     onDismiss: () -> Unit,
     placeholder: String,
-    startWithKeyboard: Boolean = false
+    startWithKeyboard: Boolean = false,
+    historyFirst: Boolean = false
 ) {
     val config = LocalConfiguration.current
     val density = LocalDensity.current
@@ -75,6 +76,7 @@ fun CompactSearchPanel(
     val limit = CompactSearchOverlayPolicy.suggestionCount(landscape, imeVisible)
     val clean = SearchAssistPolicy.clean(query)
     var remoteSuggestions by remember { mutableStateOf(emptyList<String>()) }
+    var editedSinceOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(clean) {
         remoteSuggestions = emptyList()
@@ -89,7 +91,10 @@ fun CompactSearchPanel(
             }
         }
     }
-    val options = if (clean.isBlank()) recentSearches.take(6)
+    // The History action always opens real history, even if the last search
+    // query was remembered from a prior session.
+    val showingHistory = (historyFirst && !editedSinceOpen) || clean.isBlank()
+    val options = if (showingHistory) recentSearches.take(6)
         else SearchAssistPolicy.merge(clean, recentSearches, remoteSuggestions)
     val visibleOptions = options.take(limit)
     fun submit(term: String) {
@@ -100,15 +105,6 @@ fun CompactSearchPanel(
         onSubmit(chosen)
         onDismiss()
     }
-    LaunchedEffect(startWithKeyboard) {
-        // This effect can run only after an explicit search-icon action creates
-        // the dialog, never at application launch.
-        if (startWithKeyboard) {
-            searchRequester.requestFocus()
-            keyboard?.show()
-        }
-    }
-
     Dialog(
         onDismissRequest = {
             keyboard?.hide()
@@ -131,6 +127,15 @@ fun CompactSearchPanel(
                 Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
+                // Focus only after this dialog's own TextField is attached.
+                // The delay also helps OEM head-unit IMEs initialize correctly.
+                LaunchedEffect(startWithKeyboard) {
+                    if (startWithKeyboard) {
+                        delay(70L)
+                        searchRequester.requestFocus()
+                        keyboard?.show()
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Search", color = TubeDeckTextPrimary, fontSize = 16.sp,
@@ -149,7 +154,10 @@ fun CompactSearchPanel(
                 }
                 OutlinedTextField(
                     value = query,
-                    onValueChange = onQueryChange,
+                    onValueChange = {
+                        editedSinceOpen = true
+                        onQueryChange(it)
+                    },
                     modifier = Modifier.fillMaxWidth().focusRequester(searchRequester),
                     placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -186,11 +194,11 @@ fun CompactSearchPanel(
                 if (visibleOptions.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (clean.isBlank()) "Recent searches" else "Suggestions",
+                            if (showingHistory) "Recent searches" else "Suggestions",
                             color = TubeDeckTextSecondary, fontSize = 12.sp,
                             modifier = Modifier.weight(1f)
                         )
-                        if (clean.isBlank() && recentSearches.isNotEmpty()) {
+                        if (showingHistory && recentSearches.isNotEmpty()) {
                             TextButton(onClick = onClearRecentSearches) {
                                 Text("Clear", fontSize = 12.sp)
                             }

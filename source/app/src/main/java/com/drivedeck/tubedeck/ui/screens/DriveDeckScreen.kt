@@ -53,6 +53,9 @@ import com.drivedeck.tubedeck.data.model.HomeVideo
 import com.drivedeck.tubedeck.data.model.PlaylistCandidate
 import com.drivedeck.tubedeck.player.YoutubeSearchPolicy
 import com.drivedeck.tubedeck.ui.components.GoogleAccountButton
+import com.drivedeck.tubedeck.ui.components.ReadableVideoTitle
+import com.drivedeck.tubedeck.ui.components.ReadableVideoMetadata
+import com.drivedeck.tubedeck.ui.components.rememberVideoTitleMetrics
 import com.drivedeck.tubedeck.ui.components.SearchAssistField
 import com.drivedeck.tubedeck.ui.components.rememberAdaptiveTvNavigation
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
@@ -784,6 +787,7 @@ private fun YouTubeFeedGrid(
     moreLoading: Boolean
 ) {
     val state = rememberLazyGridState()
+    val titleMetrics = rememberVideoTitleMetrics()
     val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
     LaunchedEffect(focusIndex) {
         if (focusIndex >= 0) state.scrollToItem(focusIndex)
@@ -807,9 +811,9 @@ private fun YouTubeFeedGrid(
             val columns = when {
                 listView -> 1
                 !desktop && maxWidth < 600.dp -> 1
-                maxWidth >= 1250.dp -> 5
-                maxWidth >= 950.dp -> 4
-                maxWidth >= 720.dp -> 3
+                maxWidth >= 1250.dp -> 4
+                maxWidth >= 950.dp -> 3
+                maxWidth >= 720.dp -> 2
                 else -> 2
             }
             val height = if (desktop) 790.dp else 870.dp
@@ -833,27 +837,18 @@ private fun YouTubeFeedGrid(
                         Row(card, verticalAlignment = Alignment.Top) {
                             VideoThumbnail(video, Modifier.width(132.dp).aspectRatio(16f / 9f))
                             Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                                Text(video.title, color = TubeDeckTextPrimary,
-                                    fontSize = 13.sp, lineHeight = 17.sp,
-                                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                ReadableVideoTitle(video.title, maxLines = 4)
                                 Spacer(Modifier.height(5.dp))
-                                Text(video.channelTitle, color = TubeDeckTextSecondary,
-                                    fontSize = 11.sp, maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis)
+                                ReadableVideoMetadata(video.channelTitle, maxLines = 2)
                             }
                         }
                     } else {
                         Column(card) {
                             VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                             Spacer(Modifier.height(7.dp))
-                            Text(video.title, color = TubeDeckTextPrimary,
-                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                                lineHeight = 17.sp, maxLines = 2,
-                                overflow = TextOverflow.Ellipsis)
+                            ReadableVideoTitle(video.title)
                             Spacer(Modifier.height(5.dp))
-                            Text(video.channelTitle, color = TubeDeckTextSecondary,
-                                fontSize = 11.sp, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis)
+                            ReadableVideoMetadata(video.channelTitle, maxLines = 1)
                         }
                     }
                 }
@@ -887,6 +882,7 @@ private fun SmartTubeBrowseRail(
     onRefresh: () -> Unit = {}, actionLabel: String = "Refresh"
 ) {
     val state = rememberLazyListState()
+    val titleMetrics = rememberVideoTitleMetrics()
     val focusIndex = videos.indexOfFirst { it.videoId == focusVideoId }
     LaunchedEffect(focusIndex) { if (focusIndex >= 0) state.scrollToItem(focusIndex) }
     val lastVisible by remember(state) {
@@ -920,14 +916,16 @@ private fun SmartTubeBrowseRail(
         } else {
             LazyRow(
                 state = state,
-                modifier = Modifier.fillMaxWidth().height(if (listView) 142.dp else 238.dp),
+                modifier = Modifier.fillMaxWidth().height(
+                    if (listView) titleMetrics.listCardHeightDp.dp else titleMetrics.shelfCardHeightDp.dp
+                ),
                 contentPadding = PaddingValues(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 itemsIndexed(videos, key = { index, video -> "${video.videoId}-$index" }) { _, video ->
                     val focused = video.videoId == focusVideoId
                     val card = Modifier
-                        .width(if (listView) 315.dp else 225.dp)
+                        .width(if (listView) 345.dp else 260.dp)
                         .then(if (focused && firstItemFocus != null)
                             Modifier.focusRequester(firstItemFocus) else Modifier)
                         .onFocusChanged { if (it.isFocused) onVideoFocused(video) }
@@ -937,26 +935,18 @@ private fun SmartTubeBrowseRail(
                         Row(card, verticalAlignment = Alignment.Top) {
                             VideoThumbnail(video, Modifier.width(128.dp).aspectRatio(16f / 9f))
                             Column(Modifier.weight(1f).padding(start = 9.dp)) {
-                                Text(video.title, color = TubeDeckTextPrimary,
-                                    fontSize = 12.sp, lineHeight = 15.sp,
-                                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                ReadableVideoTitle(video.title, maxLines = 4)
                                 Spacer(Modifier.height(6.dp))
-                                Text(video.channelTitle, color = TubeDeckTextSecondary,
-                                    fontSize = 10.sp, maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis)
+                                ReadableVideoMetadata(video.channelTitle, maxLines = 2)
                             }
                         }
                     } else {
                         Column(card) {
                             VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                             Spacer(Modifier.height(6.dp))
-                            Text(video.title, color = TubeDeckTextPrimary,
-                                fontSize = 12.sp, lineHeight = 16.sp,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            ReadableVideoTitle(video.title)
                             Spacer(Modifier.height(4.dp))
-                            Text(video.channelTitle, color = TubeDeckTextSecondary,
-                                fontSize = 10.sp, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis)
+                            ReadableVideoMetadata(video.channelTitle, maxLines = 1)
                         }
                     }
                 }
@@ -1285,6 +1275,7 @@ private fun HomeFeedColumn(
     val state = rememberLazyListState()
     val gridState = rememberLazyGridState()
     val profile = LocalDeckThemeProfile.current
+    val titleMetrics = rememberVideoTitleMetrics()
     val cardShape = RoundedCornerShape(profile.cornerRadiusDp.dp)
     val imageRatio = when(profile.geometry) {
         DeckCardGeometry.CINEMA -> 2.25f
@@ -1386,23 +1377,17 @@ private fun HomeFeedColumn(
                                 Modifier.width(if (horizontal) 112.dp else if (profile.geometry == DeckCardGeometry.COMPACT) 62.dp else 77.dp)
                                     .aspectRatio(imageRatio))
                             Column(Modifier.weight(1f).padding(start = 6.dp)) {
-                                Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3,
-                                     overflow = TextOverflow.Ellipsis)
-                                Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp,
-                                     maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                ReadableVideoTitle(video.title, maxLines = 4)
+                                ReadableVideoMetadata(video.channelTitle, maxLines = 2)
                             }
                         }
                     } else {
                         Column(itemModifier) {
                             VideoThumbnail(video, Modifier.fillMaxWidth().aspectRatio(imageRatio))
                             Spacer(Modifier.height(5.dp))
-                            Text(video.title, color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp, lineHeight = 16.sp, maxLines = 3,
-                                     overflow = TextOverflow.Ellipsis)
+                            ReadableVideoTitle(video.title)
                             Spacer(Modifier.height(3.dp))
-                            Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 10.sp,
-                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            ReadableVideoMetadata(video.channelTitle, maxLines = 2)
                             VideoViews(video.viewCount)
                         }
                     }
@@ -1427,14 +1412,17 @@ private fun HomeFeedColumn(
                     LazyRow(
                         state = state,
                         modifier = Modifier.fillMaxWidth().height(
-                            if (listView) 160.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 302.dp else 278.dp
+                            if (listView) titleMetrics.listCardHeightDp.dp
+                            else if (profile.geometry == DeckCardGeometry.CINEMA)
+                                (titleMetrics.shelfCardHeightDp + 25).dp
+                            else titleMetrics.shelfCardHeightDp.dp
                         ),
                         contentPadding = PaddingValues(end = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         itemsIndexed(videos, key = { index, item -> "${item.videoId}-$index" }) { _, video ->
                             HomeCard(video, Modifier.width(
-                                if (listView) 305.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 263.dp else 230.dp
+                                if (listView) 330.dp else if (profile.geometry == DeckCardGeometry.CINEMA) 290.dp else 255.dp
                             ))
                         }
                     }
@@ -1615,18 +1603,9 @@ private fun VideoListRow(
         Column(
             modifier = Modifier.weight(1f).padding(start = 10.dp, top = 1.dp, end = 3.dp)
         ) {
-            Text(
-                video.title,
-                color = TubeDeckTextPrimary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp
-            )
+            ReadableVideoTitle(video.title, maxLines = 4)
             Spacer(Modifier.height(4.dp))
-            Text(
-                video.channelTitle,
-                color = TubeDeckTextSecondary,
-                fontSize = 11.sp
-            )
+            ReadableVideoMetadata(video.channelTitle, maxLines = 2)
             VideoViews(video.viewCount)
         }
     }
@@ -1644,20 +1623,9 @@ private fun VideoTileCard(
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
         )
         Spacer(Modifier.height(7.dp))
-        Text(
-            video.title,
-            color = TubeDeckTextPrimary,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp
-        )
+        ReadableVideoTitle(video.title)
         Spacer(Modifier.height(3.dp))
-        Text(
-            video.channelTitle,
-            color = TubeDeckTextSecondary,
-            fontSize = 11.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        ReadableVideoMetadata(video.channelTitle, maxLines = 2)
         VideoViews(video.viewCount)
     }
 }

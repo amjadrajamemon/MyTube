@@ -35,6 +35,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import android.content.res.Configuration
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
+import com.drivedeck.tubedeck.ui.components.SearchCompactPolicy
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusRequester
@@ -1712,6 +1717,14 @@ fun DriveDeckTopHeader(
     modifier: Modifier = Modifier
 ) {
     val profile = LocalDeckThemeProfile.current
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val compactLandscapeHeader = SearchCompactPolicy.useSingleRowHeader(
+        widthDp = configuration.screenWidthDp,
+        heightDp = configuration.screenHeightDp,
+        isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        carHeadUnit = CarHeadUnitPolicy.isCarHeadUnit(context)
+    )
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
@@ -1743,10 +1756,32 @@ fun DriveDeckTopHeader(
                     placeholder = searchPlaceholder,
                     showRecentChips = false,
                     autoFocus = autoFocus,
+                    compactLandscape = compactLandscapeHeader,
                     modifier = searchModifier
                 )
             }
-            if (youtubeDesktop) {
+            if (compactLandscapeHeader) {
+                // Single-row header for short landscape car tablets and TV boxes.
+                // Search history appears only as a floating overlay, not a second
+                // permanent row that steals valuable video browsing space.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = TubeDeckAccentCyan,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    search(Modifier.weight(1f))
+                    GoogleAccountButton(account = googleAccount, onClick = onGoogleAccountClick)
+                    IconButton(onClick = onOpenDownloads, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
+                    }
+                }
+            } else if (youtubeDesktop) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,

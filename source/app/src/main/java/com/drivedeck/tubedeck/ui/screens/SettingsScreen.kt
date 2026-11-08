@@ -160,6 +160,9 @@ fun SettingsScreen(
     var studioGlow by remember { mutableStateOf(currentSettings.studioGlow) }
     var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
+    var videoTitleScale by remember {
+        mutableFloatStateOf(currentSettings.videoTitleScale.coerceIn(1f, 1.5f))
+    }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
     var themeTextArgb by remember { mutableLongStateOf(currentSettings.themeTextArgb) }
@@ -170,6 +173,7 @@ fun SettingsScreen(
         currentSettings.copy(
             appearancePreset = appearancePreset,
             fontScale = fontScale.coerceIn(0.80f, 1.35f),
+            videoTitleScale = videoTitleScale,
             themeAccentArgb = themeAccentArgb,
             themeBackgroundArgb = themeBackgroundArgb,
             themeTextArgb = themeTextArgb,
@@ -243,6 +247,7 @@ fun SettingsScreen(
                             studioGlow = studioGlow,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
+                            videoTitleScale = videoTitleScale,
                             themeAccentArgb = themeAccentArgb,
                             themeBackgroundArgb = themeBackgroundArgb,
                             themeTextArgb = themeTextArgb
@@ -440,6 +445,28 @@ fun SettingsScreen(
                     Text("Larger", color = TubeDeckTextSecondary, fontSize = 10.sp)
                 }
 
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Video title readability · ${(videoTitleScale * 100).toInt()}%",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    "Enlarges titles and channel labels without resizing menus. Landscape car screens use improved baseline readability.",
+                    color = TubeDeckTextSecondary, fontSize = 12.sp
+                )
+                Slider(
+                    value = videoTitleScale,
+                    onValueChange = { videoTitleScale = it.coerceIn(1f, 1.5f) },
+                    valueRange = 1f..1.5f,
+                    steps = 4
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Standard", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    Text("Larger", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    Text("Maximum", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                }
                 Spacer(Modifier.height(4.dp))
 
                 Row(
@@ -450,6 +477,7 @@ fun SettingsScreen(
                         onClick = {
                             appearancePreset = "Kodi Arctic"
                             fontScale = 1.0f
+                            videoTitleScale = 1.0f
                             themeAccentArgb = 0xFF00D2FFL
                             themeBackgroundArgb = 0xFF080B11L
                             themeTextArgb = 0xFFFFFFFFL

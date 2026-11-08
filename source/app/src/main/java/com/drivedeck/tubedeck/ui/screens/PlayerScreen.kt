@@ -201,6 +201,7 @@ fun PlayerScreen(
     hideWatchedRecommendations: Boolean = true,
     lowResourceMode: Boolean = false,
     resumeAfterInterruptions: Boolean = true,
+    resumeDecisionSeconds: Int = VideoResumePolicy.DEFAULT_PROMPT_SECONDS,
     subtitleTextScale: Float = 1.0f,
     subtitleBottomInsetDp: Int = 0,
     remoteNextKeyCode: Int = 0,
@@ -327,6 +328,7 @@ fun PlayerScreen(
             hideWatchedRecommendations = hideWatchedRecommendations,
             lowResourceMode = lowResourceMode,
             resumeAfterInterruptions = resumeAfterInterruptions,
+            resumeDecisionSeconds = resumeDecisionSeconds,
             subtitleTextScale = subtitleTextScale,
             subtitleBottomInsetDp = subtitleBottomInsetDp,
             remoteNextKeyCode = remoteNextKeyCode,
@@ -567,6 +569,7 @@ fun NativeExoPlayer(
     hideWatchedRecommendations: Boolean,
     lowResourceMode: Boolean,
     resumeAfterInterruptions: Boolean,
+    resumeDecisionSeconds: Int,
     subtitleTextScale: Float,
     subtitleBottomInsetDp: Int,
     remoteNextKeyCode: Int,
@@ -1182,10 +1185,51 @@ fun NativeExoPlayer(
         } else null
     }
     var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
-    // Mutable holder is read when the stream actually starts, even if the user
-    // chooses Resume BEFORE the asynchronous stream resolver finishes.
+    // Mutable holder is read when asynchronous stream preparation completes.
     val selectedResumeStart = remember(media.id) {
         mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
+    }
+    val secondsToChoose = VideoResumePolicy.promptSeconds(resumeDecisionSeconds)
+    // Monotonic timestamp survives recompositions and saved state restoration
+    // on rotation; a new video identity receives a new deadline.
+    val promptDeadlineMs = rememberSaveable(media.id, savedResume?.updatedAt, secondsToChoose) {
+        SystemClock.elapsedRealtime() + secondsToChoose * 1_000L
+    }
+    var resumeCountdownSeconds by remember(media.id, savedResume?.updatedAt) {
+        mutableIntStateOf(secondsToChoose)
+    }
+
+    fun startOverFromBeginning() {
+        if (!showResumePrompt) return
+        selectedResumeStart.longValue = 0L
+        showResumePrompt = false
+        if (resumeEnabled) resumeStore.record(media.mediaUri, 0L)
+        if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+        exoPlayer.playWhenReady = true
+    }
+
+    fun resumeSavedPosition() {
+        if (!showResumePrompt || savedResume == null) return
+        selectedResumeStart.longValue = savedResume.positionMs
+        showResumePrompt = false
+        if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(savedResume.positionMs)
+        exoPlayer.playWhenReady = true
+    }
+
+    // Auto-start from zero after the configured timeout. Do not let a media
+    // resolver refresh, player buffering event or ordinary recomposition restart
+    // the countdown. A decision closes the dialog and cancels this effect.
+    LaunchedEffect(media.id, showResumePrompt, secondsToChoose, savedResume?.updatedAt) {
+        if (!showResumePrompt || savedResume == null) return@LaunchedEffect
+        while (isActive && showResumePrompt) {
+            val millisLeft = promptDeadlineMs - SystemClock.elapsedRealtime()
+            if (millisLeft <= 0L) {
+                startOverFromBeginning()
+                break
+            }
+            resumeCountdownSeconds = ((millisLeft + 999L) / 1_000L).toInt()
+            delay(minOf(millisLeft, 200L))
+        }
     }
     val latestResumeEnabled by rememberUpdatedState(resumeEnabled)
     val latestResumePrompt by rememberUpdatedState(showResumePrompt)
@@ -1205,13 +1249,13 @@ fun NativeExoPlayer(
         }
     }
     LaunchedEffect(showResumePrompt, isPlaying) {
-        if (showResumePrompt && isPlaying) exoPlayer.pause()
+        if (showResumePrompt) exoPlayer.playWhenReady = false
     }
     // The final resume snapshot is taken in the ExoPlayer release effect,
     // BEFORE release(). A separate earlier DisposableEffect disposed too late
     // on some Compose hosts and silently saved an IDLE/zero position.
     LaunchedEffect(privateSession) {
-        if (privateSession) showResumePrompt = false
+        if (privateSession && showResumePrompt) startOverFromBeginning()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val themeProfile = LocalDeckThemeProfile.current
@@ -1301,7 +1345,7 @@ fun NativeExoPlayer(
                     .build()
             )
             exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            exoPlayer.playWhenReady = !showResumePrompt
             selectedHeight = 0
             autoQuality = true
             qualityLabel = "LIVE"
@@ -1331,7 +1375,7 @@ fun NativeExoPlayer(
         runCatching {
             exoPlayer.setMediaSource(preparedSource, position)
             exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            exoPlayer.playWhenReady = !showResumePrompt
         }.onFailure { sourceError ->
             isPreparing = false
             isBuffering = false
@@ -3462,37 +3506,33 @@ fun NativeExoPlayer(
 
     if (showResumePrompt && savedResume != null) {
         AlertDialog(
-            onDismissRequest = {
-                selectedResumeStart.longValue = 0L
-                showResumePrompt = false
-                resumeStore.record(media.mediaUri, 0L)
-                if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
-                exoPlayer.playWhenReady = true
-            },
-            title = { Text("Resume previous video?") },
+            onDismissRequest = ::startOverFromBeginning,
+            title = { Text("Continue watching?") },
             text = {
-                Text("You were watching this video at " +
-                    formatDuration(savedResume.positionMs) +
-                    ". Continue from this point, or start over?")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Last watched at " + formatDuration(savedResume.positionMs) +
+                            ". Resume there or start from the beginning?"
+                    )
+                    Text(
+                        "Starting over in ${resumeCountdownSeconds}s unless you select Resume.",
+                        color = TubeDeckTextSecondary, fontSize = 13.sp
+                    )
+                    LinearProgressIndicator(
+                        progress = {
+                            resumeCountdownSeconds.toFloat() / secondsToChoose.toFloat()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    selectedResumeStart.longValue = savedResume.positionMs
-                    showResumePrompt = false
-                    if (exoPlayer.currentMediaItem != null) {
-                        exoPlayer.seekTo(savedResume.positionMs)
-                    }
-                    exoPlayer.playWhenReady = true
-                }) { Text("Resume") }
+                TextButton(onClick = ::resumeSavedPosition) {
+                    Text("Resume · " + formatDuration(savedResume.positionMs))
+                }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    selectedResumeStart.longValue = 0L
-                    showResumePrompt = false
-                    resumeStore.record(media.mediaUri, 0L)
-                    if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
-                    exoPlayer.playWhenReady = true
-                }) { Text("Start over") }
+                TextButton(onClick = ::startOverFromBeginning) { Text("Start over") }
             }
         )
     }

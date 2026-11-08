@@ -185,6 +185,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("hideWatchedRecommendations", next.hideWatchedRecommendations)
             putBoolean("lowResourceMode", next.lowResourceMode)
             putBoolean("resumeAfterInterruptions", next.resumeAfterInterruptions)
+            putInt("resumeDecisionSeconds", next.resumeDecisionSeconds.coerceIn(1, 15))
             putFloat("subtitleTextScale", next.subtitleTextScale.coerceIn(0.8f, 1.8f))
             putInt("subtitleBottomInsetDp", next.subtitleBottomInsetDp.coerceIn(0, 120))
             putInt("remoteNextKeyCode", next.remoteNextKeyCode.coerceAtLeast(0))
@@ -271,6 +272,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         hideWatchedRecommendations = prefs.getBoolean("hideWatchedRecommendations", true),
         lowResourceMode = prefs.getBoolean("lowResourceMode", false),
         resumeAfterInterruptions = prefs.getBoolean("resumeAfterInterruptions", true),
+        resumeDecisionSeconds = prefs.getInt("resumeDecisionSeconds", 3).coerceIn(1, 15),
         subtitleTextScale = prefs.getFloat("subtitleTextScale", 1.0f).coerceIn(0.8f, 1.8f),
         subtitleBottomInsetDp = prefs.getInt("subtitleBottomInsetDp", 0).coerceIn(0, 120),
         remoteNextKeyCode = prefs.getInt("remoteNextKeyCode", 0).coerceAtLeast(0),

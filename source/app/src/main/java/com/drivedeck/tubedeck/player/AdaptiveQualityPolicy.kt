@@ -1,8 +1,9 @@
 package com.drivedeck.tubedeck.player
 
-/** Playback quality rules for extracted single-bitrate YouTube media URLs.
- * This is NOT manifest-level seamless ABR: each progressive quality selection
- * prepares another MediaSource and attempts to preserve the current position.
+/**
+ * Conservative quality fallback for individually extracted YouTube URLs.
+ * Unlike HLS/DASH this switch re-prepares a MediaSource at the same position;
+ * it cannot promise zero buffering. Prioritize fewer stalls over sharpness.
  */
 internal object AdaptiveQualityPolicy {
     data class Decision(val targetHeight: Int, val upgrade: Boolean)
@@ -10,6 +11,10 @@ internal object AdaptiveQualityPolicy {
     fun nextLower(heights: List<Int>, current: Int): Int? =
         heights.filter { it > 0 && it < current }.maxOrNull()
 
+    /**
+     * Inputs MUST be compatible, physically selectable variants. If the player
+     * can only decode 480p, it cannot "downshift" to a non-existent 360p.
+     */
     fun decide(
         heights: List<Int>,
         current: Int,
@@ -20,29 +25,31 @@ internal object AdaptiveQualityPolicy {
         stableSamples: Int,
         upgradesSoFar: Int,
         allowUpgrade: Boolean,
-        millisSinceLastSwitch: Long
+        millisSinceLastSwitch: Long,
+        downshiftedBefore: Boolean = false
     ): Decision? {
         if (current <= 0) return null
         val available = heights.filter { it > 0 }.distinct().sorted()
         if (current !in available) return null
-        // Repeated stalls are stronger evidence than Android's sometimes stale
-        // connectivity bandwidth estimate (particularly on aftermarket head units).
-        val prolongedBufferStarvation = lowBufferSamples >= 2 &&
-            (buffering || bufferedAheadMs < 4_000L)
-        val measuredDownshift = recommended < current &&
-            (buffering || bufferedAheadMs < 8_000L)
-        if (millisSinceLastSwitch >= 5_000L &&
-            (measuredDownshift || prolongedBufferStarvation)) {
+
+        // NetworkCapabilities reports link speed, not usable internet speed.
+        // A repeatedly exhausted playback buffer is stronger evidence.
+        val starving = lowBufferSamples >= 2 &&
+            (buffering || bufferedAheadMs < 7_000L)
+        val clearlyUnderBandwidth = recommended < current &&
+            (buffering || bufferedAheadMs < 12_000L)
+        if (millisSinceLastSwitch >= 3_000L && (starving || clearlyUnderBandwidth)) {
             val next = nextLower(available, current) ?: return null
-            val target = if (measuredDownshift) {
-                available.filter { it <= recommended }.maxOrNull() ?: next
+            val target = if (clearlyUnderBandwidth) {
+                available.filter { it <= recommended && it < current }.maxOrNull() ?: next
             } else next
-            return Decision(target, upgrade = false)
+            return Decision(targetHeight = target, upgrade = false)
         }
-        // Upgrades are deliberately conservative: avoid oscillation on weak LTE.
-        if (allowUpgrade && upgradesSoFar < 1 && recommended > current &&
-            stableSamples >= 6 && bufferedAheadMs >= 30_000L &&
-            millisSinceLastSwitch >= 20_000L) {
+        // Do not jump back up after a stall-driven downshift on unstable car
+        // mobile networks. Changing Auto manually can create a fresh session.
+        if (!downshiftedBefore && allowUpgrade && upgradesSoFar < 1 &&
+            recommended > current && stableSamples >= 8 &&
+            bufferedAheadMs >= 35_000L && millisSinceLastSwitch >= 30_000L) {
             val target = available.filter { it <= recommended }.maxOrNull()
             if (target != null && target > current) return Decision(target, upgrade = true)
         }

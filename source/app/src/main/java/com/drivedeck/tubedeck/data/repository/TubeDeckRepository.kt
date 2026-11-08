@@ -202,6 +202,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("studioGlow", next.studioGlow)
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
+            putFloat("videoTitleScale", next.videoTitleScale.coerceIn(1f, 1.5f))
             putLong("themeAccentArgb", next.themeAccentArgb)
             putLong("themeBackgroundArgb", next.themeBackgroundArgb)
             putLong("themeTextArgb", next.themeTextArgb)
@@ -287,6 +288,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         studioGlow = prefs.getString("studioGlow", "Preset") ?: "Preset",
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
+        videoTitleScale = prefs.getFloat("videoTitleScale", 1.0f).coerceIn(1f, 1.5f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
         themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),
         themeTextArgb = prefs.getLong("themeTextArgb", 0xFFFFFFFFL)

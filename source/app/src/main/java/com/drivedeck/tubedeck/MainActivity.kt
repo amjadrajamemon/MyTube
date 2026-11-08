@@ -219,6 +219,7 @@ class MainActivity : ComponentActivity() {
             val activeAppearance = previewAppearance ?: settings
             TubeDeckTheme(
                 fontScale = activeAppearance.fontScale,
+                videoTitleScale = activeAppearance.videoTitleScale,
                 accentArgb = activeAppearance.themeAccentArgb,
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
                 textArgb = activeAppearance.themeTextArgb,

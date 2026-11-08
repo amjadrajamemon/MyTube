@@ -1,4 +1,4 @@
-name: TubeDeck v2.3.3 Readable Titles & Adaptive Playback — Signed APKs
+name: TubeDeck v2.3.4 On-Demand Search — Signed APKs and Preview Release
 
 on:
   push:
@@ -35,8 +35,8 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 113' source/app/build.gradle.kts
-          grep -Fq 'versionName = "2.3.3"' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 114' source/app/build.gradle.kts
+          grep -Fq 'versionName = "2.3.4"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
           HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
@@ -169,7 +169,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.3-Android-Lint
+          name: TubeDeck-v2.3.4-Android-Lint
           path: |
             source/app/build/reports/lint-results-arm64Debug.html
             source/app/build/reports/lint-results-arm64Debug.xml
@@ -199,11 +199,11 @@ jobs:
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
               if unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then exit 1; fi
-              cp "$APK" "dist/TubeDeck-v2.3.3-ARM64-debug.apk"
+              cp "$APK" "dist/TubeDeck-v2.3.4-ARM64-debug.apk"
             else
               unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
               unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
-              cp "$APK" "dist/TubeDeck-v2.3.3-Universal-debug.apk"
+              cp "$APK" "dist/TubeDeck-v2.3.4-Universal-debug.apk"
             fi
           done
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -212,7 +212,7 @@ jobs:
       - name: Upload installable dual-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.3-ARM64-and-Universal
+          name: TubeDeck-v2.3.4-ARM64-and-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -220,24 +220,24 @@ jobs:
       # Explicitly publish this verified development build as a GitHub
       # prerelease. Never overwrite another tag or promote this PR to main.
       # This provides independently downloadable ARM64/Universal APK links.
-      - name: Publish v2.3.3 preview with two direct APK download links
+      - name: Publish v2.3.4 preview with two direct APK download links
         if: github.ref == 'refs/heads/feature/tubedeck-six-experiences-20261105' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v2.3.3-readable-titles-adaptive-20261108"
+          TAG="v2.3.4-on-demand-search-20261108"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists; retaining immutable APK assets."
             exit 0
           fi
           gh release create "$TAG" \
-            dist/TubeDeck-v2.3.3-ARM64-debug.apk \
-            dist/TubeDeck-v2.3.3-Universal-debug.apk \
+            dist/TubeDeck-v2.3.4-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.4-Universal-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "TubeDeck v2.3.3 — Readable Video Titles & Automatic Quality Recovery (ARM64 + Universal)" \
-            --notes "PREVIEW / DEVICE TESTING BUILD. Fix: readable 15-24sp sans-serif video titles with larger channel metadata, responsive card widths and optional independent title-size adjustment; fixed Auto quality downshifts on weak networks even on resource-constrained car head units. Previous fix: landscape car tablets use a compact one-row search header, history remains collapsed until opened, and capped search suggestions float over content without consuming layout height. Six premium themes: NeoGlass Luxe, Cinema Deck, CommandDrive Auto, StreamPlus Luxe TV, Midnight Editorial Pro and Cyber Console X. Includes approved ideas #1 Morphing UI, #3 Car Mode, #4 Cinema Engine, #6 Smart Home, #7 Playback Doctor and #10 Theme Studio. Excludes ideas #2, #5, #8, #9. versionCode 113; Android Lint, both APK builds, tests and signature/ABI verification are mandatory CI gates. Physical-device validation is still required. This prerelease is generated from the isolated feature branch and is NOT a production/main release."
+            --title "TubeDeck v2.3.4 — Compact On-Demand Search & Keyboard Fix (ARM64 + Universal)" \
+            --notes "PREVIEW / DEVICE TESTING BUILD. Search UI rework: persistent Home/Browser text fields removed, single-row launchers in portrait and landscape, bounded transient search dialog with recent history, automatic startup keyboard focus eliminated, landscape IME hides suggestion rows. Previous fixes: readable 15-24sp sans-serif video titles with larger channel metadata, responsive card widths and optional independent title-size adjustment; fixed Auto quality downshifts on weak networks even on resource-constrained car head units. Previous fix: landscape car tablets use a compact one-row search header, history remains collapsed until opened, and capped search suggestions float over content without consuming layout height. Six premium themes: NeoGlass Luxe, Cinema Deck, CommandDrive Auto, StreamPlus Luxe TV, Midnight Editorial Pro and Cyber Console X. Includes approved ideas #1 Morphing UI, #3 Car Mode, #4 Cinema Engine, #6 Smart Home, #7 Playback Doctor and #10 Theme Studio. Excludes ideas #2, #5, #8, #9. versionCode 114; Android Lint, both APK builds, tests and signature/ABI verification are mandatory CI gates. Physical-device validation is still required. This prerelease is generated from the isolated feature branch and is NOT a production/main release."

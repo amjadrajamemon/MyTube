@@ -1405,7 +1405,8 @@ fun NativeExoPlayer(
             autoLowBufferSamples = 0
             autoStableSamples = 0
             val playable = AutoPlayableOptionsPolicy.choices(
-                sourceMedia.options, sourceMedia.progressiveOptions, carHeadUnit
+                sourceMedia.options, sourceMedia.progressiveOptions, carHeadUnit,
+                sourceMedia.downloadOptions
             )
             val target = chooseAutoHeight(
                 context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
@@ -1727,7 +1728,8 @@ fun NativeExoPlayer(
                                 decoderFailure && decoderSafeHeight != null -> decoderSafeHeight
                                 autoQuality -> {
                                     val heights = AutoPlayableOptionsPolicy.choices(
-                                        fresh.options, fresh.progressiveOptions, carHeadUnit
+                                        fresh.options, fresh.progressiveOptions, carHeadUnit,
+                                        fresh.downloadOptions
                                     ).map { it.height }
                                     val networkTarget = chooseAutoHeight(
                                         context, heights, bandwidthMeter.bitrateEstimate
@@ -1936,7 +1938,8 @@ fun NativeExoPlayer(
             hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
             val target = if (autoQuality) {
                 val playable = AutoPlayableOptionsPolicy.choices(
-                    fresh.options, fresh.progressiveOptions, carHeadUnit
+                    fresh.options, fresh.progressiveOptions, carHeadUnit,
+                                        fresh.downloadOptions
                 )
                 val estimated = chooseAutoHeight(
                     context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
@@ -1985,7 +1988,8 @@ fun NativeExoPlayer(
                 continue
             }
             val heights = AutoPlayableOptionsPolicy.choices(
-                source.options, source.progressiveOptions, carHeadUnit
+                source.options, source.progressiveOptions, carHeadUnit,
+                source.downloadOptions
             ).map { it.height }
             if (heights.isEmpty()) continue
             val current = selectedHeight.takeIf { it > 0 } ?: continue
@@ -6411,7 +6415,8 @@ private fun selectResolvedOption(
     compatibilityMode: Boolean
 ): YoutubeStreamResolver.VideoOption? {
     val candidates = AutoPlayableOptionsPolicy.choices(
-        resolved.options, resolved.progressiveOptions, compatibilityMode
+        resolved.options, resolved.progressiveOptions, compatibilityMode,
+        resolved.downloadOptions
     )
     val height = PlaybackQualityPolicy.chooseHeight(candidates.map { it.height }, requestedHeight, compatibilityMode)
     return candidates.firstOrNull { it.height == height }

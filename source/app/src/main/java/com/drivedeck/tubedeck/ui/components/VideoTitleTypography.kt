@@ -50,8 +50,8 @@ internal object VideoTitleTypographyPolicy {
             metadataSp = metadata,
             maxTitleLines = if (shortLandscape) 4 else 3,
             // Prevent a larger user-selected title from being clipped by fixed-height shelves.
-            shelfCardHeightDp = (258 + (size - 15) * 12).coerceIn(258, 370),
-            listCardHeightDp = (170 + (size - 15) * 7).coerceIn(170, 250)
+            shelfCardHeightDp = (292 + (size - 15) * 10).coerceIn(292, 390),
+            listCardHeightDp = (180 + (size - 15) * 7).coerceIn(180, 255)
         )
     }
 }

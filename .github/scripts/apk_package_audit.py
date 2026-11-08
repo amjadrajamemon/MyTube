@@ -40,12 +40,18 @@ def audit(apk, args):
                 problems.append("Missing mandatory APK entry " + required)
         sofiles = [e for e in entries if e.filename.startswith("lib/") and e.filename.endswith(".so")]
         abis = collections.Counter(e.filename.split("/")[1] for e in sofiles)
-        expected = ("arm64-v8a",) if "ARM64" in apk.name else ("arm64-v8a", "armeabi-v7a")
+        expected = (
+            ("arm64-v8a",) if "ARM64" in apk.name else
+            ("armeabi-v7a",) if "ARMv7" in apk.name else
+            ("arm64-v8a", "armeabi-v7a")
+        )
         for abi in expected:
             if abi not in abis:
                 problems.append("Missing required native ABI: " + abi)
         if "ARM64" in apk.name and any(abi != "arm64-v8a" for abi in abis):
             problems.append("ARM64-only APK contains additional native ABIs")
+        if "ARMv7" in apk.name and any(abi != "armeabi-v7a" for abi in abis):
+            problems.append("ARMv7-only APK contains additional native ABIs")
         if "Universal" in apk.name and ("x86" not in abis or "x86_64" not in abis):
             notes.append("Universal APK has no native libraries for every x86 ABI; verify actual supported CPUs")
         groups = collections.Counter()
@@ -73,6 +79,11 @@ def audit(apk, args):
         problems.append("APK signature verification failed: " + data[-250:])
     result["signature_excerpt"] = [line.strip() for line in data.splitlines()
         if ("Signer #1 certificate" in line or "Verified using" in line)][:15]
+    for scheme in ("v1", "v2", "v3"):
+        expected_line = f"Verified using {scheme} scheme"
+        if not any(expected_line in line and line.strip().endswith("true")
+                   for line in data.splitlines()):
+            problems.append(f"Required {scheme} APK signature missing")
     expected_sha1 = re.sub("[^0-9a-f]", "", args.sha1_file.read_text().lower())
     found = re.search(r"Signer #1 certificate SHA-1 digest:\s*([0-9a-f:]+)", data, re.I)
     if not found:
@@ -90,8 +101,16 @@ def audit(apk, args):
     result["package"] = package.groups() if package else None
     result["min_sdk"] = min_sdk.group(1) if min_sdk else None
     result["target_sdk"] = target_sdk.group(1) if target_sdk else None
-    if not package or package.groups() != ("com.aistudio.tubedeck.kxmvd", "103", "2.0.0"):
-        problems.append("Unexpected package name or v2.0.0 manifest version")
+    expected_package = (
+        "com.aistudio.tubedeck.kxmvd",
+        args.expected_version_code,
+        args.expected_version_name,
+    )
+    if not package or package.groups() != expected_package:
+        problems.append(
+            "APK manifest identity/version mismatch: expected "
+            + str(expected_package) + ", got " + str(package.groups() if package else None)
+        )
     if not min_sdk or min_sdk.group(1) != "24":
         problems.append("Unexpected minSdk (expected Android API 24)")
     if not target_sdk or target_sdk.group(1) != "36":
@@ -112,12 +131,14 @@ def main():
     p.add_argument("--zipalign", required=True)
     p.add_argument("--sha1-file", type=Path, required=True)
     p.add_argument("--out-dir", type=Path, required=True)
+    p.add_argument("--expected-version-code", required=True)
+    p.add_argument("--expected-version-name", required=True)
     p.add_argument("apks", nargs="+", type=Path)
     args = p.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     results = [audit(path, args) for path in args.apks]
     (args.out_dir / "apk-package-audit.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
-    lines = ["# MyTube v2.0.0 — Published APK Package Forensics", "",
+    lines = [f"# TubeDeck v{args.expected_version_name} — APK Package Forensics", "",
         "Scope: downloaded release bytes; manifest, ABI, ZIP/CRC, signing, hash, size and resource contents.",
         "Not covered: actual device playback, UI, installer upgrade paths or performance benchmarks.", "",
         "| Package | Size | Native ABIs | Manifest version | Result |",

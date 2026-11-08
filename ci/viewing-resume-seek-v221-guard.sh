@@ -12,8 +12,8 @@ THEMES=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/ThemeProfiles.kt
 VIDEO_VIEW=source/app/src/main/res/layout/mytube_viewing_player_view.xml
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 115' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.5"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 116' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.6"' source/app/build.gradle.kts
 grep -Fq 'surface_type="texture_view"' "$VIDEO_VIEW"
 grep -Fq 'key(carHeadUnit)' "$PLAYER"
 ! grep -Fq 'key(carHeadUnit, viewingMode != ViewingMode.NORMAL)' "$PLAYER"

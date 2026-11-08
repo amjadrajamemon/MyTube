@@ -44,7 +44,8 @@ jobs:
           grep -Fq 'title = "History"' "$HOME"
           grep -Fq 'title = "Relevant"' "$HOME"
           grep -Fq 'title = "Trending"' "$HOME"
-          grep -Fq 'showRecentChips = false' "$HOME"
+          grep -Fq 'searchDialogMode != null' "$HOME"
+          grep -Fq 'CompactSearchPanel(' "$HOME"
           ! grep -Fq 'historyExpanded' "$HOME"
           grep -Fq '.setActions(listOf(closeAction, audioAction))' source/app/src/main/java/com/drivedeck/tubedeck/player/PlaybackPipActions.kt
           grep -Fq 'Close mini-player' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt

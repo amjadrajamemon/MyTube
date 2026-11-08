@@ -1359,6 +1359,7 @@ class MainActivity : ComponentActivity() {
                                         hideWatchedRecommendations = settings.hideWatchedRecommendations,
                                         lowResourceMode = settings.lowResourceMode,
                                         resumeAfterInterruptions = settings.resumeAfterInterruptions,
+                                        resumeDecisionSeconds = settings.resumeDecisionSeconds,
                                         subtitleTextScale = settings.subtitleTextScale,
                                         subtitleBottomInsetDp = settings.subtitleBottomInsetDp,
                                         remoteNextKeyCode = settings.remoteNextKeyCode,

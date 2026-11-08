@@ -16,8 +16,8 @@ TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 111' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.1"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 112' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.2"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"
@@ -41,4 +41,14 @@ grep -Fq 'lowResourceMode = settings.lowResourceMode' source/app/src/main/java/c
 grep -Fq 'nightAudioEnabled = settings.nightAudioEnabled' source/app/src/main/java/com/drivedeck/tubedeck/MainActivity.kt
 grep -Fq 'enableScreenBlackout()' "$PLAYER"
 
-echo "PASS: v2.2.0, 19 themes, shared tokens, backdrop, focus, motion, insets, existing night/blackout controls"
+# Landscape search must not expand Home/browser content vertically.
+SEARCH=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/SearchAssistField.kt
+POLICY=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/SearchCompactPolicy.kt
+grep -Fq 'compactLandscape = compactLandscapeHeader' "$HOME"
+grep -Fq 'if (compactLandscapeHeader)' "$TOP"
+grep -Fq 'Popup(' "$SEARCH"
+grep -Fq 'if (!compactLandscape && hasSearchFocus && choices.isNotEmpty())' "$SEARCH"
+test -f "$POLICY"
+test -f source/app/src/test/java/com/drivedeck/tubedeck/ui/components/SearchCompactPolicyTest.kt
+
+echo "PASS: v2.3.2, 19 themes, short-landscape compact search overlay, backdrop, focus, insets, blackout"

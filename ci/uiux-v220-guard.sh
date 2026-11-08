@@ -51,6 +51,14 @@ grep -Fq 'searchDialogMode = "search"' "$HOME"
 grep -Fq 'searchDialogMode = "history"' "$HOME"
 grep -Fq 'searchDialogMode = null' "$HOME"
 grep -Fq 'WindowInsets.ime.getBottom(density)' "$SEARCH"
+# Compact recent-search row is horizontally scrollable and every term submits
+# immediately via the same handler as tapping the keyboard Search action.
+grep -Fq 'LazyRow(' "$SEARCH"
+grep -Fq 'recentSearches.distinct().take(12)' "$SEARCH"
+grep -Fq 'onClick = { submit(term) }' "$SEARCH"
+grep -Fq 'onSubmit(chosen)' "$SEARCH"
+grep -Fq 'onDismiss()' "$SEARCH"
+! grep -Fq 'itemsIndexed(recentSearches' "$SEARCH"
 grep -Fq 'if (startWithKeyboard)' "$SEARCH"
 grep -Fq 'LaunchedEffect(configuration.orientation)' "$TOP"
 ! sed -n '/fun DriveDeckTopHeader(/,$p' "$HOME" | grep -Fq 'SearchAssistField('

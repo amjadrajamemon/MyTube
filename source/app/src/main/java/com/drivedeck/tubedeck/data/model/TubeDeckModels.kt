@@ -155,6 +155,8 @@ data class TubeDeckSettings(
     val hideWatchedRecommendations: Boolean = true,
     val lowResourceMode: Boolean = false,
     val resumeAfterInterruptions: Boolean = true,
+    // Saved-video playback decision: default Start Over after 3 seconds.
+    val resumeDecisionSeconds: Int = 3,
     val subtitleTextScale: Float = 1.0f,
     val subtitleBottomInsetDp: Int = 0,
     val remoteNextKeyCode: Int = 0,

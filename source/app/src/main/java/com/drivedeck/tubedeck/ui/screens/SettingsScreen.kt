@@ -139,6 +139,9 @@ fun SettingsScreen(
     var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
     var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
     var resumeAfterInterruptions by remember { mutableStateOf(currentSettings.resumeAfterInterruptions) }
+    var resumeDecisionSeconds by remember {
+        mutableIntStateOf(currentSettings.resumeDecisionSeconds.coerceIn(1, 15))
+    }
     var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
     var subtitleBottomInsetDp by remember { mutableIntStateOf(currentSettings.subtitleBottomInsetDp.coerceIn(0, 120)) }
     var remoteNextKeyCode by remember { mutableIntStateOf(currentSettings.remoteNextKeyCode) }
@@ -230,6 +233,7 @@ fun SettingsScreen(
                             hideWatchedRecommendations = hideWatchedRecommendations,
                             lowResourceMode = lowResourceMode,
                             resumeAfterInterruptions = resumeAfterInterruptions,
+                            resumeDecisionSeconds = resumeDecisionSeconds,
                             subtitleTextScale = subtitleTextScale,
                             subtitleBottomInsetDp = subtitleBottomInsetDp,
                             remoteNextKeyCode = remoteNextKeyCode,
@@ -864,9 +868,23 @@ fun SettingsScreen(
                     "Optional: tries YouTube's short animated WebP thumbnail after 1.1 seconds of focus. Uses no second video player; falls back to the static image. Disabled in Low Resource Mode or on older Android.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
-                ToggleRow("Ask to resume saved position after a restart or interruption", resumeAfterInterruptions) {
+                ToggleRow("Resume playback after app interruptions", resumeAfterInterruptions) {
                     resumeAfterInterruptions = it
                 }
+                HorizontalDivider()
+                Text(
+                    "Saved-video Resume / Start Over countdown · ${resumeDecisionSeconds} seconds",
+                    color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = resumeDecisionSeconds.toFloat(),
+                    onValueChange = { resumeDecisionSeconds = it.toInt().coerceIn(1, 15) },
+                    valueRange = 1f..15f, steps = 13
+                )
+                Text(
+                    "Default 3 seconds. Only genuinely unfinished videos ask. If no choice is made, the video starts over automatically.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
                 ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
                     lowResourceMode = it
                 }

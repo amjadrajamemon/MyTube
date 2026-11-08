@@ -1,11 +1,15 @@
 package com.drivedeck.tubedeck.ui.components
 
 import android.content.res.Configuration
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -53,6 +59,7 @@ internal object CompactSearchOverlayPolicy {
         (screenWidthDp - 24).coerceIn(240, 700)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CompactSearchPanel(
     query: String,
@@ -78,9 +85,11 @@ fun CompactSearchPanel(
     var remoteSuggestions by remember { mutableStateOf(emptyList<String>()) }
     var editedSinceOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(clean) {
+    LaunchedEffect(clean, historyFirst, editedSinceOpen) {
         remoteSuggestions = emptyList()
-        if (clean.isNotBlank() && !SearchAssistPolicy.isUrl(clean)) {
+        // Do not prefetch online suggestions when opening history alone.
+        if (!(historyFirst && !editedSinceOpen) &&
+            clean.isNotBlank() && !SearchAssistPolicy.isUrl(clean)) {
             delay(300)
             try {
                 remoteSuggestions = YoutubeSearchSuggestions.fetch(clean)
@@ -188,61 +197,95 @@ fun CompactSearchPanel(
                         cursorColor = TubeDeckAccentCyan
                     )
                 )
-                // Nothing is permanently inserted between Home and its feed.
-                // Collapse the history entirely while an IME consumes a short
-                // landscape viewport. Retain a small scrollable list otherwise.
-                if (visibleOptions.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (showingHistory) "Recent searches" else "Suggestions",
-                            color = TubeDeckTextSecondary, fontSize = 12.sp,
-                            modifier = Modifier.weight(1f)
+                // One-line, comma-separated recent searches. Scrolling is
+                // horizontal, never an expanding list above the Home feed.
+                if (showingHistory && recentSearches.isNotEmpty() &&
+                    !(landscape && imeVisible)) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 42.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.History, contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = TubeDeckTextSecondary
                         )
-                        if (showingHistory && recentSearches.isNotEmpty()) {
-                            TextButton(onClick = onClearRecentSearches) {
-                                Text("Clear", fontSize = 12.sp)
+                        Text(
+                            "Recent:", color = TubeDeckTextSecondary,
+                            fontSize = 12.sp, maxLines = 1
+                        )
+                        LazyRow(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            itemsIndexed(
+                                recentSearches.distinct().take(12),
+                                key = { _, term -> term }
+                            ) { index, term ->
+                                if (index > 0) {
+                                    Text(
+                                        ", ", color = TubeDeckTextSecondary,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Text(
+                                    text = term,
+                                    fontSize = 13.sp,
+                                    color = TubeDeckTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .widthIn(max = 172.dp)
+                                        .tvInputHighlight(RoundedCornerShape(5.dp))
+                                        .semantics {
+                                            contentDescription =
+                                                "Search $term. Long press to remove from history"
+                                        }
+                                        .combinedClickable(
+                                            onClick = { submit(term) },
+                                            onLongClick = { onRemoveRecentSearch(term) }
+                                        )
+                                        .padding(horizontal = 2.dp, vertical = 8.dp)
+                                )
                             }
                         }
+                        TextButton(
+                            onClick = onClearRecentSearches,
+                            contentPadding = PaddingValues(horizontal = 5.dp)
+                        ) { Text("Clear", fontSize = 12.sp) }
                     }
+                } else if (!showingHistory && visibleOptions.isNotEmpty()) {
+                    // Typed suggestions remain bounded and scrollable. They are
+                    // hidden while the landscape keyboard consumes the viewport.
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(
-                            max = if (landscape) 138.dp else 195.dp
-                        ),
+                        modifier = Modifier.fillMaxWidth()
+                            .heightIn(max = if (landscape) 126.dp else 144.dp),
                         verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
-                        itemsIndexed(visibleOptions, key = { _, term -> term }) { _, term ->
-                            val isRecent = recentSearches.any { it.equals(term, true) }
+                        items(visibleOptions, key = { it }) { term ->
                             Row(
                                 modifier = Modifier.fillMaxWidth()
-                                    .tvInputHighlight(RoundedCornerShape(10.dp))
+                                    .tvInputHighlight(RoundedCornerShape(8.dp))
                                     .clickable { submit(term) }
                                     .focusable()
-                                    .heightIn(min = 42.dp)
-                                    .padding(start = 6.dp),
+                                    .heightIn(min = 40.dp)
+                                    .padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    if (isRecent) Icons.Default.History else Icons.Default.Search,
-                                    null,
-                                    modifier = Modifier.size(18.dp),
+                                    Icons.Default.Search, null,
+                                    modifier = Modifier.size(17.dp),
                                     tint = TubeDeckTextSecondary
                                 )
                                 Text(
                                     term,
                                     color = TubeDeckTextPrimary,
-                                    fontSize = 14.sp,
+                                    fontSize = 13.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp)
+                                    modifier = Modifier.padding(start = 8.dp)
                                 )
-                                if (isRecent) {
-                                    IconButton(
-                                        onClick = { onRemoveRecentSearch(term) },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(Icons.Default.Close, "Remove $term")
-                                    }
-                                }
                             }
                         }
                     }

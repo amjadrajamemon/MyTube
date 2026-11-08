@@ -17,6 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import android.content.res.Configuration
+import com.drivedeck.tubedeck.player.CarHeadUnitPolicy
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +57,14 @@ fun TopNavBar(
 ) {
     var queryText by remember(currentUrl) { mutableStateOf(currentUrl) }
     val focusManager = LocalFocusManager.current
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val compactLandscapeHeader = SearchCompactPolicy.useSingleRowHeader(
+        widthDp = configuration.screenWidthDp,
+        heightDp = configuration.screenHeightDp,
+        isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        carHeadUnit = CarHeadUnitPolicy.isCarHeadUnit(context)
+    )
 
     Surface(
         modifier = modifier
@@ -67,7 +79,41 @@ fun TopNavBar(
         color = TubeDeckSurface,
         tonalElevation = 8.dp
     ) {
-        Column(
+        if (compactLandscapeHeader) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                        tint = if (canGoBack) TubeDeckTextPrimary else Color.DarkGray)
+                }
+                IconButton(onClick = onForward, enabled = canGoForward, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward",
+                        tint = if (canGoForward) TubeDeckTextPrimary else Color.DarkGray)
+                }
+                SearchAssistField(
+                    query = queryText,
+                    onQueryChange = { queryText = it },
+                    onSearch = onNavigate,
+                    recentSearches = recentSearches,
+                    onRemoveRecentSearch = onRemoveRecentSearch,
+                    onClearRecentSearches = onClearRecentSearches,
+                    placeholder = "Search or enter URL...",
+                    compactLandscape = true,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onReload, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.Refresh, "Reload", tint = TubeDeckTextPrimary)
+                }
+                GoogleAccountButton(
+                    account = googleAccount,
+                    onClick = onGoogleAccountClick,
+                    showLabelWhenSignedOut = false
+                )
+            }
+        } else Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 8.dp)

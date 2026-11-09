@@ -1272,11 +1272,35 @@ private fun QualityGrid(selectedQuality: String, onSelect: (String) -> Unit, qua
     }
 }
 
+/**
+ * Common setting row: every switch occupies the same trailing column.
+ * Labels take only the available leading width, wrap when necessary, and
+ * cannot push the switch offscreen on small phones or Android TV boxes.
+ */
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TubeDeckTextPrimary, fontSize = 14.sp)
-        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = SwitchDefaults.colors(checkedTrackColor = TubeDeckAccentCyan))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            color = TubeDeckTextPrimary,
+            fontSize = 14.sp,
+            lineHeight = 19.sp,
+            softWrap = true
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier,
+            colors = SwitchDefaults.colors(checkedTrackColor = TubeDeckAccentCyan)
+        )
     }
 }
 

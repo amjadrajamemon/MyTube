@@ -154,6 +154,7 @@ fun SettingsScreen(
     var carDashboardEnabled by remember { mutableStateOf(currentSettings.carDashboardEnabled) }
     var homeFeedOrder by remember { mutableStateOf(currentSettings.homeFeedOrder) }
     var homeDisplayMode by remember { mutableStateOf(currentSettings.homeDisplayMode) }
+    var homeInitialVideoCount by remember { mutableIntStateOf(currentSettings.homeInitialVideoCount.coerceIn(10, 50)) }
     var studioHomeLayout by remember { mutableStateOf(currentSettings.studioHomeLayout) }
     var studioNavigation by remember { mutableStateOf(currentSettings.studioNavigation) }
     var studioPlayer by remember { mutableStateOf(currentSettings.studioPlayer) }
@@ -242,6 +243,7 @@ fun SettingsScreen(
                             carDashboardEnabled = carDashboardEnabled,
                             homeFeedOrder = homeFeedOrder,
                             homeDisplayMode = homeDisplayMode,
+                            homeInitialVideoCount = homeInitialVideoCount,
                             studioHomeLayout = studioHomeLayout,
                             studioNavigation = studioNavigation,
                             studioPlayer = studioPlayer,
@@ -990,6 +992,14 @@ fun SettingsScreen(
                     color = TubeDeckTextSecondary, fontSize = 11.sp)
                 StudioChoiceRow("Card presentation", listOf("Theme", "Compact", "Cards", "Cinematic"),
                     homeDisplayMode) { homeDisplayMode = it }
+                Text("Initial videos per enabled feed: $homeInitialVideoCount",
+                    color = TubeDeckTextPrimary, fontSize = 12.sp)
+                Slider(
+                    value = homeInitialVideoCount.toFloat(),
+                    onValueChange = { homeInitialVideoCount = ((it.toInt() / 5) * 5).coerceIn(10, 50) },
+                    valueRange = 10f..50f,
+                    steps = 7
+                )
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 com.drivedeck.tubedeck.ui.screens.HomeFeedArrangement.normalize(homeFeedOrder)
                     .forEachIndexed { position, feed ->

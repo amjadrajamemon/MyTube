@@ -146,6 +146,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
         _settings.value = next
         prefs.edit().apply {
             putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
+            putBoolean("smartOfflineReplayEnabled", next.smartOfflineReplayEnabled)
+            putBoolean("smartOfflineReplayWifiOnly", next.smartOfflineReplayWifiOnly)
             remove("maxConcurrent")
             putString("instantMode", next.instantMode.name); putString("instantQuality", next.instantQuality)
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
@@ -229,6 +231,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private fun loadSettings() = TubeDeckSettings(
         downloadDir = prefs.getString("downloadDir", "MyTube")?.takeIf { it.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) } ?: "MyTube",
         downloadTreeUri = prefs.getString("downloadTreeUri", null),
+        smartOfflineReplayEnabled = prefs.getBoolean("smartOfflineReplayEnabled", false),
+        smartOfflineReplayWifiOnly = prefs.getBoolean("smartOfflineReplayWifiOnly", true),
         instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
         instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
         customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),

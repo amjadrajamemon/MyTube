@@ -1713,6 +1713,8 @@ fun NativeExoPlayer(
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
+                // A failed stream is not an uninterrupted start-to-finish watch.
+                smartReplayWatch.onSeekOrSkip()
                 PlaybackDiagnostics.record(context, "player_error", "${error.errorCodeName}: ${error.cause?.javaClass?.simpleName.orEmpty()}")
                 isPreparing = false
                 isBuffering = false

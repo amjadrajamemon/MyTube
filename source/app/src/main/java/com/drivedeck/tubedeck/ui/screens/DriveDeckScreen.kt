@@ -1886,6 +1886,7 @@ fun DriveDeckTopHeader(
     val profile = LocalDeckThemeProfile.current
     val configuration = LocalConfiguration.current
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val compactHeader = configuration.screenWidthDp < 420
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var searchDialogMode by remember { mutableStateOf<String?>(null) }
@@ -1913,7 +1914,7 @@ fun DriveDeckTopHeader(
                 Icons.Default.SmartDisplay, contentDescription = null,
                 tint = TubeDeckAccentCyan, modifier = Modifier.size(23.dp)
             )
-            if (!landscape) {
+            if (!landscape && !compactHeader) {
                 Text(
                     "MyTube", color = TubeDeckTextPrimary,
                     fontSize = 18.sp, fontWeight = FontWeight.Bold
@@ -1946,7 +1947,8 @@ fun DriveDeckTopHeader(
                     )
                 }
             }
-            if (recentSearches.isNotEmpty()) {
+            if (recentSearches.isNotEmpty() && !compactHeader &&
+                (!landscape || configuration.screenWidthDp >= 720)) {
                 IconButton(
                     onClick = { searchDialogMode = "history" },
                     modifier = Modifier.size(40.dp)
@@ -1957,11 +1959,13 @@ fun DriveDeckTopHeader(
                     )
                 }
             }
-            GoogleAccountButton(
-                account = googleAccount,
-                onClick = onGoogleAccountClick,
-                showLabelWhenSignedOut = false
-            )
+            if (!compactHeader && (!landscape || configuration.screenWidthDp >= 700)) {
+                GoogleAccountButton(
+                    account = googleAccount,
+                    onClick = onGoogleAccountClick,
+                    showLabelWhenSignedOut = false
+                )
+            }
             IconButton(onClick = onOpenDownloads, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Default.Download, "Downloads", tint = TubeDeckTextPrimary)
             }

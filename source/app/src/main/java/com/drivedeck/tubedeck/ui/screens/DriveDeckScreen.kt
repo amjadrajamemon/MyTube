@@ -1309,7 +1309,7 @@ private fun HomeVerticalFeedPanel(
                         video = video,
                         listView = true,
                         tvNavigation = tvNavigation,
-                        compactTvList = tvNavigation,
+                        compactTvList = true,
                         firstItemFocus = if (focusVideoId == video.videoId)
                             firstItemFocus else null,
                         onVideoFocused = onVideoFocused,

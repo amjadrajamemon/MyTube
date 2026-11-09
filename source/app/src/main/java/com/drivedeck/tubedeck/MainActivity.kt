@@ -1427,6 +1427,12 @@ class MainActivity : ComponentActivity() {
                                         },
                                         googleAccount = googleAccount,
                                         onGoogleAccountClick = onGoogleAccountClick,
+                                        onCompletedUninterruptedWatch = { completed ->
+                                            if (repository.enqueueSmartOfflineReplay(completed)) {
+                                                Toast.makeText(applicationContext,
+                                                    "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
                                         onPlaybackPositionChanged = { activePlaybackPositionMs = it },
                                         onPlaybackRequestedChanged = { embeddedPlaybackRequested = it },
                                         foregroundPlaybackAllowed = !automaticAudioHandoff

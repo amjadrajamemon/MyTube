@@ -285,7 +285,7 @@ fun DriveDeckScreen(
                             modifier = Modifier.fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
-                            val visiblePanels = HomeResponsiveLayoutPolicy.listPanelCount(maxWidth.value.toInt())
+                            val visiblePanels = HomeResponsiveLayoutPolicy.listPanelCount(maxWidth.value.toInt(), feeds.size)
                             val panelWidth = ((maxWidth - 24.dp) / visiblePanels)
                                 .coerceAtLeast(240.dp)
                             val panelHeight = (

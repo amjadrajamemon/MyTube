@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.7 signed test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v237-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download APK bundle built from the audited feature branch
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.7-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42579587531
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Verify original APK bytes, file inventory and archive integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.7-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.7-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.7-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" >/dev/null; done
+          ls -lh dist
+
+      - name: Publish individually downloadable PREVIEW APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.3.7-signed-preview-20261109"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Preview already exists; preserving immutable release assets."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.7-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.7-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.7-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target c121c2211aa6e57c104db727e4ab08a7c2704215 \
+            --prerelease \
+            --title "TubeDeck v2.3.7 signed TEST APKs — responsive Home + TV fixes" \
+            --notes "TEST BUILD; DEVICE COMPATIBILITY IS NOT GUARANTEED. Compiled ARM64, ARMv7 and Universal APKs from GitHub Actions run 42579587531. Unit tests, lint, ABI/manifest, v1/v2/v3 signing, and checksum checks passed. Includes Trending visibility/data fixes, independent vertical List and adaptive Tile view, configurable initial 20-card batches with pagination, full wrapped video titles, compact search/safe-area refinements, and aligned Settings switches. Physical Android TV/SmartTube feature parity remains unverified. Android emulator install and launch gate is independent; a failing or inconclusive emulator test is not proof of physical device installation. User should back up and test on device."

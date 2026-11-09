@@ -3,6 +3,9 @@ package com.drivedeck.tubedeck.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import com.drivedeck.tubedeck.player.SmartOfflineReplayPolicy
 import android.telephony.TelephonyManager
 import java.util.Locale
 import com.drivedeck.tubedeck.player.PlaylistQueuePolicy
@@ -1095,6 +1098,76 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
         processQueue()
         return task.id
+    }
+
+    /**
+     * Auto-retain a qualifying, permitted watch using the existing foreground
+     * offline-media queue. No GB quota, retention count, or eviction policy.
+     * This is a real download after playback (NOT a promoted ExoPlayer cache).
+     * Call only after a positive SmartOfflineReplayWatch.finish() event.
+     */
+    fun enqueueSmartOfflineReplay(media: OfflineMedia): Boolean {
+        val setting = _settings.value
+        if (!setting.smartOfflineReplayEnabled) return false
+        val videoId = YoutubeUrls.videoId(media.mediaUri) ?: return false
+        val networkPermitted = if (!setting.smartOfflineReplayWifiOnly) {
+            true
+        } else {
+            val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                as? ConnectivityManager
+            val network = connectivity?.activeNetwork
+            val caps = network?.let { connectivity.getNetworkCapabilities(it) }
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
+                caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+        }
+        // No fixed total storage limit: only avoid starting with critically low free
+        // space. The download engine continues to enforce actual filesystem limits.
+        val enoughFreeSpace = runCatching {
+            context.filesDir.usableSpace >= 96L * 1024L * 1024L
+        }.getOrDefault(false)
+        val queued = synchronized(lock) {
+            val exists = _offlineMediaList.value.any { it.videoId == videoId }
+            val alreadyDownloading = _downloadQueue.value.any {
+                it.videoId == videoId && it.status in setOf(
+                    TaskStatus.QUEUED, TaskStatus.DOWNLOADING, TaskStatus.PAUSED
+                )
+            }
+            if (!SmartOfflineReplayPolicy.eligibleForAutomaticSave(
+                    enabled = setting.smartOfflineReplayEnabled,
+                    completed = true,
+                    videoId = videoId,
+                    alreadySaved = exists,
+                    alreadyQueued = alreadyDownloading,
+                    networkPermitted = networkPermitted,
+                    enoughFreeStorage = enoughFreeSpace
+                )
+            ) {
+                false
+            } else {
+                val now = System.currentTimeMillis()
+                val sessionId = currentOrNewSessionIdLocked(now)
+                val newTask = DownloadTask(
+                    id = UUID.randomUUID().toString(),
+                    url = "https://www.youtube.com/watch?v=$videoId",
+                    videoId = videoId,
+                    title = media.title.ifBlank { "Video $videoId" },
+                    thumbnailUrl = media.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
+                    mode = DownloadMode.VIDEO,
+                    quality = setting.instantQuality,
+                    outputFormat = "MP4/WebM",
+                    createdAt = now,
+                    sessionId = sessionId,
+                    eventAt = now
+                )
+                val retained = _downloadQueue.value.filterNot {
+                    it.status == TaskStatus.COMPLETED && it.sessionId != sessionId
+                }
+                setQueue(retained + newTask)
+                true
+            }
+        }
+        if (queued) processQueue()
+        return queued
     }
 
     fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String): Int {

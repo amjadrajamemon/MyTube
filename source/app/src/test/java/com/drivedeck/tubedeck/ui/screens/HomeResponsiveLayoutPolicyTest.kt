@@ -20,6 +20,8 @@ class HomeResponsiveLayoutPolicyTest {
         assertEquals(1, HomeResponsiveLayoutPolicy.listPanelCount(390))
         assertEquals(2, HomeResponsiveLayoutPolicy.listPanelCount(720))
         assertEquals(3, HomeResponsiveLayoutPolicy.listPanelCount(1150))
+        assertEquals(2, HomeResponsiveLayoutPolicy.listPanelCount(1150, enabledFeeds = 2))
+        assertEquals(1, HomeResponsiveLayoutPolicy.listPanelCount(1150, enabledFeeds = 1))
     }
 
     @Test fun listTileChoiceIsIndependentFromTheme() {

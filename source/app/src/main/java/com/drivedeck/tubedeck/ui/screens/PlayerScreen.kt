@@ -2237,15 +2237,10 @@ fun NativeExoPlayer(
         tvPendingControlFocus = true
     }
 
-    BackHandler(
-        enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
-            !showSettings && !showQuickActions && !showEqualizer &&
-            !showCaptionMenu && !showQualityMenu && !showComments && !viewingMenuVisible &&
-            !showPlaybackModeCards
-    ) {
-        controlsVisible = false
-        tvRestoreSurfaceFocus = true
-    }
+    // The TV user chose what Back must do during video playback:
+    // Mini-PiP, close immediately, or show the exit menu. Ordinary control
+    // chrome must NOT swallow that first Back. Actual dialogs/menus retain
+    // their higher-priority Back handlers above.
 
     LaunchedEffect(controlsVisible, tvRestoreSurfaceFocus) {
         if (!controlsVisible && tvRestoreSurfaceFocus) {

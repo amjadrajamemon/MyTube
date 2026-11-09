@@ -953,6 +953,30 @@ class NativePlayerActivity : ComponentActivity() {
             return
         }
 
+        // TV/Google TV Back is intentionally deterministic. The user chooses
+        // Mini-PiP, immediate close or the focused exit menu under Playback settings.
+        // In-player controls and dialogs already consume their own first Back.
+        if (!isPipMode &&
+            com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice(this)
+        ) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            PlaybackBackSequenceTracker.reset()
+            playbackBackCoordinator.reset()
+            val prefs = repository.settings.value
+            when (com.drivedeck.tubedeck.player.TvBackButtonPolicy.decide(
+                prefs.tvBackButtonAction, prefs.pipEnabled
+            )) {
+                com.drivedeck.tubedeck.player.TvBackButtonAction.MINI_PIP ->
+                    enterPlayerPip()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.CLOSE_IMMEDIATELY ->
+                    closePlaybackCompletely()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.SHOW_ACTION_MENU ->
+                    showPlaybackExitChoices = true
+            }
+            return
+        }
+
         if (isPipMode) {
             // On TV a single Back on the focused mini-player must close it,
             // rather than repeatedly hiding the task without stopping playback.

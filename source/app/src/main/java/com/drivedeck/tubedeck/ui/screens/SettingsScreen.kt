@@ -73,6 +73,8 @@ fun SettingsScreen(
     }
     var downloadDir by remember { mutableStateOf(currentSettings.downloadDir) }
     var downloadTreeUri by remember { mutableStateOf(currentSettings.downloadTreeUri) }
+    var smartOfflineReplayEnabled by remember { mutableStateOf(currentSettings.smartOfflineReplayEnabled) }
+    var smartOfflineReplayWifiOnly by remember { mutableStateOf(currentSettings.smartOfflineReplayWifiOnly) }
     var folderError by remember { mutableStateOf<String?>(null) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -197,6 +199,8 @@ fun SettingsScreen(
     val autoSaveDraft = currentSettings.copy(
                             downloadDir = if (folderError == null) downloadDir else currentSettings.downloadDir,
                             downloadTreeUri = if (folderError == null) downloadTreeUri else currentSettings.downloadTreeUri,
+                            smartOfflineReplayEnabled = smartOfflineReplayEnabled,
+                            smartOfflineReplayWifiOnly = smartOfflineReplayWifiOnly,
                             instantMode = instantMode,
                             instantQuality = instantQuality,
                             customMode = customMode,
@@ -758,6 +762,23 @@ fun SettingsScreen(
             }
 
             // Instant Download Settings
+            SettingsCard(title = "Smart Offline Replay") {
+                ToggleRow(
+                    "Auto-save completed videos", smartOfflineReplayEnabled
+                ) { smartOfflineReplayEnabled = it }
+                ToggleRow(
+                    "Save over Wi-Fi / Ethernet only", smartOfflineReplayWifiOnly
+                ) { smartOfflineReplayWifiOnly = it }
+                Text(
+                    "Only an uninterrupted full native-player watch qualifies; resume, seek, skip or manual pause disqualifies the watch. Saved videos appear in Offline Media when the transfer finishes. No 2 GB cap, automatic pruning, or total storage quota is imposed; available device space still applies.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                Text(
+                    "Enable only for videos you own or may lawfully retain. Not all streaming sources permit offline copies; Web playback and protected streams are not eligible. The current download engine may transfer the media again after playback.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+            }
+
             SettingsCard(title = "Instant Download Defaults") {
                 ModeSelector(selectedMode = instantMode, onSelect = { instantMode = it })
                 Spacer(modifier = Modifier.height(8.dp))

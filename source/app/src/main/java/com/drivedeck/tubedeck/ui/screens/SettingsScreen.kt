@@ -154,6 +154,7 @@ fun SettingsScreen(
     var carDashboardEnabled by remember { mutableStateOf(currentSettings.carDashboardEnabled) }
     var homeFeedOrder by remember { mutableStateOf(currentSettings.homeFeedOrder) }
     var homeDisplayMode by remember { mutableStateOf(currentSettings.homeDisplayMode) }
+    var homeBrowseMode by remember { mutableStateOf(currentSettings.homeBrowseMode) }
     var homeInitialVideoCount by remember { mutableIntStateOf(currentSettings.homeInitialVideoCount.coerceIn(10, 50)) }
     var studioHomeLayout by remember { mutableStateOf(currentSettings.studioHomeLayout) }
     var studioNavigation by remember { mutableStateOf(currentSettings.studioNavigation) }
@@ -243,6 +244,7 @@ fun SettingsScreen(
                             carDashboardEnabled = carDashboardEnabled,
                             homeFeedOrder = homeFeedOrder,
                             homeDisplayMode = homeDisplayMode,
+                            homeBrowseMode = homeBrowseMode,
                             homeInitialVideoCount = homeInitialVideoCount,
                             studioHomeLayout = studioHomeLayout,
                             studioNavigation = studioNavigation,
@@ -990,7 +992,9 @@ fun SettingsScreen(
             SettingsCard(title = "Home layout") {
                 Text("Choose how the three feed sections are presented and arranged.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp)
-                StudioChoiceRow("Card presentation", listOf("Theme", "Compact", "Cards", "Cinematic"),
+                StudioChoiceRow("Home browsing mode", listOf("List", "Tile"),
+                    homeBrowseMode) { homeBrowseMode = it }
+                StudioChoiceRow("Theme presentation", listOf("Theme", "Compact", "Cards", "Cinematic"),
                     homeDisplayMode) { homeDisplayMode = it }
                 Text("Initial videos per enabled feed: $homeInitialVideoCount",
                     color = TubeDeckTextPrimary, fontSize = 12.sp)

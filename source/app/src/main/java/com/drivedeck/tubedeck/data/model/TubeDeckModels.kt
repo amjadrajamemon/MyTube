@@ -168,6 +168,8 @@ data class TubeDeckSettings(
     val carDashboardEnabled: Boolean = false,
     val homeFeedOrder: String = "History,Relevant,Trending",
     val homeDisplayMode: String = "Theme",
+    // Independent, persisted browsing preference; never reset on theme/navigation change.
+    val homeBrowseMode: String = "List",
     val homeInitialVideoCount: Int = 20,
     val studioHomeLayout: String = "Preset",
     val studioNavigation: String = "Preset",

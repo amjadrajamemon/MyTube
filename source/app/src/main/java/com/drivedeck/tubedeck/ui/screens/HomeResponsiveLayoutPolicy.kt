@@ -11,5 +11,15 @@ internal object HomeResponsiveLayoutPolicy {
         return (usable / minimumCardDp).coerceIn(1, if (tvNavigation) 5 else 4)
     }
 
+    /** Phone: swipe full-size columns; tablet: two; TV: three. */
+    fun listPanelCount(availableWidthDp: Int): Int = when {
+        availableWidthDp >= 900 -> 3
+        availableWidthDp >= 620 -> 2
+        else -> 1
+    }
+
+    /** Home view selection must not be inferred from the theme. */
+    fun browseMode(raw: String?): String = if (raw == "Tile") "Tile" else "List"
+
     fun initialVideos(setting: Int): Int = setting.coerceIn(10, 50)
 }

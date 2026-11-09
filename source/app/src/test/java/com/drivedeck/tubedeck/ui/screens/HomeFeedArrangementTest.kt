@@ -14,6 +14,18 @@ class HomeFeedArrangementTest {
             HomeFeedArrangement.normalize("Trending,Trending,Unrecognized"))
     }
 
+    @Test fun disabledTrendingIsNotRenderedEvenWhenFirst() {
+        assertEquals(listOf("History", "Relevant"),
+            HomeFeedArrangement.visible("Trending,History,Relevant",
+                history = true, relevant = true, trending = false))
+        assertEquals(listOf("Relevant"),
+            HomeFeedArrangement.visible("Trending,History,Relevant",
+                history = false, relevant = true, trending = false))
+        assertEquals(emptyList<String>(),
+            HomeFeedArrangement.visible("History,Relevant,Trending",
+                history = false, relevant = false, trending = false))
+    }
+
     @Test fun movesOnlyOnePositionAndPreservesAllFeeds() {
         assertEquals("Relevant,History,Trending",
             HomeFeedArrangement.move("History,Relevant,Trending", "Relevant", -1))

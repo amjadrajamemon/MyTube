@@ -43,8 +43,10 @@ import com.drivedeck.tubedeck.ui.components.SearchCompactPolicy
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
@@ -290,10 +292,10 @@ fun DriveDeckScreen(
                                 .coerceAtLeast(240.dp)
                             val panelHeight = (
                                 LocalConfiguration.current.screenHeightDp -
-                                    if (tvNavigation) 165 else 176
+                                    if (tvNavigation) 137 else 155
                                 ).coerceAtLeast(310).dp
                             LazyRow(
-                                modifier = Modifier.fillMaxWidth().height(panelHeight),
+                                modifier = Modifier.fillMaxWidth().height(panelHeight).focusGroup(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 contentPadding = PaddingValues(horizontal = 4.dp)
                             ) {
@@ -1294,23 +1296,32 @@ private fun HomeVerticalFeedPanel(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 5.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth().weight(1f).focusGroup(),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(if (tvNavigation) 3.dp else 8.dp)
             ) {
                 itemsIndexed(
                     visible,
                     key = { index, video -> "$feedName-$index-${video.videoId}" }
                 ) { _, video ->
+                    val bring = remember(video.videoId) { BringIntoViewRequester() }
+                    val bringScope = rememberCoroutineScope()
                     AdaptiveHomeVideoCard(
                         video = video,
                         listView = true,
                         tvNavigation = tvNavigation,
+                        compactTvList = tvNavigation,
                         firstItemFocus = if (focusVideoId == video.videoId)
                             firstItemFocus else null,
                         onVideoFocused = onVideoFocused,
                         onOpenVideo = onOpenVideo,
                         modifier = Modifier.fillMaxWidth()
+                            .bringIntoViewRequester(bring)
+                            .onFocusChanged {
+                                if (it.isFocused) bringScope.launch {
+                                    runCatching { bring.bringIntoView() }
+                                }
+                            }
                     )
                 }
                 item(key = "feed-status-$feedName") {
@@ -1353,7 +1364,8 @@ private fun AdaptiveHomeVideoCard(
     firstItemFocus: FocusRequester?,
     onVideoFocused: (HomeVideo) -> Unit,
     onOpenVideo: (HomeVideo) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compactTvList: Boolean = false
 ) {
     val shape = RoundedCornerShape(LocalDeckThemeProfile.current.cornerRadiusDp.dp)
     Surface(
@@ -1370,19 +1382,28 @@ private fun AdaptiveHomeVideoCard(
     ) {
         if (listView) {
             Row(
-                Modifier.fillMaxWidth().padding(9.dp),
+                Modifier.fillMaxWidth().padding(if (compactTvList) 5.dp else 9.dp),
                 verticalAlignment = Alignment.Top
             ) {
                 VideoThumbnail(
                     video,
-                    Modifier.width(if (tvNavigation) 180.dp else 118.dp)
-                        .aspectRatio(16f / 9f)
+                    Modifier.width(
+                        if (compactTvList) 92.dp
+                        else if (tvNavigation) 145.dp else 118.dp
+                    ).aspectRatio(16f / 9f)
                 )
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                Column(
+                    Modifier.weight(1f).padding(start = if (compactTvList) 7.dp else 11.dp)
+                ) {
+                    // Complete video titles still wrap, but compact thumbnail and
+                    // reduced metadata spacing let many more TV videos fit vertically.
                     ReadableVideoTitle(video.title, maxLines = Int.MAX_VALUE)
-                    Spacer(Modifier.height(6.dp))
-                    ReadableVideoMetadata(video.channelTitle, maxLines = 3)
-                    VideoViews(video.viewCount)
+                    Spacer(Modifier.height(if (compactTvList) 2.dp else 6.dp))
+                    ReadableVideoMetadata(
+                        video.channelTitle,
+                        maxLines = if (compactTvList) 1 else 3
+                    )
+                    if (!compactTvList) VideoViews(video.viewCount)
                 }
             }
         } else {

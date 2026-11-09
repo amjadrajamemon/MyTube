@@ -581,6 +581,12 @@ class NativePlayerActivity : ComponentActivity() {
                     } else null,
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
+                    onCompletedUninterruptedWatch = { completed ->
+                        if (repository.enqueueSmartOfflineReplay(completed)) {
+                            Toast.makeText(applicationContext,
+                                "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
                     onPlaybackRequestedChanged = {
                         playbackRequested = it

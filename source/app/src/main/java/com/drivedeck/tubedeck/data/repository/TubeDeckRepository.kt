@@ -170,6 +170,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockBannerAds", next.blockBannerAds)
             putBoolean("blockTrackers", next.blockTrackers); putBoolean("sponsorBlockEnabled", next.sponsorBlockEnabled)
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
+            putString("tvBackButtonAction", com.drivedeck.tubedeck.player.TvBackButtonPolicy.normalize(next.tvBackButtonAction))
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             putBoolean("sideBySideEpisodeFeeds", next.sideBySideEpisodeFeeds)
@@ -260,6 +261,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         sponsorBlockEnabled = prefs.getBoolean("sponsorBlockEnabled", true),
         blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
         pipEnabled = prefs.getBoolean("pipEnabled", true),
+        tvBackButtonAction = com.drivedeck.tubedeck.player.TvBackButtonPolicy.normalize(prefs.getString("tvBackButtonAction", "Action menu")),
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
         sideBySideEpisodeFeeds = prefs.getBoolean("sideBySideEpisodeFeeds", true),

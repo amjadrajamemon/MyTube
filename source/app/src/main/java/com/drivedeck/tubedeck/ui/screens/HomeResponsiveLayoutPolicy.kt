@@ -12,11 +12,11 @@ internal object HomeResponsiveLayoutPolicy {
     }
 
     /** Phone: swipe full-size columns; tablet: two; TV: three. */
-    fun listPanelCount(availableWidthDp: Int): Int = when {
+    fun listPanelCount(availableWidthDp: Int, enabledFeeds: Int = 3): Int = (when {
         availableWidthDp >= 900 -> 3
         availableWidthDp >= 620 -> 2
         else -> 1
-    }
+    }).coerceAtMost(enabledFeeds.coerceAtLeast(1))
 
     /** Home view selection must not be inferred from the theme. */
     fun browseMode(raw: String?): String = if (raw == "Tile") "Tile" else "List"

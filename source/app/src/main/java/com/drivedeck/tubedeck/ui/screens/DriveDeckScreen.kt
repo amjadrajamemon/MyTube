@@ -114,7 +114,7 @@ fun DriveDeckScreen(
     val deckTheme = LocalDeckThemeProfile.current
     // The persisted setting, not theme-dependent rememberSaveable, owns List/Tile mode.
     // It survives process death, playback navigation, theme switches and orientation.
-    val listView = homeBrowseMode != "Tile"
+    val listView = HomeResponsiveLayoutPolicy.browseMode(homeBrowseMode) == "List"
     val tvNavigation = rememberAdaptiveTvNavigation()
     val firstVideoFocus = remember { FocusRequester() }
     val searchResultFocus = remember { FocusRequester() }
@@ -285,11 +285,7 @@ fun DriveDeckScreen(
                             modifier = Modifier.fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
-                            val visiblePanels = when {
-                                maxWidth >= 900.dp -> 3
-                                maxWidth >= 620.dp -> 2
-                                else -> 1
-                            }
+                            val visiblePanels = HomeResponsiveLayoutPolicy.listPanelCount(maxWidth.value.toInt())
                             val panelWidth = ((maxWidth - 24.dp) / visiblePanels)
                                 .coerceAtLeast(240.dp)
                             val panelHeight = (

@@ -360,8 +360,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
         )
 
     private suspend fun publicTrending(region: String, limit: Int = 12): List<HomeVideo> {
+        // A proper Trending kiosk, region-aware and independent of user search keywords.
+        // Keep the search fallback solely for upstream extractor outages.
+        val kiosk = runCatching {
+            YoutubeStreamResolver.trendingVideosPage(region, null, limit).first
+        }.getOrDefault(emptyList())
+        if (kiosk.isNotEmpty()) return kiosk.map(::relatedToHome)
         val countryName = Locale("", region).displayCountry.ifBlank { region }
-        return YoutubeStreamResolver.searchVideos("popular trending videos $countryName", limit)
+        return YoutubeStreamResolver.searchVideos("popular videos in $countryName", limit)
             .map(::relatedToHome)
     }
 
@@ -767,6 +773,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
      * When the provider has no next-page cursor, the UI shows an end-of-feed state.
      */
     fun loadMoreHomeFeed(feed: String) {
+        // Disabling a feed must also disable all background pagination/network work.
+        val current = _settings.value
+        if ((feed == "History" && !current.homeHistoryEnabled) ||
+            (feed == "Relevant" && !current.homeSuggestionsEnabled) ||
+            (feed == "Trending" && !current.homeTrendingEnabled)) return
         if (feed == "History") {
             if (historyMoreJob?.isActive == true || feed in _moreFeedsExhausted.value) return
             historyMoreJob = scope.launch {
@@ -811,11 +822,24 @@ class TubeDeckRepository private constructor(private val context: Context) {
         homePageJobs[feed] = scope.launch {
             _moreFeedsLoading.value = _moreFeedsLoading.value + feed
             try {
-                val (items, nextCursor) = YoutubeStreamResolver.searchVideosPage(
-                    query, homePageCursors[feed], limit = 36
-                )
+                val (items, nextCursor) = if (feed == "Trending") {
+                    runCatching {
+                        YoutubeStreamResolver.trendingVideosPage(
+                            country, homePageCursors[feed], limit = 36
+                        )
+                    }.getOrNull()?.takeIf { it.first.isNotEmpty() }
+                        ?: YoutubeStreamResolver.searchVideosPage(
+                            query, null, limit = 36
+                        )
+                } else {
+                    YoutubeStreamResolver.searchVideosPage(
+                        query, homePageCursors[feed], limit = 36
+                    )
+                }
                 ensureActive()
-                if (homePageQueries[feed] != query) return@launch
+                if (homePageQueries[feed] != query ||
+                    (feed == "Trending" && !_settings.value.homeTrendingEnabled) ||
+                    (feed == "Relevant" && !_settings.value.homeSuggestionsEnabled)) return@launch
                 val target = if (feed == "Relevant") _homeSuggestions else _homeTrending
                 val seen = target.value.mapTo(hashSetOf()) { it.videoId }
                 val watched = if (feed == "Relevant") _watchHistory.value.mapTo(hashSetOf()) { it.videoId }

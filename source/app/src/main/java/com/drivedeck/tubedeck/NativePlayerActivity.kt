@@ -935,18 +935,6 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         val now = SystemClock.elapsedRealtime()
-        val rapidCount = PlaybackBackSequenceTracker.record(now)
-        if (rapidCount >= 3) {
-            playbackBackDecisionJob?.cancel()
-            playbackBackDecisionJob = null
-            pauseGeneration += 1
-            showPlaybackExitChoices = false
-            playbackBackCoordinator.onChooserDismissed()
-            PlaybackBackSequenceTracker.reset()
-            if (isPipMode) moveTaskToBack(true)
-            return
-        }
-
         if (enteringPip) {
             // PiP entry is asynchronous. Do not reinterpret a second rapid Back as a chooser
             // request while Android is still animating the first Back into PiP.
@@ -974,6 +962,18 @@ class NativePlayerActivity : ComponentActivity() {
                 com.drivedeck.tubedeck.player.TvBackButtonAction.SHOW_ACTION_MENU ->
                     showPlaybackExitChoices = true
             }
+            return
+        }
+
+        val rapidCount = PlaybackBackSequenceTracker.record(now)
+        if (rapidCount >= 3) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            pauseGeneration += 1
+            showPlaybackExitChoices = false
+            playbackBackCoordinator.onChooserDismissed()
+            PlaybackBackSequenceTracker.reset()
+            if (isPipMode) moveTaskToBack(true)
             return
         }
 

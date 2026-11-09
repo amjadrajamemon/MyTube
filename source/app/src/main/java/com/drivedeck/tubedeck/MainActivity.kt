@@ -1201,6 +1201,12 @@ class MainActivity : ComponentActivity() {
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     homeFeedOrder = settings.homeFeedOrder,
                                     homeDisplayMode = settings.homeDisplayMode,
+                                    homeBrowseMode = settings.homeBrowseMode,
+                                    onHomeBrowseModeChange = { mode ->
+                                        repository.updateSettings(repository.settings.value.copy(
+                                            homeBrowseMode = if (mode == "Tile") "Tile" else "List"
+                                        ))
+                                    },
                                     homeInitialVideoCount = settings.homeInitialVideoCount,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,

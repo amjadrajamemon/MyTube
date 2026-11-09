@@ -86,7 +86,7 @@ fun ReadableVideoTitle(
         fontWeight = weight,
         softWrap = true,
         maxLines = maxLines ?: metrics.maxTitleLines,
-        overflow = TextOverflow.Ellipsis,
+        overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
         modifier = modifier
     )
 }

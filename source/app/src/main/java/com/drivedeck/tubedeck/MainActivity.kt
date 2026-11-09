@@ -1201,6 +1201,7 @@ class MainActivity : ComponentActivity() {
                                     trendingEnabled = settings.homeTrendingEnabled,
                                     homeFeedOrder = settings.homeFeedOrder,
                                     homeDisplayMode = settings.homeDisplayMode,
+                                    homeInitialVideoCount = settings.homeInitialVideoCount,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,
                                     viewStateKey = currentScreen.name,

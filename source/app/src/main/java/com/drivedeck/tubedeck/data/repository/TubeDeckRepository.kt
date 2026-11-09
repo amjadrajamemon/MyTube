@@ -194,6 +194,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("carDashboardEnabled", next.carDashboardEnabled)
             putString("homeFeedOrder", next.homeFeedOrder)
             putString("homeDisplayMode", next.homeDisplayMode)
+            putInt("homeInitialVideoCount", next.homeInitialVideoCount.coerceIn(10, 50))
             putString("studioHomeLayout", next.studioHomeLayout)
             putString("studioNavigation", next.studioNavigation)
             putString("studioPlayer", next.studioPlayer)
@@ -281,6 +282,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         carDashboardEnabled = prefs.getBoolean("carDashboardEnabled", false),
         homeFeedOrder = prefs.getString("homeFeedOrder", "History,Relevant,Trending") ?: "History,Relevant,Trending",
         homeDisplayMode = prefs.getString("homeDisplayMode", "Theme") ?: "Theme",
+        homeInitialVideoCount = prefs.getInt("homeInitialVideoCount", 20).coerceIn(10, 50),
         studioHomeLayout = prefs.getString("studioHomeLayout", "Preset") ?: "Preset",
         studioNavigation = prefs.getString("studioNavigation", "Preset") ?: "Preset",
         studioPlayer = prefs.getString("studioPlayer", "Preset") ?: "Preset",

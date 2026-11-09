@@ -990,12 +990,12 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Home layout") {
-                Text("Choose how the three feed sections are presented and arranged.",
-                    color = TubeDeckTextSecondary, fontSize = 11.sp)
+                Text(
+                    "List keeps categories in independent vertical columns; Tile uses a responsive card grid. Your choice is saved across themes and restarts.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
                 StudioChoiceRow("Home browsing mode", listOf("List", "Tile"),
                     homeBrowseMode) { homeBrowseMode = it }
-                StudioChoiceRow("Theme presentation", listOf("Theme", "Compact", "Cards", "Cinematic"),
-                    homeDisplayMode) { homeDisplayMode = it }
                 Text("Initial videos per enabled feed: $homeInitialVideoCount",
                     color = TubeDeckTextPrimary, fontSize = 12.sp)
                 Slider(

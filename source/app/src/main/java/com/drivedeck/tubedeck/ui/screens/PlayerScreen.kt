@@ -793,7 +793,7 @@ fun NativeExoPlayer(
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
     var endActionDispatched by remember(media.id) { mutableStateOf(false) }
-    val smartReplayWatch = remember(media.mediaUri) { SmartOfflineReplayWatch() }
+    val smartReplayWatch = remember(media.id, media.mediaUri) { SmartOfflineReplayWatch() }
     var isPreparing by remember(media.id) { mutableStateOf(true) }
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }

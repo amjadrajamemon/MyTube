@@ -1,4 +1,4 @@
-name: TubeDeck v2.3.9 Install-Verified ARM64 ARMv7 and Universal
+name: TubeDeck v2.3.10 Install-Verified ARM64 ARMv7 and Universal
 
 on:
   push:
@@ -35,8 +35,8 @@ jobs:
           ! test -d source/app/src/main/java/com/drivedeck/tubedeck/iptv
           ! grep -R -E 'NovaPlaybackBridge|IptvActivity|onOpenNovaIptv|onOpenIptv' source/app/src/main/java
           ! grep -Fq 'include(":app", ":novaiptv")' source/settings.gradle.kts
-          grep -Fq 'versionCode = 119' source/app/build.gradle.kts
-          grep -Fq 'versionName = "2.3.9"' source/app/build.gradle.kts
+          grep -Fq 'versionCode = 120' source/app/build.gradle.kts
+          grep -Fq 'versionName = "2.3.10"' source/app/build.gradle.kts
           grep -Fq 'PlaylistQueuePolicy.nextUnplayed' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
           grep -Fq 'restoreScreenAfterTap()' source/app/src/main/java/com/drivedeck/tubedeck/ui/components/PlaybackBlackoutHost.kt
           HOME=source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/DriveDeckScreen.kt
@@ -99,6 +99,10 @@ jobs:
           grep -Fq 'TvBackButtonPolicy.decide(' source/app/src/main/java/com/drivedeck/tubedeck/NativePlayerActivity.kt
           grep -Fq 'tvBackButtonAction = tvBackButtonAction' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
           test -f source/app/src/test/java/com/drivedeck/tubedeck/player/TvBackButtonPolicyTest.kt
+          test -f source/app/src/test/java/com/drivedeck/tubedeck/player/SmartOfflineReplayPolicyTest.kt
+          grep -Fq 'enqueueSmartOfflineReplay' source/app/src/main/java/com/drivedeck/tubedeck/data/repository/TubeDeckRepository.kt
+          grep -Fq 'smartReplayWatch.finish(' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/PlayerScreen.kt
+          grep -Fq 'smartOfflineReplayEnabled = smartOfflineReplayEnabled' source/app/src/main/java/com/drivedeck/tubedeck/ui/screens/SettingsScreen.kt
           grep -Fq 'searchVideosPage(' source/app/src/main/java/com/drivedeck/tubedeck/player/YoutubeStreamResolver.kt
           test -f source/app/src/main/java/com/drivedeck/tubedeck/ui/components/VideoBookmarksDialog.kt
           test -f source/app/src/main/java/com/drivedeck/tubedeck/ui/components/RemoteInputTrainingDialog.kt
@@ -177,7 +181,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.9-Android-Lint
+          name: TubeDeck-v2.3.10-Android-Lint
           path: |
             source/app/build/reports/lint-results-arm64Debug.html
             source/app/build/reports/lint-results-arm64Debug.xml
@@ -214,9 +218,9 @@ jobs:
             unzip -t "$RAW" >/dev/null
             "$ZIPALIGN" -c -v 4 "$RAW" >/dev/null
             case "$FLAVOR" in
-              arm64) FINAL="dist/TubeDeck-v2.3.9-ARM64-debug.apk";;
-              armv7) FINAL="dist/TubeDeck-v2.3.9-ARMv7-debug.apk";;
-              universal) FINAL="dist/TubeDeck-v2.3.9-Universal-debug.apk";;
+              arm64) FINAL="dist/TubeDeck-v2.3.10-ARM64-debug.apk";;
+              armv7) FINAL="dist/TubeDeck-v2.3.10-ARMv7-debug.apk";;
+              universal) FINAL="dist/TubeDeck-v2.3.10-Universal-debug.apk";;
             esac
             # AGP correctly emits v2+v3 for minSdk 24 but optimizes away
             # legacy JAR signing despite enableV1Signing=true. Explicitly
@@ -238,7 +242,7 @@ jobs:
             echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true'
             echo "$SIGNATURE_REPORT" | grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true'
             PACKAGE_INFO="$("$AAPT" dump badging "$FINAL")"
-            echo "$PACKAGE_INFO" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd' versionCode='119' versionName='2.3.9'"
+            echo "$PACKAGE_INFO" | grep -Fq "package: name='com.aistudio.tubedeck.kxmvd' versionCode='120' versionName='2.3.10'"
             echo "$PACKAGE_INFO" | grep -Fq "sdkVersion:'24'"
             if [ "$FLAVOR" = "arm64" ]; then
               unzip -l "$FINAL" | grep 'lib/arm64-v8a/' >/dev/null
@@ -257,7 +261,7 @@ jobs:
       - name: Upload installable triple-APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.9-ARM64-ARMv7-Universal
+          name: TubeDeck-v2.3.10-ARM64-ARMv7-Universal
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -272,13 +276,13 @@ jobs:
           # Keep emulator-runner's animation-setting ADB calls disabled: Android 11
           # image sometimes returns 'settings: Broken pipe (32)' after boot.
           emulator-boot-timeout: 600
-          script: bash ci/apk-install-smoke.sh dist/TubeDeck-v2.3.9-Universal-debug.apk dist/
+          script: bash ci/apk-install-smoke.sh dist/TubeDeck-v2.3.10-Universal-debug.apk dist/
 
       - name: Preserve emulator installation report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TubeDeck-v2.3.9-Installation-Diagnostics
+          name: TubeDeck-v2.3.10-Installation-Diagnostics
           path: |
             dist/install-clean.log
             dist/install-update.log
@@ -293,25 +297,25 @@ jobs:
       # Explicitly publish this verified development build as a GitHub
       # prerelease. Never overwrite another tag or promote this PR to main.
       # This provides independently downloadable ARM64, ARMv7 and Universal APK links.
-      - name: Publish v2.3.9 preview with three direct APK download links
+      - name: Publish v2.3.10 preview with three direct APK download links
         if: github.ref == 'refs/heads/feature/tubedeck-six-experiences-20261105' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v2.3.9-installation-compat-20261109"
+          TAG="v2.3.10-installation-compat-20261109"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists; retaining immutable APK assets."
             exit 0
           fi
           gh release create "$TAG" \
-            dist/TubeDeck-v2.3.9-ARM64-debug.apk \
-            dist/TubeDeck-v2.3.9-Universal-debug.apk \
-            dist/TubeDeck-v2.3.9-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.10-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.10-Universal-debug.apk \
+            dist/TubeDeck-v2.3.10-ARMv7-debug.apk \
             dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "TubeDeck v2.3.9 — Installation Compatibility: ARM64 + ARMv7 + Universal" \
+            --title "TubeDeck v2.3.10 — Installation Compatibility: ARM64 + ARMv7 + Universal" \
             --notes "PREVIEW / DEVICE TESTING BUILD. Packaging: same long-lived signing certificate, v1+v2+v3 signature schemes, 32-bit ARMv7-only APK, verified install/update and cold-start on Android 11 emulator; OEM Android/car firmware must still be tested. Auto-quality recovery: detects low buffer and startup stalls earlier, selects genuinely compatible lower MP4 variants including those exposed only in download formats, avoids immediately upgrading after a stall, and uses a healthier rebuffer threshold. Fixed-quality extracted YouTube URLs require media-source reprepare, so zero-delay seamless bitrate switching cannot be guaranteed; HLS uses native Media3 adaptation. Resume: only meaningfully unfinished videos offer Resume vs Start Over, configurable 1-15 second countdown defaults to 3 seconds and automatically starts over if no selection; legacy missing-duration saves are excluded. Search UI rework: persistent Home/Browser text fields removed, single-row launchers in portrait and landscape, bounded transient search dialog with recent history, automatic startup keyboard focus eliminated, landscape IME hides suggestion rows. Previous fixes: readable 15-24sp sans-serif video titles with larger channel metadata, responsive card widths and optional independent title-size adjustment; fixed Auto quality downshifts on weak networks even on resource-constrained car head units. Previous fix: landscape car tablets use a compact one-row search header, history remains collapsed until opened, and capped search suggestions float over content without consuming layout height. Six premium themes: NeoGlass Luxe, Cinema Deck, CommandDrive Auto, StreamPlus Luxe TV, Midnight Editorial Pro and Cyber Console X. Includes approved ideas #1 Morphing UI, #3 Car Mode, #4 Cinema Engine, #6 Smart Home, #7 Playback Doctor and #10 Theme Studio. Excludes ideas #2, #5, #8, #9. versionCode 119; Android Lint, both APK builds, tests and signature/ABI verification are mandatory CI gates. Physical-device validation is still required. This prerelease is generated from the isolated feature branch and is NOT a production/main release."

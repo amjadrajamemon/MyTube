@@ -13,6 +13,17 @@ object HomeFeedArrangement {
         return (valid + defaultOrder.filterNot(valid::contains)).take(defaultOrder.size)
     }
 
+    /** Omit disabled shelves completely: no empty headings or focus targets. */
+    fun visible(raw: String, history: Boolean, relevant: Boolean, trending: Boolean): List<String> =
+        normalize(raw).filter { feed ->
+            when (feed) {
+                "History" -> history
+                "Relevant" -> relevant
+                "Trending" -> trending
+                else -> false
+            }
+        }
+
     fun move(raw: String, name: String, direction: Int): String {
         val result = normalize(raw).toMutableList()
         val from = result.indexOf(name)

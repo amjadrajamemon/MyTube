@@ -1668,6 +1668,9 @@ private fun HomeShelf(
     onVideoFocused: (HomeVideo) -> Unit = {}
 ) {
     val focusScrollScope = rememberCoroutineScope()
+    val cardColumns = HomeResponsiveLayoutPolicy.gridColumns(
+        LocalConfiguration.current.screenWidthDp - 40, rememberAdaptiveTvNavigation()
+    )
     Surface(
         color = TubeDeckSurface,
         shape = RoundedCornerShape(16.dp),
@@ -1706,7 +1709,7 @@ private fun HomeShelf(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        videos.chunked(2).forEach { row ->
+                        videos.chunked(cardColumns).forEach { row ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1731,7 +1734,7 @@ private fun HomeShelf(
                                             }
                                     )
                                 }
-                                if (row.size == 1) Spacer(Modifier.weight(1f))
+                                repeat(cardColumns - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }
@@ -1798,7 +1801,7 @@ private fun VideoListRow(
         Column(
             modifier = Modifier.weight(1f).padding(start = 10.dp, top = 1.dp, end = 3.dp)
         ) {
-            ReadableVideoTitle(video.title, maxLines = 4)
+            ReadableVideoTitle(video.title, maxLines = Int.MAX_VALUE)
             Spacer(Modifier.height(4.dp))
             ReadableVideoMetadata(video.channelTitle, maxLines = 2)
             VideoViews(video.viewCount)
@@ -1818,7 +1821,7 @@ private fun VideoTileCard(
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
         )
         Spacer(Modifier.height(7.dp))
-        ReadableVideoTitle(video.title)
+        ReadableVideoTitle(video.title, maxLines = Int.MAX_VALUE)
         Spacer(Modifier.height(3.dp))
         ReadableVideoMetadata(video.channelTitle, maxLines = 2)
         VideoViews(video.viewCount)

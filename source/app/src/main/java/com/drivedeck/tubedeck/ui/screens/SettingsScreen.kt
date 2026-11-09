@@ -122,6 +122,7 @@ fun SettingsScreen(
     var sponsorBlockEnabled by remember { mutableStateOf(currentSettings.sponsorBlockEnabled) }
     var blockShortsEnabled by remember { mutableStateOf(currentSettings.blockShortsEnabled) }
     var pipEnabled by remember { mutableStateOf(currentSettings.pipEnabled) }
+    var tvBackButtonAction by remember { mutableStateOf(currentSettings.tvBackButtonAction) }
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
     var sideBySideEpisodeFeeds by remember { mutableStateOf(currentSettings.sideBySideEpisodeFeeds) }
@@ -222,6 +223,7 @@ fun SettingsScreen(
                             blockShortsEnabled = blockShortsEnabled,
                             sponsorBlockEnabled = sponsorBlockEnabled,
                             pipEnabled = pipEnabled,
+                            tvBackButtonAction = tvBackButtonAction,
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
                             sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
@@ -838,6 +840,18 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Playback") {
+                Text("TV remote Back button during video playback", color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                StudioChoiceRow(
+                    "Action when no player menu is open",
+                    listOf("Mini-PiP", "Close immediately", "Action menu"),
+                    tvBackButtonAction
+                ) { tvBackButtonAction = it }
+                Text(
+                    "Back first dismisses open controls and menus. Mini-PiP requires device PiP support; unavailable PiP offers the action menu instead.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
                 HorizontalDivider()
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }

@@ -543,11 +543,21 @@ fun WebPlayer(
                 DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
             }
             IconButton(
-                onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout() },
+                onClick = {
+                    com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context)
+                        .enableScreenBlackout()
+                },
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                    .padding(bottom = 10.dp).background(Color.Black.copy(alpha = .65f), CircleShape)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .size(60.dp)
+                    .background(Color.Black.copy(alpha = .65f), CircleShape)
             ) {
-                Icon(Icons.Default.VisibilityOff, "Black screen, continue audio", tint = Color.White)
+                Icon(
+                    Icons.Default.VisibilityOff,
+                    "Black screen, continue audio",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
             }
         }
     }
@@ -3315,15 +3325,27 @@ fun NativeExoPlayer(
                                 }
 
 
+                                // Eye is intentionally larger and isolated from adjacent
+                                // control hit boxes. Padding is outside the 52dp+ touch target,
+                                // preventing accidental bookmark/fullscreen taps.
                                 IconButton(
-                                    onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
-                                    modifier = Modifier.size(controllerHeight)
+                                    onClick = {
+                                        com.drivedeck.tubedeck.data.repository.TubeDeckRepository
+                                            .get(context).enableScreenBlackout()
+                                        controlsVisible = false
+                                    },
+                                    modifier = Modifier
+                                        .padding(horizontal = 9.dp)
+                                        .size((controllerHeight + 16.dp).coerceAtLeast(52.dp))
+                                        .tvInputHighlight(RoundedCornerShape(12.dp))
                                 ) {
                                     Icon(
                                         Icons.Default.VisibilityOff,
                                         "Black screen, continue audio",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(controllerIconSize)
+                                        tint = TubeDeckAccentCyan,
+                                        modifier = Modifier.size(
+                                            (controllerIconSize + 10.dp).coerceAtLeast(29.dp)
+                                        )
                                     )
                                 }
 

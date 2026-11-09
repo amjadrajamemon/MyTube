@@ -97,6 +97,9 @@ data class SponsorSegment(
 data class TubeDeckSettings(
     val downloadDir: String = "MyTube",
     val downloadTreeUri: String? = null,
+    /** Uncapped opt-in offline retention after an uninterrupted full native playback. */
+    val smartOfflineReplayEnabled: Boolean = false,
+    val smartOfflineReplayWifiOnly: Boolean = true,
     
     // Separate settings for different download types
     val instantMode: DownloadMode = DownloadMode.VIDEO,

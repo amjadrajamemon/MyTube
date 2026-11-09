@@ -135,6 +135,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.player.SmartOfflineReplayWatch
 import com.drivedeck.tubedeck.data.model.ViewingMode
 import com.drivedeck.tubedeck.data.model.ViewingModePolicy
 import com.drivedeck.tubedeck.data.model.PlayerMode
@@ -233,6 +234,7 @@ fun PlayerScreen(
     onNextItem: (() -> Unit)? = null,
     playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
+    onCompletedUninterruptedWatch: ((OfflineMedia) -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
     onPlayPlaylistItem: ((Int) -> Unit)? = null,
@@ -361,6 +363,7 @@ fun PlayerScreen(
             onNextItem = onNextItem,
             playedVideoIds = playedVideoIds,
             onPlaybackEnded = onPlaybackEnded,
+            onCompletedUninterruptedWatch = onCompletedUninterruptedWatch,
             playlistItems = playlistItems,
             playlistIndex = playlistIndex,
             onPlayPlaylistItem = onPlayPlaylistItem,
@@ -612,6 +615,7 @@ fun NativeExoPlayer(
     onNextItem: (() -> Unit)? = null,
     playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
+    onCompletedUninterruptedWatch: ((OfflineMedia) -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
     onPlayPlaylistItem: ((Int) -> Unit)? = null,
@@ -789,6 +793,7 @@ fun NativeExoPlayer(
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
     var endActionDispatched by remember(media.id) { mutableStateOf(false) }
+    val smartReplayWatch = remember(media.mediaUri) { SmartOfflineReplayWatch() }
     var isPreparing by remember(media.id) { mutableStateOf(true) }
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
@@ -800,6 +805,7 @@ fun NativeExoPlayer(
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
+    val latestOnCompletedUninterruptedWatch by rememberUpdatedState(onCompletedUninterruptedWatch)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val tvSafePlayback = isTvLikePlaybackDevice(context) || resourceLimits.constrained
     val pcmTap = remember(media.id) {
@@ -1551,6 +1557,10 @@ fun NativeExoPlayer(
         val listener = object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 latestOnPlaybackRequestedChanged(playWhenReady)
+                // A deliberate pause disqualifies this one watch session.
+                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+                    smartReplayWatch.onManualPause()
+                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 if (playing && !latestForegroundPlaybackAllowed) {
@@ -1586,6 +1596,13 @@ fun NativeExoPlayer(
                     isPreparing = false
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
+                        // Run before Auto-next swaps the media or LOOP_CURRENT seeks to zero.
+                        if (smartReplayWatch.finish(
+                                exoPlayer.currentPosition, exoPlayer.duration
+                            )
+                        ) {
+                            latestOnCompletedUninterruptedWatch?.invoke(media)
+                        }
                         endActionDispatched = true
                         when (latestContinuationMode) {
                             PlaybackContinuationMode.LOOP_CURRENT -> {
@@ -1689,6 +1706,7 @@ fun NativeExoPlayer(
                     reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT ||
                     reason == Player.DISCONTINUITY_REASON_SKIP
                 ) {
+                    smartReplayWatch.onSeekOrSkip()
                     currentCueText = ""
                     currentCuePresentationUs = -1L
                     if (liveDubEnabled) liveDubEngine.resetForSeek()
@@ -2166,6 +2184,7 @@ fun NativeExoPlayer(
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition
+            smartReplayWatch.sample(currentPosition, exoPlayer.duration)
             onPlaybackPositionChanged(currentPosition)
             val seconds = currentPosition / 1000f
             sponsorSegments.firstOrNull { seconds >= it.startTime && seconds < it.endTime - .1f }?.let {

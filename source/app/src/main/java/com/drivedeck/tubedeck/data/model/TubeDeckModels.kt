@@ -138,6 +138,8 @@ data class TubeDeckSettings(
     val sponsorBlockEnabled: Boolean = true,
     val blockShortsEnabled: Boolean = true,
     val pipEnabled: Boolean = true,
+    /** Back key during TV video playback; overlays still dismiss first. */
+    val tvBackButtonAction: String = "Action menu",
     // Performance-first: expensive companion shelves are opt-in by default.
     val autoLoadEpisodes: Boolean = false,
     val autoLoadUpNext: Boolean = false,

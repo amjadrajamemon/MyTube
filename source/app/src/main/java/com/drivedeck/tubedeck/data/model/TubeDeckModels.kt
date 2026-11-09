@@ -168,6 +168,7 @@ data class TubeDeckSettings(
     val carDashboardEnabled: Boolean = false,
     val homeFeedOrder: String = "History,Relevant,Trending",
     val homeDisplayMode: String = "Theme",
+    val homeInitialVideoCount: Int = 20,
     val studioHomeLayout: String = "Preset",
     val studioNavigation: String = "Preset",
     val studioPlayer: String = "Preset",

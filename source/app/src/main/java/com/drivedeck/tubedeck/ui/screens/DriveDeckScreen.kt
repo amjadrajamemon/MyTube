@@ -94,6 +94,8 @@ fun DriveDeckScreen(
     trendingEnabled: Boolean = true,
     homeFeedOrder: String = "History,Relevant,Trending",
     homeDisplayMode: String = "Theme",
+    homeBrowseMode: String = "List",
+    onHomeBrowseModeChange: (String) -> Unit = {},
     homeInitialVideoCount: Int = 20,
     countryCode: String = "US",
     trendingStatus: String = "",
@@ -110,18 +112,9 @@ fun DriveDeckScreen(
     modifier: Modifier = Modifier,
 ) {
     val deckTheme = LocalDeckThemeProfile.current
-    var manualViewMode by rememberSaveable(viewStateKey) { mutableStateOf(false) }
-    var listView by rememberSaveable(viewStateKey, deckTheme.name, homeDisplayMode) {
-        mutableStateOf(when (homeDisplayMode) {
-            "Compact" -> true
-            "Cards", "Cinematic" -> false
-            else -> deckTheme.geometry == DeckCardGeometry.COMPACT ||
-                deckTheme.geometry == DeckCardGeometry.TERMINAL
-        })
-    }
-    // Navigation is gesture-driven: phone users swipe between Home feed panels,
-    // while theme-specific stacked shelves use horizontal video rails.
-    // No per-feed orientation toggle is necessary.
+    // The persisted setting, not theme-dependent rememberSaveable, owns List/Tile mode.
+    // It survives process death, playback navigation, theme switches and orientation.
+    val listView = homeBrowseMode != "Tile"
     val tvNavigation = rememberAdaptiveTvNavigation()
     val firstVideoFocus = remember { FocusRequester() }
     val searchResultFocus = remember { FocusRequester() }
@@ -157,8 +150,7 @@ fun DriveDeckScreen(
     val gridColumns = HomeResponsiveLayoutPolicy.gridColumns(screenWidthDp - 24, tvNavigation)
     val homeSearchActive = liveSearchQuery.isNotBlank() ||
         (tvNavigation && videoSearchQuery.isNotBlank())
-    val unifiedHomeView = !homeSearchActive &&
-        (manualViewMode || homeDisplayMode == "Compact" || homeDisplayMode == "Cards")
+    val unifiedHomeView = !homeSearchActive
     val feeds = feedOrder.map { name ->
         name to when (name) {
             "History" -> if (historyEnabled) watchHistory else emptyList()
@@ -214,8 +206,8 @@ fun DriveDeckScreen(
 
         ContentViewModeBar(
             listView = listView,
-            onListView = { manualViewMode = true; listView = true },
-            onCardView = { manualViewMode = true; listView = false }
+            onListView = { onHomeBrowseModeChange("List") },
+            onCardView = { onHomeBrowseModeChange("Tile") }
         )
 
         LazyColumn(
@@ -285,117 +277,173 @@ fun DriveDeckScreen(
                         )
                     }
                 }
-                feeds.forEach { (feedName, videos) ->
-                    item(key = "responsive-header-$feedName") {
-                        Row(
+                if (listView) {
+                    // Three independent vertical category lists placed next to each other.
+                    // Small phones show a wide, horizontally swipeable panel, avoiding tiny text.
+                    item(key = "home-side-by-side-vertical-lists") {
+                        BoxWithConstraints(
                             modifier = Modifier.fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
-                            Text(
-                                if (feedName == "Relevant") "Recommended" else feedName,
-                                modifier = Modifier.weight(1f),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TubeDeckTextPrimary
-                            )
-                            if (feedName != "History") {
-                                IconButton(onClick = onRefreshFeed) {
-                                    Icon(Icons.Default.Refresh, "Refresh $feedName")
-                                }
+                            val visiblePanels = when {
+                                maxWidth >= 900.dp -> 3
+                                maxWidth >= 620.dp -> 2
+                                else -> 1
                             }
-                        }
-                    }
-                    val visibleCount = visibleCounts[feedName] ?: initialCount
-                    val shown = videos.take(visibleCount)
-                    if (listView) {
-                        itemsIndexed(
-                            shown,
-                            key = { index, video -> "home-list-$feedName-$index-${video.videoId}" }
-                        ) { _, video ->
-                            AdaptiveHomeVideoCard(
-                                video = video,
-                                listView = true,
-                                tvNavigation = tvNavigation,
-                                firstItemFocus = if (tvNavigation && focusFeed == feedName &&
-                                    focusVideoId == video.videoId) firstVideoFocus else null,
-                                onVideoFocused = {
-                                    selectedHomeFeed = feedName
-                                    selectedHomeVideoId = it.videoId
-                                },
-                                onOpenVideo = onOpenVideo,
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
-                        }
-                    } else {
-                        itemsIndexed(
-                            shown.chunked(gridColumns),
-                            key = { index, _ -> "home-tiles-$feedName-$index" }
-                        ) { _, row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                            val panelWidth = ((maxWidth - 24.dp) / visiblePanels)
+                                .coerceAtLeast(240.dp)
+                            val panelHeight = (
+                                LocalConfiguration.current.screenHeightDp -
+                                    if (tvNavigation) 165 else 176
+                                ).coerceAtLeast(310).dp
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth().height(panelHeight),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.Top
+                                contentPadding = PaddingValues(horizontal = 4.dp)
                             ) {
-                                row.forEach { video ->
-                                    AdaptiveHomeVideoCard(
-                                        video = video,
-                                        listView = false,
+                                items(feeds, key = { it.first }) { (feedName, videos) ->
+                                    val visibleCount = visibleCounts[feedName] ?: initialCount
+                                    HomeVerticalFeedPanel(
+                                        feedName = feedName,
+                                        videos = videos,
+                                        visibleCount = visibleCount,
+                                        batchSize = initialCount,
+                                        moreLoading = feedName in moreFeedsLoading ||
+                                            (feedName == "Trending" && trendingStatus == "Loading"),
+                                        canLoadMore = feedName !in moreFeedsExhausted,
+                                        trendingStatus = trendingStatus,
                                         tvNavigation = tvNavigation,
-                                        firstItemFocus = if (tvNavigation && focusFeed == feedName &&
-                                            focusVideoId == video.videoId) firstVideoFocus else null,
-                                        onVideoFocused = {
+                                        focusVideoId = if (focusFeed == feedName) focusVideoId else null,
+                                        firstItemFocus = if (tvNavigation && focusFeed == feedName)
+                                            firstVideoFocus else null,
+                                        onIncreaseCount = { visibleCounts[feedName] = it },
+                                        onLoadMore = { onLoadMoreHomeFeed(feedName) },
+                                        onRefresh = if (feedName == "History") onClearHistory
+                                            else onRefreshFeed,
+                                        onVideoFocused = { video ->
                                             selectedHomeFeed = feedName
-                                            selectedHomeVideoId = it.videoId
+                                            selectedHomeVideoId = video.videoId
                                         },
                                         onOpenVideo = onOpenVideo,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.width(panelWidth).fillMaxHeight()
                                     )
                                 }
-                                repeat(gridColumns - row.size) {
-                                    Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                } else {
+                    feeds.forEach { (feedName, videos) ->
+                        item(key = "responsive-header-$feedName") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    if (feedName == "Relevant") "Recommended" else feedName,
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TubeDeckTextPrimary
+                                )
+                                if (feedName != "History") {
+                                    IconButton(onClick = onRefreshFeed) {
+                                        Icon(Icons.Default.Refresh, "Refresh $feedName")
+                                    }
+                                }
+                            }
+                        }
+                        val visibleCount = visibleCounts[feedName] ?: initialCount
+                        val shown = videos.take(visibleCount)
+                        if (listView) {
+                            itemsIndexed(
+                                shown,
+                                key = { index, video -> "home-list-$feedName-$index-${video.videoId}" }
+                            ) { _, video ->
+                                AdaptiveHomeVideoCard(
+                                    video = video,
+                                    listView = true,
+                                    tvNavigation = tvNavigation,
+                                    firstItemFocus = if (tvNavigation && focusFeed == feedName &&
+                                        focusVideoId == video.videoId) firstVideoFocus else null,
+                                    onVideoFocused = {
+                                        selectedHomeFeed = feedName
+                                        selectedHomeVideoId = it.videoId
+                                    },
+                                    onOpenVideo = onOpenVideo,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                )
+                            }
+                        } else {
+                            itemsIndexed(
+                                shown.chunked(gridColumns),
+                                key = { index, _ -> "home-tiles-$feedName-$index" }
+                            ) { _, row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    row.forEach { video ->
+                                        AdaptiveHomeVideoCard(
+                                            video = video,
+                                            listView = false,
+                                            tvNavigation = tvNavigation,
+                                            firstItemFocus = if (tvNavigation && focusFeed == feedName &&
+                                                focusVideoId == video.videoId) firstVideoFocus else null,
+                                            onVideoFocused = {
+                                                selectedHomeFeed = feedName
+                                                selectedHomeVideoId = it.videoId
+                                            },
+                                            onOpenVideo = onOpenVideo,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(gridColumns - row.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                        item(key = "home-end-$feedName") {
+                            val loading = feedName in moreFeedsLoading ||
+                                (feedName == "Trending" && trendingStatus == "Loading")
+                            val exhausted = feedName in moreFeedsExhausted
+                            LaunchedEffect(feedName, videos.size, visibleCount, loading, exhausted) {
+                                if (videos.size > visibleCount) {
+                                    visibleCounts[feedName] = visibleCount + initialCount
+                                } else if (videos.isNotEmpty() && !loading && !exhausted &&
+                                    lastMoreRequestedAt[feedName] != videos.size) {
+                                    lastMoreRequestedAt[feedName] = videos.size
+                                    onLoadMoreHomeFeed(feedName)
+                                }
+                            }
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    loading -> CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp), strokeWidth = 2.dp
+                                    )
+                                    videos.isEmpty() -> Text(
+                                        if (feedName == "Trending" && trendingStatus == "Retry")
+                                            "Trending unavailable — tap Refresh to retry"
+                                        else "No videos available yet",
+                                        color = TubeDeckTextSecondary, fontSize = 12.sp
+                                    )
+                                    exhausted -> Text(
+                                        "End of $feedName", color = TubeDeckTextSecondary,
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
                         }
                     }
-                    item(key = "home-end-$feedName") {
-                        val loading = feedName in moreFeedsLoading ||
-                            (feedName == "Trending" && trendingStatus == "Loading")
-                        val exhausted = feedName in moreFeedsExhausted
-                        LaunchedEffect(feedName, videos.size, visibleCount, loading, exhausted) {
-                            if (videos.size > visibleCount) {
-                                visibleCounts[feedName] = visibleCount + initialCount
-                            } else if (videos.isNotEmpty() && !loading && !exhausted &&
-                                lastMoreRequestedAt[feedName] != videos.size) {
-                                lastMoreRequestedAt[feedName] = videos.size
-                                onLoadMoreHomeFeed(feedName)
-                            }
-                        }
-                        Box(
-                            modifier = Modifier.fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            when {
-                                loading -> CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp
-                                )
-                                videos.isEmpty() -> Text(
-                                    if (feedName == "Trending" && trendingStatus == "Retry")
-                                        "Trending unavailable — tap Refresh to retry"
-                                    else "No videos available yet",
-                                    color = TubeDeckTextSecondary, fontSize = 12.sp
-                                )
-                                exhausted -> Text(
-                                    "End of $feedName", color = TubeDeckTextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
                     }
-                }
             } else if (!playlistMode && !homeSearchActive) {
                 // Adapt to *measured* width, not pixel resolution or device label.
                 // Phones must never squeeze three panels into 100-200dp columns.
@@ -1170,6 +1218,128 @@ private fun HomeSpotlight(
             Text(video.channelTitle, color = TubeDeckTextSecondary, fontSize = 12.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp))
+        }
+    }
+}
+
+/**
+ * Independent bounded vertical scrolling keeps History, Recommended and Trending
+ * side by side on TV/tablet, with swipeable columns on narrow phones.
+ * Loading is triggered only as the user approaches the end of this category.
+ */
+@Composable
+private fun HomeVerticalFeedPanel(
+    feedName: String,
+    videos: List<HomeVideo>,
+    visibleCount: Int,
+    batchSize: Int,
+    moreLoading: Boolean,
+    canLoadMore: Boolean,
+    trendingStatus: String,
+    tvNavigation: Boolean,
+    focusVideoId: String?,
+    firstItemFocus: FocusRequester?,
+    onIncreaseCount: (Int) -> Unit,
+    onLoadMore: () -> Unit,
+    onRefresh: () -> Unit,
+    onVideoFocused: (HomeVideo) -> Unit,
+    onOpenVideo: (HomeVideo) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+    val visible = videos.take(visibleCount)
+    var lastRequestedSize by remember(feedName) { mutableIntStateOf(-1) }
+    val lastVisibleIndex by remember(listState) {
+        derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    }
+    LaunchedEffect(lastVisibleIndex, visible.size, videos.size, moreLoading, canLoadMore) {
+        if (visible.isNotEmpty() && lastVisibleIndex >= visible.size - 2) {
+            when {
+                videos.size > visibleCount -> onIncreaseCount(visibleCount + batchSize)
+                canLoadMore && !moreLoading && lastRequestedSize != videos.size -> {
+                    lastRequestedSize = videos.size
+                    onLoadMore()
+                }
+            }
+        }
+    }
+    Surface(
+        modifier = modifier,
+        color = TubeDeckSurface,
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(start = 12.dp, end = 5.dp, top = 8.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (feedName == "Relevant") "Recommended" else feedName,
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = {
+                        lastRequestedSize = -1
+                        onRefresh()
+                    },
+                    modifier = Modifier.size(38.dp).tvInputHighlight(RoundedCornerShape(8.dp))
+                ) {
+                    Icon(
+                        if (feedName == "History") Icons.Default.DeleteOutline else Icons.Default.Refresh,
+                        contentDescription = if (feedName == "History") "Clear history" else "Refresh $feedName",
+                        tint = TubeDeckTextSecondary
+                    )
+                }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 5.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(
+                    visible,
+                    key = { index, video -> "$feedName-$index-${video.videoId}" }
+                ) { _, video ->
+                    AdaptiveHomeVideoCard(
+                        video = video,
+                        listView = true,
+                        tvNavigation = tvNavigation,
+                        firstItemFocus = if (focusVideoId == video.videoId)
+                            firstItemFocus else null,
+                        onVideoFocused = onVideoFocused,
+                        onOpenVideo = onOpenVideo,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item(key = "feed-status-$feedName") {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 13.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            moreLoading -> CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp), strokeWidth = 2.dp
+                            )
+                            videos.isEmpty() -> Text(
+                                if (feedName == "Trending" && trendingStatus == "Retry")
+                                    "Trending unavailable — refresh to retry"
+                                else "No videos yet",
+                                color = TubeDeckTextSecondary, fontSize = 12.sp
+                            )
+                            !canLoadMore && visible.size >= videos.size -> Text(
+                                "End of $feedName",
+                                color = TubeDeckTextSecondary, fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -16,6 +16,8 @@ import org.schabi.newpipe.extractor.comments.CommentsInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.kiosk.KioskInfo
+import org.schabi.newpipe.extractor.localization.ContentCountry
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -1578,6 +1580,31 @@ object YoutubeStreamResolver {
      * Call only at the end of a visible Home feed; callers hold the cursor in memory.
      * No imposed total-page count. UI virtualizes thumbnails and repositories bound RAM.
      */
+    /**
+     * Genuine YouTube trending kiosk, not a search for the word "trending".
+     * Force the country only on this extractor; changing the global NewPipe
+     * country would race with search and playback on other screens.
+     */
+    suspend fun trendingVideosPage(
+        region: String,
+        cursor: org.schabi.newpipe.extractor.Page?,
+        limit: Int = 36
+    ): Pair<List<RelatedVideo>, org.schabi.newpipe.extractor.Page?> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            ensureInitialized()
+            val kiosk = NewPipe.getService("YouTube").kioskList
+            val extractor = if (cursor == null) kiosk.defaultKioskExtractor
+                else kiosk.getDefaultKioskExtractor(cursor)
+            extractor.forceContentCountry(ContentCountry(region.uppercase(Locale.ROOT)))
+            extractor.fetchPage()
+            val info = KioskInfo.getInfo(extractor)
+            info.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .mapNotNull(::relatedVideoFromSearchItem)
+                .distinctBy { it.videoId }
+                .take(limit.coerceIn(1, 50)) to info.nextPage
+        }
+
     suspend fun searchVideosPage(
         query: String,
         cursor: org.schabi.newpipe.extractor.Page?,

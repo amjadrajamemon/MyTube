@@ -17,7 +17,7 @@ adb shell pm path "$PACKAGE" | tee "$OUT/installed-paths.txt"
 grep -q "$PACKAGE" "$OUT/installed-paths.txt" || true
 adb shell pm list packages | grep -Fqx "package:$PACKAGE"
 adb shell dumpsys package "$PACKAGE" > "$OUT/package-dumpsys.txt"
-grep -Fq "versionCode=119" "$OUT/package-dumpsys.txt"
+grep -Fq "versionCode=120" "$OUT/package-dumpsys.txt"
 
 echo "Testing update/reinstall with existing app data..."
 adb install -r --no-incremental "$APK" | tee "$OUT/install-update.log"

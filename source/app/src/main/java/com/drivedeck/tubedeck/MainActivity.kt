@@ -1844,6 +1844,24 @@ class MainActivity : ComponentActivity() {
         }
 
         if (!playerActive) return
+        if (!isPipMode && isTvLikeNavigationDevice(this)) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            PlaybackBackSequenceTracker.reset()
+            playbackBackCoordinator.reset()
+            val prefs = repository.settings.value
+            when (com.drivedeck.tubedeck.player.TvBackButtonPolicy.decide(
+                prefs.tvBackButtonAction, prefs.pipEnabled
+            )) {
+                com.drivedeck.tubedeck.player.TvBackButtonAction.MINI_PIP ->
+                    triggerPip()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.CLOSE_IMMEDIATELY ->
+                    closeActivePlaybackCompletely()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.SHOW_ACTION_MENU ->
+                    showPlaybackExitChoices = true
+            }
+            return
+        }
         if (isPipMode && isTvLikeNavigationDevice(this)) {
             closeActivePlaybackCompletely()
             return

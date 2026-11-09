@@ -1116,7 +1116,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
                 as? ConnectivityManager
             val network = connectivity?.activeNetwork
-            val caps = network?.let { connectivity.getNetworkCapabilities(it) }
+            val caps = network?.let { connectivity?.getNetworkCapabilities(it) }
             caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
                 caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
         }

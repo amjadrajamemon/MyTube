@@ -848,7 +848,7 @@ fun SettingsScreen(
                     tvBackButtonAction
                 ) { tvBackButtonAction = it }
                 Text(
-                    "Back first dismisses open controls and menus. Mini-PiP requires device PiP support; unavailable PiP offers the action menu instead.",
+                    "Back performs the chosen action immediately during video playback. Open dialogs still dismiss first. Mini-PiP requires system support; unavailable PiP opens the action menu.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))

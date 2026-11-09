@@ -1229,6 +1229,7 @@ private fun StudioChoiceRow(
             FilterChip(
                 selected = current == choice,
                 onClick = { onSelect(choice) },
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(10.dp)),
                 label = { Text(choice, fontSize = 11.sp) }
             )
         }

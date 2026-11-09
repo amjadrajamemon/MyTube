@@ -126,6 +126,8 @@ fun CompactSearchPanel(
             modifier = Modifier
                 .widthIn(max = CompactSearchOverlayPolicy.panelMaxWidthDp(config.screenWidthDp).dp)
                 .fillMaxWidth()
+                // An OEM landscape IME must not let this overlay occupy the Home viewport.
+                .heightIn(max = (config.screenHeightDp * (if (landscape) 0.56f else 0.72f)).dp)
                 .padding(horizontal = 12.dp),
             color = TubeDeckSurface,
             shape = RoundedCornerShape(18.dp),

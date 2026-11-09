@@ -12,8 +12,8 @@ THEMES=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/ThemeProfiles.kt
 VIDEO_VIEW=source/app/src/main/res/layout/mytube_viewing_player_view.xml
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 117' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.7"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 118' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.8"' source/app/build.gradle.kts
 grep -Fq 'surface_type="texture_view"' "$VIDEO_VIEW"
 grep -Fq 'key(carHeadUnit)' "$PLAYER"
 ! grep -Fq 'key(carHeadUnit, viewingMode != ViewingMode.NORMAL)' "$PLAYER"
@@ -44,7 +44,8 @@ grep -Fq 'SeekPreviewPolicy.frame(' "$PLAYER"
 grep -Fq 'PointerEventType.Move' "$PLAYER"
 grep -Fq 'remoteSeekPreviewSequence' "$PLAYER"
 grep -Fq 'mytube_viewing_player_view' "$PLAYER"
-grep -Fq 'enableScreenBlackout(); controlsVisible = false' "$PLAYER"
+grep -Fq 'enableScreenBlackout()' "$PLAYER"
+grep -Fq 'controlsVisible = false' "$PLAYER"
 
 # The single moon button is pinned BEFORE the horizontally scrollable controls.
 python3 - <<'PY'

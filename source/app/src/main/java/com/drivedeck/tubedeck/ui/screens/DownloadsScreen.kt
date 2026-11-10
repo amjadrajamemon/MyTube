@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.DownloadQueuePolicy
+import com.drivedeck.tubedeck.data.repository.OfflineVaultPolicy
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.text.DateFormat
@@ -41,6 +42,10 @@ fun DownloadsScreen(
     downloadQueue: List<DownloadTask>,
     offlineMediaList: List<OfflineMedia>,
     downloadHistory: List<DownloadTask>,
+    vaultHealth: OfflineVaultHealth = OfflineVaultHealth(),
+    onRefreshVault: () -> Unit = {},
+    onPinMedia: (String, Boolean) -> Unit = { _, _ -> },
+    onOrganizeMedia: (String, String) -> Unit = { _, _ -> },
     initialTab: Int = 0,
     onPauseTask: (String) -> Unit,
     onResumeTask: (String) -> Unit,
@@ -68,6 +73,10 @@ fun DownloadsScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var customUrl by rememberSaveable { mutableStateOf("") }
     var filterType by rememberSaveable { mutableStateOf("All") }
+    var vaultSortOrder by rememberSaveable { mutableStateOf("Recent") }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var organizeTarget by remember { mutableStateOf<OfflineMedia?>(null) }
+    var collectionDraft by remember { mutableStateOf("") }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedTaskIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteSelected by rememberSaveable { mutableStateOf(false) }
@@ -222,7 +231,7 @@ fun DownloadsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("All", "Videos", "Audio").forEach { filter ->
+                                listOf("All", "Videos", "Audio", "Pinned", "Missing").forEach { filter ->
                                     val isSelected = filterType == filter
                                     Surface(
                                         modifier = Modifier
@@ -279,13 +288,10 @@ fun DownloadsScreen(
                             }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        val filteredList = offlineMediaList.filter { item ->
-                            val matchesType = when (filterType) {
-                                "Videos" -> !item.isAudioOnly
-                                "Audio" -> item.isAudioOnly
-                                else -> true
-                            }
-                            matchesType
+                        val filteredList = remember(offlineMediaList, searchQuery, filterType,
+                            vaultSortOrder, vaultHealth.missingIds) {
+                            OfflineVaultPolicy.select(offlineMediaList, searchQuery, filterType,
+                                vaultSortOrder, vaultHealth.missingIds)
                         }
                         Text(
                             if (selectedFileIds.isEmpty()) "${filteredList.size} finished files" else "${selectedFileIds.size} selected",

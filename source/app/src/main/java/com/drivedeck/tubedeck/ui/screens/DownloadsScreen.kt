@@ -89,6 +89,7 @@ fun DownloadsScreen(
     var finishedActionsOpen by rememberSaveable { mutableStateOf(false) }
     var showNewDownload by rememberSaveable { mutableStateOf(false) }
     val pendingQueue = remember(downloadQueue) { DownloadQueuePolicy.pendingTasks(downloadQueue) }
+    LaunchedEffect(Unit) { onRefreshVault() }
     LaunchedEffect(offlineMediaList) {
         selectedFileIds = selectedFileIds.intersect(offlineMediaList.mapTo(mutableSetOf()) { it.id })
     }

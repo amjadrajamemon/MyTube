@@ -89,6 +89,46 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private val _offlineMediaList = MutableStateFlow(loadOfflineMedia())
     val offlineMediaList: StateFlow<List<OfflineMedia>> = _offlineMediaList.asStateFlow()
     private val _offlineVaultHealth = MutableStateFlow(OfflineVaultHealth())
+    private val waitingForWifi = "Waiting for Wi-Fi / Ethernet"
+
+    private fun isWifiOrEthernet(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
+    private fun recheckSmartReplayNetwork() {
+        val allowed = isWifiOrEthernet()
+        val toCancel = mutableListOf<String>()
+        synchronized(lock) {
+            var changed = false
+            val updated = _downloadQueue.value.map { task ->
+                when {
+                    !allowed && task.wifiOnly && task.status in listOf(TaskStatus.QUEUED, TaskStatus.DOWNLOADING) -> {
+                        changed = true
+                        if (task.status == TaskStatus.DOWNLOADING) toCancel += task.id
+                        task.copy(status = TaskStatus.PAUSED, speed = waitingForWifi,
+                            errorMessage = waitingForWifi)
+                    }
+                    allowed && task.wifiOnly && task.status == TaskStatus.PAUSED &&
+                        task.errorMessage == waitingForWifi -> {
+                        changed = true
+                        task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                    }
+                    else -> task
+                }
+            }
+            if (changed) setQueue(updated)
+        }
+        toCancel.forEach { id ->
+            MediaDownloader.cancel(id)
+            synchronized(lock) { activeJobs[id]?.cancel() }
+        }
+        processQueue()
+    }
     val offlineVaultHealth: StateFlow<OfflineVaultHealth> = _offlineVaultHealth.asStateFlow()
 
     fun refreshOfflineVaultHealth() {
@@ -218,6 +258,23 @@ class TubeDeckRepository private constructor(private val context: Context) {
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
         refreshOfflineVaultHealth()
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        runCatching {
+            cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+                override fun onLost(network: android.net.Network) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+                override fun onCapabilitiesChanged(
+                    network: android.net.Network, capabilities: NetworkCapabilities
+                ) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+            })
+        }
+        recheckSmartReplayNetwork()
     }
 
     fun updateSettings(value: TubeDeckSettings) {
@@ -1191,23 +1248,19 @@ class TubeDeckRepository private constructor(private val context: Context) {
         val setting = _settings.value
         if (!setting.smartOfflineReplayEnabled) return false
         val videoId = YoutubeUrls.videoId(media.mediaUri) ?: return false
-        val networkPermitted = if (!setting.smartOfflineReplayWifiOnly) {
-            true
-        } else {
-            val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-                as? ConnectivityManager
-            val network = connectivity?.activeNetwork
-            val caps = network?.let { connectivity?.getNetworkCapabilities(it) }
-            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
-                caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
-        }
+        // Enqueue even while offline or on cellular. A persistent task-specific
+        // network gate pauses it until Wi-Fi/Ethernet returns automatically.
+        val networkPermitted = true
         // No fixed total storage limit: only avoid starting with critically low free
         // space. The download engine continues to enforce actual filesystem limits.
         val enoughFreeSpace = runCatching {
-            context.filesDir.usableSpace >= 96L * 1024L * 1024L
+            val actualStagingFolder = MediaDownloader.folder(context, setting.downloadDir)
+            OfflineVaultPolicy.shouldSaveFreeSpace(actualStagingFolder.usableSpace, 0L)
         }.getOrDefault(false)
         val queued = synchronized(lock) {
-            val exists = _offlineMediaList.value.any { it.videoId == videoId }
+            val exists = _offlineMediaList.value.any {
+                it.videoId == videoId && OfflineVaultStorage.isReadable(context, it)
+            }
             val alreadyDownloading = _downloadQueue.value.any {
                 it.videoId == videoId && it.status in setOf(
                     TaskStatus.QUEUED, TaskStatus.DOWNLOADING, TaskStatus.PAUSED
@@ -1238,7 +1291,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                     outputFormat = "MP4/WebM",
                     createdAt = now,
                     sessionId = sessionId,
-                    eventAt = now
+                    eventAt = now,
+                    wifiOnly = setting.smartOfflineReplayWifiOnly
                 )
                 val retained = _downloadQueue.value.filterNot {
                     it.status == TaskStatus.COMPLETED && it.sessionId != sessionId
@@ -1296,6 +1350,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 val next = _downloadQueue.value.firstOrNull {
                     it.status == TaskStatus.QUEUED && it.id !in activeJobs
                 } ?: break
+                if (next.wifiOnly && !isWifiOrEthernet()) {
+                    updateTask(next.id) {
+                        it.copy(status = TaskStatus.PAUSED, speed = waitingForWifi,
+                            errorMessage = waitingForWifi)
+                    }
+                    continue
+                }
                 updateTask(next.id) { it.copy(status = TaskStatus.DOWNLOADING, speed = "Resolving…") }
                 val job = scope.launch(start = CoroutineStart.LAZY) { runTask(next.id) }
                 activeJobs[next.id] = job
@@ -1712,7 +1773,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("mode", task.mode.name); put("quality", task.quality); put("outputFormat", task.outputFormat)
                 put("progress", task.progress.toDouble()); put("downloadedBytes", task.downloadedBytes)
                 put("totalBytes", task.totalBytes); put("status", task.status.name)
-                put("retryCount", task.retryCount)
+                put("retryCount", task.retryCount); put("wifiOnly", task.wifiOnly)
                 put("createdAt", task.createdAt); put("sessionId", task.sessionId)
                 put("eventAt", task.eventAt); put("errorMessage", task.errorMessage)
             })
@@ -1753,6 +1814,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 },
                 errorMessage = persistedError,
                 retryCount = persistedRetryCount,
+                wifiOnly = item.optBoolean("wifiOnly", false),
                 createdAt = createdAt,
                 sessionId = item.optLong("sessionId", createdAt),
                 eventAt = item.optLong("eventAt", createdAt)

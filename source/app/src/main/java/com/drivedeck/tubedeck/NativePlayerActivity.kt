@@ -490,6 +490,7 @@ class NativePlayerActivity : ComponentActivity() {
                     xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                     sponsorSegments = sponsorSegments,
                     pipEnabled = settings.pipEnabled,
+                    vaultDirectCacheEnabled = settings.vaultDirectCacheEnabled,
                     inPictureInPicture = isPipMode,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
@@ -585,6 +586,13 @@ class NativePlayerActivity : ComponentActivity() {
                         if (repository.enqueueSmartOfflineReplay(completed)) {
                             Toast.makeText(applicationContext,
                                 "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                        } else if (repository.settings.value.vaultDirectCacheEnabled) {
+                            lifecycleScope.launch {
+                                if (repository.promoteAuthorizedCache(completed)) {
+                                    Toast.makeText(applicationContext,
+                                        "Cached video saved to Offline Vault", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     },
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
@@ -858,7 +866,7 @@ class NativePlayerActivity : ComponentActivity() {
         closingPlayer = false
         playerActive = true
         currentPlaybackPositionMs = initialPlaybackPositionMs
-        currentMedia = media
+        currentMedia = repository.preferredOfflineMedia(media)
         syncPlaylistQueue(media)
         if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
             repository.recordWatch(media)

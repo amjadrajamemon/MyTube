@@ -119,6 +119,9 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DataSource
+import com.drivedeck.tubedeck.data.repository.AuthorizedStreamCache
+import com.drivedeck.tubedeck.data.repository.OfflineVaultPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -191,6 +194,7 @@ fun PlayerScreen(
     playerMode: PlayerMode,
     sponsorSegments: List<SponsorSegment> = emptyList(),
     pipEnabled: Boolean = true,
+    vaultDirectCacheEnabled: Boolean = false,
     autoRotatePlayback: Boolean = true,
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
@@ -320,6 +324,7 @@ fun PlayerScreen(
             xyAutoCompatibilityMode = carHeadUnit,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
+            vaultDirectCacheEnabled = vaultDirectCacheEnabled,
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
@@ -572,6 +577,7 @@ fun NativeExoPlayer(
     media: OfflineMedia,
     sponsorSegments: List<SponsorSegment>,
     pipEnabled: Boolean,
+    vaultDirectCacheEnabled: Boolean,
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
@@ -664,13 +670,17 @@ fun NativeExoPlayer(
         }
     }
     val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
-    val dataSourceFactory = remember(media.id) {
+    val dataSourceFactory = remember(media.id, vaultDirectCacheEnabled) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0 Mobile Safari/537.36")
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
             .setAllowCrossProtocolRedirects(true)
-        DefaultDataSource.Factory(context, httpFactory).setTransferListener(bandwidthMeter)
+        val upstream = DefaultDataSource.Factory(context, httpFactory)
+            .setTransferListener(bandwidthMeter)
+        if (OfflineVaultPolicy.supportsAuthorizedCache(media.mediaUri, vaultDirectCacheEnabled)) {
+            AuthorizedStreamCache.sourceFactory(context, upstream)
+        } else upstream
     }
 
     var resolved by remember(media.id) { mutableStateOf<YoutubeStreamResolver.ResolvedMedia?>(null) }
@@ -6461,7 +6471,7 @@ private fun selectResolvedOption(
 }
 
 private fun buildResolvedSource(
-    factory: DefaultDataSource.Factory,
+    factory: DataSource.Factory,
     resolved: YoutubeStreamResolver.ResolvedMedia,
     option: YoutubeStreamResolver.VideoOption
 ): MediaSource {

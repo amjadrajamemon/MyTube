@@ -71,7 +71,9 @@ data class DownloadTask(
     val retryCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val sessionId: Long = createdAt,
-    val eventAt: Long = createdAt
+    val eventAt: Long = createdAt,
+    /** A smart-replay task respects this preference throughout retries. */
+    val wifiOnly: Boolean = false
 )
 
 data class OfflineMedia(
@@ -85,7 +87,18 @@ data class OfflineMedia(
     val format: String = "",
     val fileSizeBytes: Long = 0L,
     val durationSeconds: Long = 0L,
-    val downloadDate: Long = System.currentTimeMillis()
+    val downloadDate: Long = System.currentTimeMillis(),
+    val isPinned: Boolean = false,
+    val collection: String = ""
+)
+
+/** Current vault health; disconnected USB entries stay in the catalog. */
+data class OfflineVaultHealth(
+    val readyCount: Int = 0,
+    val missingIds: Set<String> = emptySet(),
+    val savedBytes: Long = 0L,
+    val freeBytes: Long = -1L,
+    val storageLocation: String = ""
 )
 
 data class SponsorSegment(
@@ -100,6 +113,10 @@ data class TubeDeckSettings(
     /** Uncapped opt-in offline retention after an uninterrupted full native playback. */
     val smartOfflineReplayEnabled: Boolean = false,
     val smartOfflineReplayWifiOnly: Boolean = true,
+    /** Prefer a verified saved copy when opening the same video online. */
+    val offlineFirstEnabled: Boolean = true,
+    /** Requires user confirmation that direct progressive files may be retained. */
+    val vaultDirectCacheEnabled: Boolean = false,
     
     // Separate settings for different download types
     val instantMode: DownloadMode = DownloadMode.VIDEO,

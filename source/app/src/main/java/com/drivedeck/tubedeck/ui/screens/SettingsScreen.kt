@@ -75,6 +75,8 @@ fun SettingsScreen(
     var downloadTreeUri by remember { mutableStateOf(currentSettings.downloadTreeUri) }
     var smartOfflineReplayEnabled by remember { mutableStateOf(currentSettings.smartOfflineReplayEnabled) }
     var smartOfflineReplayWifiOnly by remember { mutableStateOf(currentSettings.smartOfflineReplayWifiOnly) }
+    var offlineFirstEnabled by remember { mutableStateOf(currentSettings.offlineFirstEnabled) }
+    var vaultDirectCacheEnabled by remember { mutableStateOf(currentSettings.vaultDirectCacheEnabled) }
     var folderError by remember { mutableStateOf<String?>(null) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -201,6 +203,8 @@ fun SettingsScreen(
                             downloadTreeUri = if (folderError == null) downloadTreeUri else currentSettings.downloadTreeUri,
                             smartOfflineReplayEnabled = smartOfflineReplayEnabled,
                             smartOfflineReplayWifiOnly = smartOfflineReplayWifiOnly,
+                            offlineFirstEnabled = offlineFirstEnabled,
+                            vaultDirectCacheEnabled = vaultDirectCacheEnabled,
                             instantMode = instantMode,
                             instantQuality = instantQuality,
                             customMode = customMode,
@@ -769,13 +773,35 @@ fun SettingsScreen(
                 ToggleRow(
                     "Save over Wi-Fi / Ethernet only", smartOfflineReplayWifiOnly
                 ) { smartOfflineReplayWifiOnly = it }
+                ToggleRow("Play saved copy first (offline-first)", offlineFirstEnabled) {
+                    offlineFirstEnabled = it
+                }
+                ToggleRow("Reuse permitted direct-file playback cache", vaultDirectCacheEnabled) {
+                    vaultDirectCacheEnabled = it
+                }
                 Text(
                     "Only an uninterrupted full native-player watch qualifies; resume, seek, skip or manual pause disqualifies the watch. Saved videos appear in Offline Media when the transfer finishes. No 2 GB cap, automatic pruning, or total storage quota is imposed; available device space still applies.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
                 Text(
-                    "Enable only for videos you own or may lawfully retain. Not all streaming sources permit offline copies; Web playback and protected streams are not eligible. The current download engine may transfer the media again after playback.",
+                    "Only turn on direct-file caching when you own the content or have offline-retention permission. It caches progressive MP4/WebM/M4V links; it excludes YouTube, WebView, protected streams and adaptive manifests. Completed cache files are promoted without another transfer when all bytes are present. Other eligible sources may require a new download.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+            }
+
+            SettingsCard(title = "Vault storage & cache") {
+                Text(
+                    "No arbitrary 2 GB limit or automatic eviction of saved media. Only real device space and a small safety reserve limit new files. Removed USB/SD media stays listed as Missing until reconnected.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                TextButton(onClick = { TubeDeckRepository.get(context).clearIncompleteAuthorizedCache() }) {
+                    Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Clear unfinished direct-stream cache")
+                }
+                Text(
+                    "This removes only temporary, unpromoted progressive cache. Finished Offline Vault files and pinned items are untouched.",
+                    color = TubeDeckTextSecondary, fontSize = 10.sp
                 )
             }
 

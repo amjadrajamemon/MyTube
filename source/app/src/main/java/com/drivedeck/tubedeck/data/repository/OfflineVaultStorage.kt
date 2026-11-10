@@ -14,13 +14,16 @@ internal object OfflineVaultStorage {
         when (uri.scheme) {
             "file" -> uri.path?.let { path ->
                 val f = File(path)
-                f.isFile && f.canRead() && f.length() > 0L
+                f.isFile && f.canRead() && f.length() > 0L &&
+                    (media.fileSizeBytes <= 0L || f.length() == media.fileSizeBytes)
             } == true
             "content" -> {
                 // SAF documents can be on a disconnected USB drive. Open the actual
                 // descriptor rather than relying on stale persisted display metadata.
                 context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                    descriptor.statSize != 0L
+                    descriptor.statSize != 0L &&
+                        (media.fileSizeBytes <= 0L || descriptor.statSize < 0L ||
+                            descriptor.statSize == media.fileSizeBytes)
                 } == true
             }
             else -> false

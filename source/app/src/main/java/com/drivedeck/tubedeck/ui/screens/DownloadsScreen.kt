@@ -788,7 +788,8 @@ fun DownloadsScreen(
 }
 @Composable
 fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, onSelectedChange: (Boolean) -> Unit,
-                     onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+                     onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit,
+                     isMissing: Boolean, onTogglePin: () -> Unit, onSetCollection: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).tvInputHighlight().clickable { onPlay() },
@@ -802,9 +803,22 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary)
+            if (media.isPinned || isMissing || media.collection.isNotBlank()) {
+                Text(
+                    listOfNotNull(
+                        if (media.isPinned) "PINNED" else null,
+                        if (isMissing) "MISSING FILE" else null,
+                        media.collection.takeIf { it.isNotBlank() }
+                    ).joinToString(" · "),
+                    fontSize = 10.sp,
+                    color = if (isMissing) TubeDeckError else TubeDeckAccentMint
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(media.qualityLabel, fontSize = 10.sp, color = TubeDeckTextSecondary)
+                Text(media.qualityLabel + " · " +
+                    OfflineVaultPolicy.readableSize(media.fileSizeBytes),
+                    fontSize = 10.sp, color = TubeDeckTextSecondary)
                 Checkbox(checked = selected, onCheckedChange = onSelectedChange, enabled = enabled, modifier = Modifier.size(32.dp))
                 Box {
                     IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "File actions", tint = TubeDeckTextSecondary) }
@@ -812,6 +826,12 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                         DropdownMenuItem(text = { Text("Copy") }, onClick = { menuOpen = false; onCopy() })
                         DropdownMenuItem(text = { Text("Cut") }, onClick = { menuOpen = false; onCut() })
                         DropdownMenuItem(text = { Text("Move") }, onClick = { menuOpen = false; onMove() })
+                        DropdownMenuItem(
+                            text = { Text(if (media.isPinned) "Unpin" else "Pin") },
+                            onClick = { menuOpen = false; onTogglePin() }
+                        )
+                        DropdownMenuItem(text = { Text("Organize in collection") },
+                            onClick = { menuOpen = false; onSetCollection() })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                     }
                 }
@@ -830,7 +850,10 @@ private fun OfflineMediaListRow(
     onCopy: () -> Unit,
     onCut: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    isMissing: Boolean,
+    onTogglePin: () -> Unit,
+    onSetCollection: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
@@ -865,12 +888,14 @@ private fun OfflineMediaListRow(
                     color = TubeDeckTextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    listOf(media.qualityLabel, media.format)
+                    listOf(media.qualityLabel, media.format,
+                        OfflineVaultPolicy.readableSize(media.fileSizeBytes),
+                        if (media.isPinned) "Pinned" else "",
+                        if (isMissing) "Missing" else "",
+                        media.collection)
                         .filter { it.isNotBlank() }
                         .joinToString(" · "),
                     color = TubeDeckTextSecondary,
@@ -878,7 +903,9 @@ private fun OfflineMediaListRow(
                 )
             }
             IconButton(onClick = onPlay, enabled = enabled, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = TubeDeckAccentMint)
+                Icon(if (isMissing) Icons.Default.CloudOff else Icons.Default.PlayArrow,
+                     contentDescription = if (isMissing) "Missing file" else "Play",
+                     tint = if (isMissing) TubeDeckError else TubeDeckAccentMint)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(34.dp)) {
@@ -888,6 +915,12 @@ private fun OfflineMediaListRow(
                     DropdownMenuItem(text = { Text("Copy to…") }, onClick = { menuOpen = false; onCopy() })
                     DropdownMenuItem(text = { Text("Cut / move to…") }, onClick = { menuOpen = false; onCut() })
                     DropdownMenuItem(text = { Text("Move to…") }, onClick = { menuOpen = false; onMove() })
+                    DropdownMenuItem(
+                        text = { Text(if (media.isPinned) "Unpin" else "Pin") },
+                        onClick = { menuOpen = false; onTogglePin() }
+                    )
+                    DropdownMenuItem(text = { Text("Organize in collection") },
+                        onClick = { menuOpen = false; onSetCollection() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                 }
             }

@@ -410,6 +410,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
+                val offlineVaultHealth by repository.offlineVaultHealth.collectAsStateWithLifecycle()
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val recentSearches by repository.recentSearches.collectAsStateWithLifecycle()
@@ -543,13 +544,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    val playbackHost = if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
+                    val selected = repository.preferredOfflineMedia(media)
+                    val offline = selected.mediaUri.startsWith("file:") ||
+                        selected.mediaUri.startsWith("content:")
+                    val playbackHost = if (offline) PlaybackHost.NATIVE
+                        else if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
                         else PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
                     // Preserve the complete watch URL, including list=/mix context. The resolver
                     // canonicalizes internally for stream extraction; the player needs the original
                     // playlist context for queue loading, Previous/Next and continuous playback.
                     when (playbackHost) {
-                        PlaybackHost.NATIVE -> launchNativePlayer(media)
+                        PlaybackHost.NATIVE -> launchNativePlayer(selected)
                         PlaybackHost.WEB -> {
                             PlaybackSessionRegistry.stopForWeb()
                             pauseBrowserMediaForSwitch()

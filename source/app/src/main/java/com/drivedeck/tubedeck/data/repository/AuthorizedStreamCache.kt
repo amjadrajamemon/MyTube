@@ -80,6 +80,7 @@ internal object AuthorizedStreamCache {
         var committed: File? = null
         try {
             // Lock spans while copying so no concurrent cache removal can invalidate a file.
+            val coroutine = currentCoroutineContext()
             synchronized(gate) {
                 val spans = cache.getCachedSpans(key).sortedBy { it.position }
                 FileOutputStream(stage).use { output ->
@@ -101,7 +102,7 @@ internal object AuthorizedStreamCache {
                             }
                             var left = needed
                             while (left > 0L) {
-                                currentCoroutineContext().ensureActive()
+                                coroutine.ensureActive()
                                 val n = input.read(buffer, 0, minOf(left, buffer.size.toLong()).toInt())
                                 if (n < 0) error("Truncated cache span")
                                 output.write(buffer, 0, n)

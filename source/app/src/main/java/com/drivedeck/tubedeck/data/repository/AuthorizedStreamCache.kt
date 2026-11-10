@@ -48,7 +48,8 @@ internal object AuthorizedStreamCache {
 
     /** Cached data is not labelled Offline Ready until every byte is present. */
     suspend fun promoteIfComplete(
-        context: Context, media: OfflineMedia, folderName: String
+        context: Context, media: OfflineMedia, folderName: String,
+        selectedTreeUri: String? = null
     ): OfflineMedia? = withContext(Dispatchers.IO) {
         val key = media.mediaUri
         val cache = cache(context)
@@ -56,6 +57,14 @@ internal object AuthorizedStreamCache {
         if (sourceLength <= 0L || sourceLength > Long.MAX_VALUE / 2L) return@withContext null
         if (!cache.isCached(key, 0L, sourceLength)) return@withContext null
 
+        if (selectedTreeUri != null) {
+            val tree = runCatching {
+                androidx.documentfile.provider.DocumentFile.fromTreeUri(
+                    context, android.net.Uri.parse(selectedTreeUri)
+                )
+            }.getOrNull()
+            if (tree?.isDirectory != true || !tree.canWrite()) return@withContext null
+        }
         val folder = MediaDownloader.folder(context, folderName)
         if (!OfflineVaultPolicy.shouldSaveFreeSpace(folder.usableSpace, sourceLength)) {
             return@withContext null
@@ -107,10 +116,7 @@ internal object AuthorizedStreamCache {
             }
             committed = LocalDownloadCommit.commit(stage, final)
             check(committed?.isFile == true && committed?.length() == sourceLength)
-            // The verified permanent file is now safely published. Free cached
-            // duplicates and leave other partial cache keys untouched.
-            synchronized(gate) { cache.removeResource(key) }
-            OfflineMedia(
+            val localMedia = OfflineMedia(
                 id = id,
                 title = media.title,
                 videoId = media.videoId,
@@ -122,8 +128,19 @@ internal object AuthorizedStreamCache {
                 fileSizeBytes = sourceLength,
                 durationSeconds = media.durationSeconds
             )
+            // A selected SAF/USB target is authoritative; never silently retain
+            // a completed file in a different folder if copying to USB failed.
+            val readyMedia = if (selectedTreeUri != null) {
+                DownloadedFileManager.transfer(
+                    context, localMedia, android.net.Uri.parse(selectedTreeUri), move = true
+                )
+            } else localMedia
+            synchronized(gate) { cache.removeResource(key) }
+            readyMedia
         } catch (_: Exception) {
-            if (committed == null) stage.delete()
+            stage.delete()
+            committed?.delete()
+            // Cache remains available for a later permitted promotion retry.
             null
         }
     }

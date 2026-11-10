@@ -1251,6 +1251,16 @@ class MainActivity : ComponentActivity() {
                                     onRefreshVault = { repository.refreshOfflineVaultHealth() },
                                     onPinMedia = { id, pinned -> repository.pinOfflineMedia(id, pinned) },
                                     onOrganizeMedia = { id, group -> repository.organizeOfflineMedia(id, group) },
+                                    onShareMedia = { media ->
+                                        runCatching {
+                                            com.drivedeck.tubedeck.data.repository.OfflineMediaShare
+                                                .openChooser(this@MainActivity, media)
+                                        }.onFailure { error ->
+                                            Toast.makeText(applicationContext,
+                                                error.message ?: "Video cannot be shared",
+                                                Toast.LENGTH_LONG).show()
+                                        }
+                                    },
                                     initialTab = if (currentScreen == ActiveScreen.OFFLINE_VAULT) 0 else 1,
                                     onPauseTask = { repository.pauseTask(it) },
                                     onResumeTask = { repository.resumeTask(it) },

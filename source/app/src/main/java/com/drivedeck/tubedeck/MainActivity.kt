@@ -411,6 +411,12 @@ class MainActivity : ComponentActivity() {
 
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val offlineVaultHealth by repository.offlineVaultHealth.collectAsStateWithLifecycle()
+                LaunchedEffect(currentScreen) {
+                    if (currentScreen == ActiveScreen.OFFLINE_VAULT ||
+                        currentScreen == ActiveScreen.DOWNLOADS) {
+                        repository.refreshOfflineVaultHealth()
+                    }
+                }
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val recentSearches by repository.recentSearches.collectAsStateWithLifecycle()
@@ -1241,6 +1247,10 @@ class MainActivity : ComponentActivity() {
                                     downloadQueue = downloadQueue,
                                     offlineMediaList = offlineMediaList,
                                     downloadHistory = downloadHistory,
+                                    vaultHealth = offlineVaultHealth,
+                                    onRefreshVault = { repository.refreshOfflineVaultHealth() },
+                                    onPinMedia = { id, pinned -> repository.pinOfflineMedia(id, pinned) },
+                                    onOrganizeMedia = { id, group -> repository.organizeOfflineMedia(id, group) },
                                     initialTab = if (currentScreen == ActiveScreen.OFFLINE_VAULT) 0 else 1,
                                     onPauseTask = { repository.pauseTask(it) },
                                     onResumeTask = { repository.resumeTask(it) },
@@ -1275,8 +1285,16 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onPlayMedia = { media ->
-                                        playingMedia = media
-                                        navigateTo(ActiveScreen.PLAYER)
+                                        if (!com.drivedeck.tubedeck.data.repository.OfflineVaultStorage
+                                                .isReadable(applicationContext, media)) {
+                                            Toast.makeText(applicationContext,
+                                                "File unavailable. Reconnect the storage drive.",
+                                                Toast.LENGTH_LONG).show()
+                                            repository.refreshOfflineVaultHealth()
+                                        } else {
+                                            playingMedia = media
+                                            navigateTo(ActiveScreen.PLAYER)
+                                        }
                                     },
                                     onCustomDownload = { targetUrl ->
                                         downloadModalTargetUrl = targetUrl
@@ -1360,6 +1378,7 @@ class MainActivity : ComponentActivity() {
                                         xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                                         sponsorSegments = sponsorSegments,
                                         pipEnabled = settings.pipEnabled,
+                                        vaultDirectCacheEnabled = settings.vaultDirectCacheEnabled,
                     inPictureInPicture = isPipMode,
                                         autoLoadEpisodes = settings.autoLoadEpisodes,
                                         autoLoadUpNext = settings.autoLoadUpNext,
@@ -1436,6 +1455,14 @@ class MainActivity : ComponentActivity() {
                                             if (repository.enqueueSmartOfflineReplay(completed)) {
                                                 Toast.makeText(applicationContext,
                                                     "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                                            } else if (repository.settings.value.vaultDirectCacheEnabled) {
+                                                lifecycleScope.launch {
+                                                    if (repository.promoteAuthorizedCache(completed)) {
+                                                        Toast.makeText(applicationContext,
+                                                            "Cached video saved to Offline Vault",
+                                                            Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
                                             }
                                         },
                                         onPlaybackPositionChanged = { activePlaybackPositionMs = it },

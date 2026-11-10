@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.11 signed Offline Vault test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v2311-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-test-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Retrieve immutable, tested v2.3.11 triple APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.11-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42770897844
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Independently check original SHA256 and APK ZIP integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.11-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.11-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.11-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" >/dev/null; done
+          ls -lh dist
+
+      - name: Publish user-downloadable signed TEST APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.3.11-signed-preview-20261110"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "The immutable signed test release already exists; assets were not overwritten."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.11-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.11-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.11-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target b9be2e45a78388abda83a51418842a4d35552e4d \
+            --prerelease \
+            --title 'TubeDeck v2.3.11 — Signed Offline Vault TEST APKs' \
+            --notes 'TEST PREVIEW — feature branch commit b9be2e45. All Kotlin unit tests (including Offline Vault policies and Smart Replay regressions), Android lint, three variant builds, stable APK signing identity, APK ZIP and checksums passed in CI run 42770897844. New functionality: opt-in persistent cache and 100% byte-verified file promotion for user-authorized direct MP4/WebM/M4V sources; offline-first playback of readable saved copies; network-aware Wi-Fi/Ethernet auto-download queue; files on removed drives show Missing rather than disappearing; search, sort, pin, collections, file sizes, storage health and Android Sharesheet local transfer. No 2 GB storage cap or automatic saved-file eviction. IMPORTANT: YouTube/Googlevideo streaming bytes are NOT cached for offline reuse; existing YouTube download engine must still download a separate copy where permitted. No protection bypass is included. Direct-stream caching is OFF until opted in and applies only to content you can lawfully retain. This is a TEST APK; emulator installation / actual physical device playback and end-to-end download rights and behavior require validation. A compatible Local-Beam app may appear in Android Sharesheet, but auto-LAN discovery is not built into TubeDeck. See OFFLINE_VAULT_V2311_AUDIT.md in the feature branch.'

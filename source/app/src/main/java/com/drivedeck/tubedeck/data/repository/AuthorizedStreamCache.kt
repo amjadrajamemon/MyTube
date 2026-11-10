@@ -25,7 +25,7 @@ import java.util.UUID
  * One SimpleCache per app process/directory. Playback reads and writes the same
  * cache used by the post-watch promotion step.
  */
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 internal object AuthorizedStreamCache {
     @Volatile private var instance: SimpleCache? = null
     private val gate = Any()

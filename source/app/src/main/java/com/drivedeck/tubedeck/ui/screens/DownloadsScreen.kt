@@ -46,6 +46,7 @@ fun DownloadsScreen(
     onRefreshVault: () -> Unit = {},
     onPinMedia: (String, Boolean) -> Unit = { _, _ -> },
     onOrganizeMedia: (String, String) -> Unit = { _, _ -> },
+    onShareMedia: (OfflineMedia) -> Unit = {},
     initialTab: Int = 0,
     onPauseTask: (String) -> Unit,
     onResumeTask: (String) -> Unit,
@@ -455,7 +456,8 @@ fun DownloadsScreen(
                                         onSetCollection = {
                                             organizeTarget = media
                                             collectionDraft = media.collection
-                                        }
+                                        },
+                                        onShare = { onShareMedia(media) }
                                     )
                                 }
                             }
@@ -479,7 +481,8 @@ fun DownloadsScreen(
                                         onSetCollection = {
                                             organizeTarget = media
                                             collectionDraft = media.collection
-                                        }
+                                        },
+                                        onShare = { onShareMedia(media) }
                                     )
                                 }
                             }
@@ -789,7 +792,8 @@ fun DownloadsScreen(
 @Composable
 fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, onSelectedChange: (Boolean) -> Unit,
                      onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit,
-                     isMissing: Boolean, onTogglePin: () -> Unit, onSetCollection: () -> Unit) {
+                     isMissing: Boolean, onTogglePin: () -> Unit, onSetCollection: () -> Unit,
+                     onShare: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).tvInputHighlight().clickable { onPlay() },
@@ -832,6 +836,8 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                         )
                         DropdownMenuItem(text = { Text("Organize in collection") },
                             onClick = { menuOpen = false; onSetCollection() })
+                        DropdownMenuItem(text = { Text("Share / Send to local device") },
+                            onClick = { menuOpen = false; onShare() })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                     }
                 }
@@ -853,7 +859,8 @@ private fun OfflineMediaListRow(
     onDelete: () -> Unit,
     isMissing: Boolean,
     onTogglePin: () -> Unit,
-    onSetCollection: () -> Unit
+    onSetCollection: () -> Unit,
+    onShare: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
@@ -921,6 +928,8 @@ private fun OfflineMediaListRow(
                     )
                     DropdownMenuItem(text = { Text("Organize in collection") },
                         onClick = { menuOpen = false; onSetCollection() })
+                    DropdownMenuItem(text = { Text("Share / Send to local device") },
+                        onClick = { menuOpen = false; onShare() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                 }
             }

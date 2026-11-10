@@ -187,7 +187,9 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 (media.videoId.isNotBlank() && it.videoId == media.videoId && OfflineVaultStorage.isReadable(context, it)) }
         }
         if (original) return false
-        val promoted = AuthorizedStreamCache.promoteIfComplete(context, media, preferences.downloadDir)
+        val promoted = AuthorizedStreamCache.promoteIfComplete(
+            context, media, preferences.downloadDir, preferences.downloadTreeUri
+        )
             ?: return false
         synchronized(lock) {
             _offlineMediaList.value = listOf(promoted) +

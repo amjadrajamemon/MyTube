@@ -287,7 +287,69 @@ fun DownloadsScreen(
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(7.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${vaultHealth.readyCount} ready · " +
+                                    "${OfflineVaultPolicy.readableSize(vaultHealth.savedBytes)} saved · " +
+                                    "${OfflineVaultPolicy.readableSize(vaultHealth.freeBytes)} free" +
+                                    if (vaultHealth.missingIds.isNotEmpty()) {
+                                        " · ${vaultHealth.missingIds.size} missing"
+                                    } else "",
+                                fontSize = 10.sp, color = TubeDeckTextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = onRefreshVault, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Refresh, "Check vault files", tint = TubeDeckAccentCyan,
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        if (vaultHealth.cachedBytes > 0L) {
+                            Text(
+                                "Temporary retained direct-stream data: " +
+                                    OfflineVaultPolicy.readableSize(vaultHealth.cachedBytes),
+                                fontSize = 10.sp, color = TubeDeckTextSecondary
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                placeholder = { Text("Search saved videos / collections", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
+                                modifier = Modifier.weight(1f),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                            )
+                            Box {
+                                TextButton(onClick = { sortMenuOpen = true }) {
+                                    Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(vaultSortOrder, fontSize = 10.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = sortMenuOpen,
+                                    onDismissRequest = { sortMenuOpen = false }
+                                ) {
+                                    listOf("Recent", "Oldest", "Title", "Largest", "Duration")
+                                        .forEach { sort ->
+                                            DropdownMenuItem(
+                                                text = { Text(sort) },
+                                                onClick = { vaultSortOrder = sort; sortMenuOpen = false }
+                                            )
+                                        }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
                         val filteredList = remember(offlineMediaList, searchQuery, filterType,
                             vaultSortOrder, vaultHealth.missingIds) {
                             OfflineVaultPolicy.select(offlineMediaList, searchQuery, filterType,

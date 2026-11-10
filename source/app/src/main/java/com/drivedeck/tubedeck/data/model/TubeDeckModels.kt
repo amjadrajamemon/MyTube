@@ -98,7 +98,8 @@ data class OfflineVaultHealth(
     val missingIds: Set<String> = emptySet(),
     val savedBytes: Long = 0L,
     val freeBytes: Long = -1L,
-    val storageLocation: String = ""
+    val storageLocation: String = "",
+    val cachedBytes: Long = 0L
 )
 
 data class SponsorSegment(

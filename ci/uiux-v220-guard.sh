@@ -16,8 +16,8 @@ TOP=source/app/src/main/java/com/drivedeck/tubedeck/ui/components/TopNavBar.kt
 EXPERIENCE=source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/DeckExperienceSystem.kt
 
 test "$(grep -c 'DeckThemeProfile("' "$THEMES")" -eq 19
-grep -Fq 'versionCode = 120' source/app/build.gradle.kts
-grep -Fq 'versionName = "2.3.10"' source/app/build.gradle.kts
+grep -Fq 'versionCode = 121' source/app/build.gradle.kts
+grep -Fq 'versionName = "2.3.11"' source/app/build.gradle.kts
 
 grep -Fq 'DeckExperienceCatalog.tokens' source/app/src/main/java/com/drivedeck/tubedeck/ui/theme/Theme.kt
 grep -Fq 'deckScreenBackground()' "$HOME"
@@ -105,4 +105,4 @@ grep -Fq 'create("armv7")' "$GRADLE"
 grep -Fq 'enableV1Signing = true' "$GRADLE"
 grep -Fq 'enableV2Signing = true' "$GRADLE"
 grep -Fq 'enableV3Signing = true' "$GRADLE"
-echo "PASS: v2.3.10, 3s resume, Auto downshift, compact search, ARMv7 and legacy-friendly signing"
+echo "PASS: v2.3.11, 3s resume, Auto downshift, compact search, ARMv7 and legacy-friendly signing"

@@ -411,12 +411,6 @@ class MainActivity : ComponentActivity() {
 
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
                 val offlineVaultHealth by repository.offlineVaultHealth.collectAsStateWithLifecycle()
-                LaunchedEffect(currentScreen) {
-                    if (currentScreen == ActiveScreen.OFFLINE_VAULT ||
-                        currentScreen == ActiveScreen.DOWNLOADS) {
-                        repository.refreshOfflineVaultHealth()
-                    }
-                }
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val recentSearches by repository.recentSearches.collectAsStateWithLifecycle()

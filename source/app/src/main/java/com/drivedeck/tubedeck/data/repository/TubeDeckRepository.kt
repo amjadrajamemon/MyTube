@@ -88,6 +88,82 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadQueue: StateFlow<List<DownloadTask>> = _downloadQueue.asStateFlow()
     private val _offlineMediaList = MutableStateFlow(loadOfflineMedia())
     val offlineMediaList: StateFlow<List<OfflineMedia>> = _offlineMediaList.asStateFlow()
+    private val _offlineVaultHealth = MutableStateFlow(OfflineVaultHealth())
+    val offlineVaultHealth: StateFlow<OfflineVaultHealth> = _offlineVaultHealth.asStateFlow()
+
+    fun refreshOfflineVaultHealth() {
+        scope.launch {
+            val items = synchronized(lock) { _offlineMediaList.value.toList() }
+            val health = runCatching {
+                OfflineVaultStorage.inspect(context, items, _settings.value.downloadDir)
+                    .copy(cachedBytes = AuthorizedStreamCache.retainedCacheBytes(context))
+            }.getOrNull() ?: return@launch
+            _offlineVaultHealth.value = health
+        }
+    }
+
+    fun pinOfflineMedia(id: String, pinned: Boolean) {
+        synchronized(lock) {
+            val changed = _offlineMediaList.value.map {
+                if (it.id == id) it.copy(isPinned = pinned) else it
+            }
+            _offlineMediaList.value = changed
+            saveOfflineMedia(changed)
+        }
+    }
+
+    fun organizeOfflineMedia(id: String, collection: String) {
+        synchronized(lock) {
+            val changed = _offlineMediaList.value.map {
+                if (it.id == id) it.copy(collection = collection.trim().take(64)) else it
+            }
+            _offlineMediaList.value = changed
+            saveOfflineMedia(changed)
+        }
+    }
+
+    fun preferredOfflineMedia(media: OfflineMedia): OfflineMedia {
+        if (!_settings.value.offlineFirstEnabled) return media
+        val uri = Uri.parse(media.mediaUri)
+        if (uri.scheme == "file" || uri.scheme == "content") return media
+        // Preserve Mix / playlist context: those navigation/continuation queues
+        // need the original online URL, not a local file replacement.
+        if (YoutubeUrls.playlistId(media.mediaUri) != null) return media
+        val key = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        if (key.isEmpty()) return media
+        return synchronized(lock) {
+            _offlineMediaList.value.firstOrNull {
+                it.videoId == key && !it.isAudioOnly && OfflineVaultStorage.isReadable(context, it)
+            }?.copy(title = media.title.ifBlank { it.title }) ?: media
+        }
+    }
+
+    suspend fun promoteAuthorizedCache(media: OfflineMedia): Boolean {
+        val preferences = _settings.value
+        if (!preferences.smartOfflineReplayEnabled ||
+            !OfflineVaultPolicy.supportsAuthorizedCache(media.mediaUri, preferences.vaultDirectCacheEnabled)) return false
+        val original = synchronized(lock) {
+            _offlineMediaList.value.any { it.mediaUri == media.mediaUri ||
+                (media.videoId.isNotBlank() && it.videoId == media.videoId && OfflineVaultStorage.isReadable(context, it)) }
+        }
+        if (original) return false
+        val promoted = AuthorizedStreamCache.promoteIfComplete(context, media, preferences.downloadDir)
+            ?: return false
+        synchronized(lock) {
+            _offlineMediaList.value = listOf(promoted) +
+                _offlineMediaList.value.filterNot { it.id == promoted.id }
+            saveOfflineMedia(_offlineMediaList.value)
+        }
+        refreshOfflineVaultHealth()
+        return true
+    }
+
+    fun clearIncompleteAuthorizedCache() {
+        scope.launch {
+            AuthorizedStreamCache.clearIncompleteCache(context)
+            refreshOfflineVaultHealth()
+        }
+    }
     private val _fileClipboard = MutableStateFlow<FileClipboard?>(null)
     val fileClipboard: StateFlow<FileClipboard?> = _fileClipboard.asStateFlow()
     private val _downloadHistory = MutableStateFlow(loadHistory())
@@ -141,6 +217,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
+        refreshOfflineVaultHealth()
     }
 
     fun updateSettings(value: TubeDeckSettings) {
@@ -151,6 +228,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
             putBoolean("smartOfflineReplayEnabled", next.smartOfflineReplayEnabled)
             putBoolean("smartOfflineReplayWifiOnly", next.smartOfflineReplayWifiOnly)
+            putBoolean("offlineFirstEnabled", next.offlineFirstEnabled)
+            putBoolean("vaultDirectCacheEnabled", next.vaultDirectCacheEnabled)
             remove("maxConcurrent")
             putString("instantMode", next.instantMode.name); putString("instantQuality", next.instantQuality)
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
@@ -236,6 +315,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
         downloadTreeUri = prefs.getString("downloadTreeUri", null),
         smartOfflineReplayEnabled = prefs.getBoolean("smartOfflineReplayEnabled", false),
         smartOfflineReplayWifiOnly = prefs.getBoolean("smartOfflineReplayWifiOnly", true),
+        offlineFirstEnabled = prefs.getBoolean("offlineFirstEnabled", true),
+        vaultDirectCacheEnabled = prefs.getBoolean("vaultDirectCacheEnabled", false),
         instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
         instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
         customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),
@@ -1741,9 +1822,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("isAudioOnly", media.isAudioOnly); put("qualityLabel", media.qualityLabel)
                 put("format", media.format); put("fileSizeBytes", media.fileSizeBytes)
                 put("durationSeconds", media.durationSeconds); put("downloadDate", media.downloadDate)
+                put("isPinned", media.isPinned); put("collection", media.collection)
             })
         }
         stateStore.write("offline_media.json", array.toString())
+        refreshOfflineVaultHealth()
         prefs.edit().remove("offline_media_json").apply()
     }
     private fun loadOfflineMedia(): List<OfflineMedia> {
@@ -1754,7 +1837,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 item.optString("thumbnailUrl"), item.getString("mediaUri"),
                 item.optBoolean("isAudioOnly"), item.optString("qualityLabel"),
                 item.optString("format"), item.optLong("fileSizeBytes"),
-                item.optLong("durationSeconds"), item.optLong("downloadDate")
+                item.optLong("durationSeconds"), item.optLong("downloadDate"),
+                item.optBoolean("isPinned", false), item.optString("collection", "")
             )
         }.filter { media ->
             // A SAF folder or removable USB drive may be temporarily unavailable at

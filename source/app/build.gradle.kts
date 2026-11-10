@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 120
-        versionName = "2.3.10"
+        versionCode = 121
+        versionName = "2.3.11"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
@@ -157,6 +157,8 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     // Direct live-TV protocol engines, aligned to the existing Media3 version.
     implementation("androidx.media3:media3-exoplayer-dash:1.11.1")
+    implementation("androidx.media3:media3-datasource:1.11.1")
+    implementation("androidx.media3:media3-database:1.11.1")
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.documentfile)

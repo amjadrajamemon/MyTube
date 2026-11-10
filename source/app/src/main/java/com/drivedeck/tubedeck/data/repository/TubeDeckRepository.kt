@@ -174,7 +174,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         return synchronized(lock) {
             _offlineMediaList.value.firstOrNull {
                 it.videoId == key && !it.isAudioOnly && OfflineVaultStorage.isReadable(context, it)
-            }?.copy(title = media.title.ifBlank { it.title }) ?: media
+            }?.let { saved -> saved.copy(title = media.title.ifBlank { saved.title }) } ?: media
         }
     }
 

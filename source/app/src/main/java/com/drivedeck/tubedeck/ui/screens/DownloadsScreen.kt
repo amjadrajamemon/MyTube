@@ -449,7 +449,13 @@ fun DownloadsScreen(
                                         onCopy = { onCopyFiles(setOf(media.id), false) },
                                         onCut = { onCopyFiles(setOf(media.id), true) },
                                         onMove = { onMoveFiles(setOf(media.id)) },
-                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) },
+                                        isMissing = media.id in vaultHealth.missingIds,
+                                        onTogglePin = { onPinMedia(media.id, !media.isPinned) },
+                                        onSetCollection = {
+                                            organizeTarget = media
+                                            collectionDraft = media.collection
+                                        }
                                     )
                                 }
                             }
@@ -467,7 +473,13 @@ fun DownloadsScreen(
                                         onCopy = { onCopyFiles(setOf(media.id), false) },
                                         onCut = { onCopyFiles(setOf(media.id), true) },
                                         onMove = { onMoveFiles(setOf(media.id)) },
-                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) },
+                                        isMissing = media.id in vaultHealth.missingIds,
+                                        onTogglePin = { onPinMedia(media.id, !media.isPinned) },
+                                        onSetCollection = {
+                                            organizeTarget = media
+                                            collectionDraft = media.collection
+                                        }
                                     )
                                 }
                             }
@@ -699,6 +711,30 @@ fun DownloadsScreen(
                 }
             }
         }
+    }
+
+    organizeTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { organizeTarget = null },
+            title = { Text("Organize saved video") },
+            text = {
+                OutlinedTextField(
+                    value = collectionDraft,
+                    onValueChange = { collectionDraft = it.take(64) },
+                    label = { Text("Collection (optional)") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onOrganizeMedia(target.id, collectionDraft)
+                    organizeTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { organizeTarget = null }) { Text("Cancel") }
+            }
+        )
     }
 
     if (confirmDeleteSelected) {

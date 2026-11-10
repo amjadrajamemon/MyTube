@@ -46,8 +46,8 @@ android {
         applicationId = "com.aistudio.tubedeck.kxmvd"
         minSdk = 24
         targetSdk = 36
-        versionCode = 109
-        versionName = "2.2.3"
+        versionCode = 121
+        versionName = "2.3.11"
 
         testInstrumentationRunner = "com.drivedeck.tubedeck.BlackoutInstrumentation"
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
@@ -60,6 +60,12 @@ android {
         create("arm64") {
             dimension = "abi"
             ndk { abiFilters += "arm64-v8a" }
+        }
+        create("armv7") {
+            dimension = "abi"
+            // 32-bit ARM-only installer, for car tablets whose Android OS has
+            // no 64-bit app runtime, without the very large Universal package.
+            ndk { abiFilters += "armeabi-v7a" }
         }
         create("universal") {
             dimension = "abi"
@@ -76,6 +82,12 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // Some vendor car package installers fail to recognize v2-only
+            // signatures, despite a sufficiently recent advertised Android.
+            // Dual-sign while retaining the SAME certificate/update identity.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
         if (productionSigningReady) {
             create("production") {
@@ -145,6 +157,8 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     // Direct live-TV protocol engines, aligned to the existing Media3 version.
     implementation("androidx.media3:media3-exoplayer-dash:1.11.1")
+    implementation("androidx.media3:media3-datasource:1.11.1")
+    implementation("androidx.media3:media3-database:1.11.1")
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.documentfile)

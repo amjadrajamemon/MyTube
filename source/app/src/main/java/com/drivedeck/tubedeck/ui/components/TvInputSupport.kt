@@ -40,6 +40,7 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
     val mode = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)
         ?.currentModeType ?: (context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK)
     val largeDisplay = context.resources.configuration.smallestScreenWidthDp >= 600
+    val noTouchscreen = !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     // Many inexpensive AOSP TV boxes advertise a touchscreen despite having
     // only an air mouse, mini keyboard, or D-pad attached. Detect those real,
     // external controllers rather than relying exclusively on Leanback flags.
@@ -49,7 +50,7 @@ fun isTvLikeNavigationDevice(context: Context): Boolean {
             // Cheap TV boxes often report a misleading phone-sized dp width.
             (device.sources and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
             (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-            (largeDisplay && (
+            ((largeDisplay || noTouchscreen) && (
                 (device.sources and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE ||
                 device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
             ))

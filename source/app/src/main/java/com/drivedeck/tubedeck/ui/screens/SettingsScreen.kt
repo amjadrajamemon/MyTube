@@ -73,6 +73,10 @@ fun SettingsScreen(
     }
     var downloadDir by remember { mutableStateOf(currentSettings.downloadDir) }
     var downloadTreeUri by remember { mutableStateOf(currentSettings.downloadTreeUri) }
+    var smartOfflineReplayEnabled by remember { mutableStateOf(currentSettings.smartOfflineReplayEnabled) }
+    var smartOfflineReplayWifiOnly by remember { mutableStateOf(currentSettings.smartOfflineReplayWifiOnly) }
+    var offlineFirstEnabled by remember { mutableStateOf(currentSettings.offlineFirstEnabled) }
+    var vaultDirectCacheEnabled by remember { mutableStateOf(currentSettings.vaultDirectCacheEnabled) }
     var folderError by remember { mutableStateOf<String?>(null) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -122,6 +126,7 @@ fun SettingsScreen(
     var sponsorBlockEnabled by remember { mutableStateOf(currentSettings.sponsorBlockEnabled) }
     var blockShortsEnabled by remember { mutableStateOf(currentSettings.blockShortsEnabled) }
     var pipEnabled by remember { mutableStateOf(currentSettings.pipEnabled) }
+    var tvBackButtonAction by remember { mutableStateOf(currentSettings.tvBackButtonAction) }
     var autoLoadEpisodes by remember { mutableStateOf(currentSettings.autoLoadEpisodes) }
     var autoLoadUpNext by remember { mutableStateOf(currentSettings.autoLoadUpNext) }
     var sideBySideEpisodeFeeds by remember { mutableStateOf(currentSettings.sideBySideEpisodeFeeds) }
@@ -139,6 +144,9 @@ fun SettingsScreen(
     var hideWatchedRecommendations by remember { mutableStateOf(currentSettings.hideWatchedRecommendations) }
     var lowResourceMode by remember { mutableStateOf(currentSettings.lowResourceMode) }
     var resumeAfterInterruptions by remember { mutableStateOf(currentSettings.resumeAfterInterruptions) }
+    var resumeDecisionSeconds by remember {
+        mutableIntStateOf(currentSettings.resumeDecisionSeconds.coerceIn(1, 15))
+    }
     var subtitleTextScale by remember { mutableFloatStateOf(currentSettings.subtitleTextScale.coerceIn(.8f, 1.8f)) }
     var subtitleBottomInsetDp by remember { mutableIntStateOf(currentSettings.subtitleBottomInsetDp.coerceIn(0, 120)) }
     var remoteNextKeyCode by remember { mutableIntStateOf(currentSettings.remoteNextKeyCode) }
@@ -147,8 +155,24 @@ fun SettingsScreen(
     val repository = remember(context) { TubeDeckRepository.get(context) }
     val privateSession by repository.privateSession.collectAsState()
 
+    var adaptiveExperienceEnabled by remember { mutableStateOf(currentSettings.adaptiveExperienceEnabled) }
+    var carDashboardEnabled by remember { mutableStateOf(currentSettings.carDashboardEnabled) }
+    var homeFeedOrder by remember { mutableStateOf(currentSettings.homeFeedOrder) }
+    var homeDisplayMode by remember { mutableStateOf(currentSettings.homeDisplayMode) }
+    var homeBrowseMode by remember { mutableStateOf(currentSettings.homeBrowseMode) }
+    var homeInitialVideoCount by remember { mutableIntStateOf(currentSettings.homeInitialVideoCount.coerceIn(10, 50)) }
+    var studioHomeLayout by remember { mutableStateOf(currentSettings.studioHomeLayout) }
+    var studioNavigation by remember { mutableStateOf(currentSettings.studioNavigation) }
+    var studioPlayer by remember { mutableStateOf(currentSettings.studioPlayer) }
+    var studioMotion by remember { mutableStateOf(currentSettings.studioMotion) }
+    var studioDensity by remember { mutableStateOf(currentSettings.studioDensity) }
+    var studioCorners by remember { mutableStateOf(currentSettings.studioCorners) }
+    var studioGlow by remember { mutableStateOf(currentSettings.studioGlow) }
     var appearancePreset by remember { mutableStateOf(DeckThemeCatalog.get(currentSettings.appearancePreset).name) }
     var fontScale by remember { mutableFloatStateOf(currentSettings.fontScale.coerceIn(0.80f, 1.35f)) }
+    var videoTitleScale by remember {
+        mutableFloatStateOf(currentSettings.videoTitleScale.coerceIn(1f, 1.5f))
+    }
     var themeAccentArgb by remember { mutableLongStateOf(currentSettings.themeAccentArgb) }
     var themeBackgroundArgb by remember { mutableLongStateOf(currentSettings.themeBackgroundArgb) }
     var themeTextArgb by remember { mutableLongStateOf(currentSettings.themeTextArgb) }
@@ -159,9 +183,17 @@ fun SettingsScreen(
         currentSettings.copy(
             appearancePreset = appearancePreset,
             fontScale = fontScale.coerceIn(0.80f, 1.35f),
+            videoTitleScale = videoTitleScale,
             themeAccentArgb = themeAccentArgb,
             themeBackgroundArgb = themeBackgroundArgb,
-            themeTextArgb = themeTextArgb
+            themeTextArgb = themeTextArgb,
+            studioHomeLayout = studioHomeLayout,
+            studioNavigation = studioNavigation,
+            studioPlayer = studioPlayer,
+            studioMotion = studioMotion,
+            studioDensity = studioDensity,
+            studioCorners = studioCorners,
+            studioGlow = studioGlow
         )
 
     // Every UI-editable preference is merged into the latest repository snapshot.
@@ -169,6 +201,10 @@ fun SettingsScreen(
     val autoSaveDraft = currentSettings.copy(
                             downloadDir = if (folderError == null) downloadDir else currentSettings.downloadDir,
                             downloadTreeUri = if (folderError == null) downloadTreeUri else currentSettings.downloadTreeUri,
+                            smartOfflineReplayEnabled = smartOfflineReplayEnabled,
+                            smartOfflineReplayWifiOnly = smartOfflineReplayWifiOnly,
+                            offlineFirstEnabled = offlineFirstEnabled,
+                            vaultDirectCacheEnabled = vaultDirectCacheEnabled,
                             instantMode = instantMode,
                             instantQuality = instantQuality,
                             customMode = customMode,
@@ -195,6 +231,7 @@ fun SettingsScreen(
                             blockShortsEnabled = blockShortsEnabled,
                             sponsorBlockEnabled = sponsorBlockEnabled,
                             pipEnabled = pipEnabled,
+                            tvBackButtonAction = tvBackButtonAction,
                             autoLoadEpisodes = autoLoadEpisodes,
                             autoLoadUpNext = autoLoadUpNext,
                             sideBySideEpisodeFeeds = sideBySideEpisodeFeeds,
@@ -208,12 +245,27 @@ fun SettingsScreen(
                             hideWatchedRecommendations = hideWatchedRecommendations,
                             lowResourceMode = lowResourceMode,
                             resumeAfterInterruptions = resumeAfterInterruptions,
+                            resumeDecisionSeconds = resumeDecisionSeconds,
                             subtitleTextScale = subtitleTextScale,
                             subtitleBottomInsetDp = subtitleBottomInsetDp,
                             remoteNextKeyCode = remoteNextKeyCode,
                             remotePreviousKeyCode = remotePreviousKeyCode,
+                            adaptiveExperienceEnabled = adaptiveExperienceEnabled,
+                            carDashboardEnabled = carDashboardEnabled,
+                            homeFeedOrder = homeFeedOrder,
+                            homeDisplayMode = homeDisplayMode,
+                            homeBrowseMode = homeBrowseMode,
+                            homeInitialVideoCount = homeInitialVideoCount,
+                            studioHomeLayout = studioHomeLayout,
+                            studioNavigation = studioNavigation,
+                            studioPlayer = studioPlayer,
+                            studioMotion = studioMotion,
+                            studioDensity = studioDensity,
+                            studioCorners = studioCorners,
+                            studioGlow = studioGlow,
                             appearancePreset = appearancePreset,
                             fontScale = fontScale.coerceIn(0.80f, 1.35f),
+                            videoTitleScale = videoTitleScale,
                             themeAccentArgb = themeAccentArgb,
                             themeBackgroundArgb = themeBackgroundArgb,
                             themeTextArgb = themeTextArgb
@@ -319,7 +371,10 @@ fun SettingsScreen(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(6.dp))
+                Text("SIGNATURE COLLECTION  •  SIX PREMIUM EXPERIENCES",
+                    color = TubeDeckAccentCyan, fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 appearancePresets.chunked(2).forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -408,6 +463,28 @@ fun SettingsScreen(
                     Text("Larger", color = TubeDeckTextSecondary, fontSize = 10.sp)
                 }
 
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Video title readability · ${(videoTitleScale * 100).toInt()}%",
+                    color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    "Enlarges titles and channel labels without resizing menus. Landscape car screens use improved baseline readability.",
+                    color = TubeDeckTextSecondary, fontSize = 12.sp
+                )
+                Slider(
+                    value = videoTitleScale,
+                    onValueChange = { videoTitleScale = it.coerceIn(1f, 1.5f) },
+                    valueRange = 1f..1.5f,
+                    steps = 4
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Standard", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    Text("Larger", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                    Text("Maximum", color = TubeDeckTextSecondary, fontSize = 11.sp)
+                }
                 Spacer(Modifier.height(4.dp))
 
                 Row(
@@ -418,6 +495,7 @@ fun SettingsScreen(
                         onClick = {
                             appearancePreset = "Kodi Arctic"
                             fontScale = 1.0f
+                            videoTitleScale = 1.0f
                             themeAccentArgb = 0xFF00D2FFL
                             themeBackgroundArgb = 0xFF080B11L
                             themeTextArgb = 0xFFFFFFFFL
@@ -434,6 +512,65 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+
+            SettingsCard(title = "TubeDeck Experience Studio") {
+                Text("Build an interface, not just a color palette. Preset retains the selected theme's original design.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                ToggleRow("Morphing UI · adapt to TV, car and wide screens", adaptiveExperienceEnabled) {
+                    adaptiveExperienceEnabled = it
+                }
+                ToggleRow("Car dashboard on detected head units", carDashboardEnabled) {
+                    carDashboardEnabled = it
+                }
+                Text("Car dashboard is an audio-first parked-use layout, not a vehicle-speed interlock.",
+                    color = TubeDeckTextSecondary, fontSize = 10.sp)
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                StudioChoiceRow(
+                    "Home architecture",
+                    listOf("Preset", "Glass Lounge", "Cinematic", "Dashboard", "Editorial", "Compact", "TV Lounge", "Cyber HUD"),
+                    studioHomeLayout
+                ) { studioHomeLayout = it }
+                StudioChoiceRow(
+                    "Navigation architecture",
+                    listOf("Preset", "Top", "Bottom", "Sidebar"),
+                    studioNavigation
+                ) { studioNavigation = it }
+                StudioChoiceRow(
+                    "Player controls",
+                    listOf("Preset", "Cinema", "Glass", "Dashboard", "Minimal", "Technical"),
+                    studioPlayer
+                ) { studioPlayer = it }
+                StudioChoiceRow(
+                    "Motion",
+                    listOf("Preset", "Off", "Snappy", "Smooth", "Pulse"),
+                    studioMotion
+                ) { studioMotion = it }
+                StudioChoiceRow(
+                    "Spacing",
+                    listOf("Preset", "Compact", "Airy"),
+                    studioDensity
+                ) { studioDensity = it }
+                StudioChoiceRow(
+                    "Corner geometry",
+                    listOf("Preset", "Sharp", "Soft", "Rounded"),
+                    studioCorners
+                ) { studioCorners = it }
+                StudioChoiceRow(
+                    "Ambient illumination",
+                    listOf("Preset", "Off", "Rich"),
+                    studioGlow
+                ) { studioGlow = it }
+                OutlinedButton(onClick = {
+                    studioHomeLayout = "Preset"
+                    studioNavigation = "Preset"
+                    studioPlayer = "Preset"
+                    studioMotion = "Preset"
+                    studioDensity = "Preset"
+                    studioCorners = "Preset"
+                    studioGlow = "Preset"
+                }) { Text("Reset Studio overrides") }
             }
 
             SettingsCard(title = "App interface") {
@@ -629,6 +766,45 @@ fun SettingsScreen(
             }
 
             // Instant Download Settings
+            SettingsCard(title = "Smart Offline Replay") {
+                ToggleRow(
+                    "Auto-save completed videos", smartOfflineReplayEnabled
+                ) { smartOfflineReplayEnabled = it }
+                ToggleRow(
+                    "Save over Wi-Fi / Ethernet only", smartOfflineReplayWifiOnly
+                ) { smartOfflineReplayWifiOnly = it }
+                ToggleRow("Play saved copy first (offline-first)", offlineFirstEnabled) {
+                    offlineFirstEnabled = it
+                }
+                ToggleRow("Reuse permitted direct-file playback cache", vaultDirectCacheEnabled) {
+                    vaultDirectCacheEnabled = it
+                }
+                Text(
+                    "Only an uninterrupted full native-player watch qualifies; resume, seek, skip or manual pause disqualifies the watch. Saved videos appear in Offline Media when the transfer finishes. No 2 GB cap, automatic pruning, or total storage quota is imposed; available device space still applies.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                Text(
+                    "Only turn on direct-file caching when you own the content or have offline-retention permission. It caches progressive MP4/WebM/M4V links; it excludes YouTube, WebView, protected streams and adaptive manifests. Completed cache files are promoted without another transfer when all bytes are present. Other eligible sources may require a new download.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+            }
+
+            SettingsCard(title = "Vault storage & cache") {
+                Text(
+                    "No arbitrary 2 GB limit or automatic eviction of saved media. Only real device space and a small safety reserve limit new files. Removed USB/SD media stays listed as Missing until reconnected.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                TextButton(onClick = { TubeDeckRepository.get(context).clearIncompleteAuthorizedCache() }) {
+                    Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Clear unfinished direct-stream cache")
+                }
+                Text(
+                    "This removes only temporary, unpromoted progressive cache. Finished Offline Vault files and pinned items are untouched.",
+                    color = TubeDeckTextSecondary, fontSize = 10.sp
+                )
+            }
+
             SettingsCard(title = "Instant Download Defaults") {
                 ModeSelector(selectedMode = instantMode, onSelect = { instantMode = it })
                 Spacer(modifier = Modifier.height(8.dp))
@@ -711,6 +887,18 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Playback") {
+                Text("TV remote Back button during video playback", color = TubeDeckTextPrimary,
+                    fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                StudioChoiceRow(
+                    "Action when no player menu is open",
+                    listOf("Mini-PiP", "Close immediately", "Action menu"),
+                    tvBackButtonAction
+                ) { tvBackButtonAction = it }
+                Text(
+                    "Back performs the chosen action immediately during video playback. Open dialogs still dismiss first. Mini-PiP requires system support; unavailable PiP opens the action menu.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 ToggleRow("Auto-rotate video playback", autoRotatePlayback) { autoRotatePlayback = it }
                 HorizontalDivider()
                 ToggleRow("Auto-load Episodes", autoLoadEpisodes) { autoLoadEpisodes = it }
@@ -745,9 +933,23 @@ fun SettingsScreen(
                     "Optional: tries YouTube's short animated WebP thumbnail after 1.1 seconds of focus. Uses no second video player; falls back to the static image. Disabled in Low Resource Mode or on older Android.",
                     color = TubeDeckTextSecondary, fontSize = 11.sp
                 )
-                ToggleRow("Ask to resume saved position after a restart or interruption", resumeAfterInterruptions) {
+                ToggleRow("Resume playback after app interruptions", resumeAfterInterruptions) {
                     resumeAfterInterruptions = it
                 }
+                HorizontalDivider()
+                Text(
+                    "Saved-video Resume / Start Over countdown · ${resumeDecisionSeconds} seconds",
+                    color = TubeDeckTextPrimary, fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = resumeDecisionSeconds.toFloat(),
+                    onValueChange = { resumeDecisionSeconds = it.toInt().coerceIn(1, 15) },
+                    valueRange = 1f..15f, steps = 13
+                )
+                Text(
+                    "Default 3 seconds. Only genuinely unfinished videos ask. If no choice is made, the video starts over automatically.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
                 ToggleRow("Low Resource Mode · limit buffers and card prefetch", lowResourceMode) {
                     lowResourceMode = it
                 }
@@ -849,6 +1051,43 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Home layout") {
+                Text(
+                    "List keeps categories in independent vertical columns; Tile uses a responsive card grid. Your choice is saved across themes and restarts.",
+                    color = TubeDeckTextSecondary, fontSize = 11.sp
+                )
+                StudioChoiceRow("Home browsing mode", listOf("List", "Tile"),
+                    homeBrowseMode) { homeBrowseMode = it }
+                Text("Initial videos per enabled feed: $homeInitialVideoCount",
+                    color = TubeDeckTextPrimary, fontSize = 12.sp)
+                Slider(
+                    value = homeInitialVideoCount.toFloat(),
+                    onValueChange = { homeInitialVideoCount = ((it.toInt() / 5) * 5).coerceIn(10, 50) },
+                    valueRange = 10f..50f,
+                    steps = 7
+                )
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                com.drivedeck.tubedeck.ui.screens.HomeFeedArrangement.normalize(homeFeedOrder)
+                    .forEachIndexed { position, feed ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(feed, modifier = Modifier.weight(1f), color = TubeDeckTextPrimary)
+                            IconButton(
+                                enabled = position > 0,
+                                onClick = {
+                                    homeFeedOrder = HomeFeedArrangement.move(homeFeedOrder, feed, -1)
+                                }
+                            ) { Icon(Icons.Default.KeyboardArrowUp, "Move $feed earlier") }
+                            IconButton(
+                                enabled = position < 2,
+                                onClick = {
+                                    homeFeedOrder = HomeFeedArrangement.move(homeFeedOrder, feed, 1)
+                                }
+                            ) { Icon(Icons.Default.KeyboardArrowDown, "Move $feed later") }
+                        }
+                    }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 ToggleRow("Relevant", homeSuggestionsEnabled) { homeSuggestionsEnabled = it }
                 ToggleRow("History", homeHistoryEnabled) { homeHistoryEnabled = it }
                 ToggleRow("Trending", homeTrendingEnabled) { homeTrendingEnabled = it }
@@ -954,6 +1193,54 @@ private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
                             Tile(Modifier.weight(1f), 48.dp)
                         }
                     }
+                    DeckHomePresentation.NEO_GLASS_LOUNGE -> {
+                        Box(Modifier.fillMaxWidth().height(28.dp)
+                            .clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = .22f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Tile(Modifier.weight(1f), 22.dp)
+                            Tile(Modifier.weight(1f), 22.dp)
+                        }
+                    }
+                    DeckHomePresentation.CINEMA_DECK_STAGE -> {
+                        Box(Modifier.fillMaxWidth().height(36.dp)
+                            .clip(RoundedCornerShape(6.dp)).background(accent.copy(alpha = .28f)))
+                        Tile(Modifier.fillMaxWidth(), 6.dp)
+                        Tile(Modifier.fillMaxWidth(), 6.dp)
+                    }
+                    DeckHomePresentation.COMMAND_DRIVE -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(1f), 53.dp)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Tile(Modifier.fillMaxWidth(), 24.dp)
+                                Tile(Modifier.fillMaxWidth(), 24.dp)
+                            }
+                        }
+                    }
+                    DeckHomePresentation.STREAMPLUS_LOUNGE -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(3f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(4) { Tile(Modifier.weight(1f), 8.dp) }
+                        }
+                    }
+                    DeckHomePresentation.MIDNIGHT_EDITORIAL -> {
+                        Tile(Modifier.fillMaxWidth(.6f), 8.dp)
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(accent))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Tile(Modifier.weight(2f), 32.dp)
+                            Tile(Modifier.weight(1f), 32.dp)
+                        }
+                    }
+                    DeckHomePresentation.CYBER_COMMAND -> {
+                        Box(Modifier.fillMaxWidth().height(7.dp).background(accent.copy(alpha = .6f)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Tile(Modifier.weight(2f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                            Tile(Modifier.weight(1f), 41.dp)
+                        }
+                    }
                     else -> repeat(2) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             repeat(3) { Tile(Modifier.weight(1f), 24.dp) }
@@ -973,7 +1260,36 @@ private fun ThemeLayoutPreview(profile: DeckThemeProfile) {
     }
 }
 
-private val appearancePresets = DeckThemeCatalog.presets
+@Composable
+private fun StudioChoiceRow(
+    title: String,
+    choices: List<String>,
+    current: String,
+    onSelect: (String) -> Unit
+) {
+    Text(title, color = TubeDeckTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        choices.forEach { choice ->
+            FilterChip(
+                selected = current == choice,
+                onClick = { onSelect(choice) },
+                modifier = Modifier.tvInputHighlight(RoundedCornerShape(10.dp)),
+                label = { Text(choice, fontSize = 11.sp) }
+            )
+        }
+    }
+}
+
+private val premiumThemeNames = setOf(
+    "NeoGlass Luxe", "Cinema Deck", "CommandDrive Auto",
+    "StreamPlus Luxe TV", "Midnight Editorial Pro", "Cyber Console X"
+)
+private val appearancePresets = DeckThemeCatalog.presets.sortedBy {
+    if (it.name in premiumThemeNames) 0 else 1
+}
 
 @Composable
 private fun ModeSelector(selectedMode: DownloadMode, onSelect: (DownloadMode) -> Unit) {
@@ -1022,11 +1338,35 @@ private fun QualityGrid(selectedQuality: String, onSelect: (String) -> Unit, qua
     }
 }
 
+/**
+ * Common setting row: every switch occupies the same trailing column.
+ * Labels take only the available leading width, wrap when necessary, and
+ * cannot push the switch offscreen on small phones or Android TV boxes.
+ */
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TubeDeckTextPrimary, fontSize = 14.sp)
-        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = SwitchDefaults.colors(checkedTrackColor = TubeDeckAccentCyan))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            color = TubeDeckTextPrimary,
+            fontSize = 14.sp,
+            lineHeight = 19.sp,
+            softWrap = true
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier,
+            colors = SwitchDefaults.colors(checkedTrackColor = TubeDeckAccentCyan)
+        )
     }
 }
 

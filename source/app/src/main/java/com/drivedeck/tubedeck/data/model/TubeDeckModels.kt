@@ -71,7 +71,9 @@ data class DownloadTask(
     val retryCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val sessionId: Long = createdAt,
-    val eventAt: Long = createdAt
+    val eventAt: Long = createdAt,
+    /** A smart-replay task respects this preference throughout retries. */
+    val wifiOnly: Boolean = false
 )
 
 data class OfflineMedia(
@@ -85,7 +87,19 @@ data class OfflineMedia(
     val format: String = "",
     val fileSizeBytes: Long = 0L,
     val durationSeconds: Long = 0L,
-    val downloadDate: Long = System.currentTimeMillis()
+    val downloadDate: Long = System.currentTimeMillis(),
+    val isPinned: Boolean = false,
+    val collection: String = ""
+)
+
+/** Current vault health; disconnected USB entries stay in the catalog. */
+data class OfflineVaultHealth(
+    val readyCount: Int = 0,
+    val missingIds: Set<String> = emptySet(),
+    val savedBytes: Long = 0L,
+    val freeBytes: Long = -1L,
+    val storageLocation: String = "",
+    val cachedBytes: Long = 0L
 )
 
 data class SponsorSegment(
@@ -97,6 +111,13 @@ data class SponsorSegment(
 data class TubeDeckSettings(
     val downloadDir: String = "MyTube",
     val downloadTreeUri: String? = null,
+    /** Uncapped opt-in offline retention after an uninterrupted full native playback. */
+    val smartOfflineReplayEnabled: Boolean = false,
+    val smartOfflineReplayWifiOnly: Boolean = true,
+    /** Prefer a verified saved copy when opening the same video online. */
+    val offlineFirstEnabled: Boolean = true,
+    /** Requires user confirmation that direct progressive files may be retained. */
+    val vaultDirectCacheEnabled: Boolean = false,
     
     // Separate settings for different download types
     val instantMode: DownloadMode = DownloadMode.VIDEO,
@@ -138,6 +159,8 @@ data class TubeDeckSettings(
     val sponsorBlockEnabled: Boolean = true,
     val blockShortsEnabled: Boolean = true,
     val pipEnabled: Boolean = true,
+    /** Back key during TV video playback; overlays still dismiss first. */
+    val tvBackButtonAction: String = "Action menu",
     // Performance-first: expensive companion shelves are opt-in by default.
     val autoLoadEpisodes: Boolean = false,
     val autoLoadUpNext: Boolean = false,
@@ -155,14 +178,35 @@ data class TubeDeckSettings(
     val hideWatchedRecommendations: Boolean = true,
     val lowResourceMode: Boolean = false,
     val resumeAfterInterruptions: Boolean = true,
+    // Saved-video playback decision: default Start Over after 3 seconds.
+    val resumeDecisionSeconds: Int = 3,
     val subtitleTextScale: Float = 1.0f,
     val subtitleBottomInsetDp: Int = 0,
     val remoteNextKeyCode: Int = 0,
     val remotePreviousKeyCode: Int = 0,
 
+    // Experience Studio: opt-in device-aware layouts, a parked-use car dashboard,
+    // independent home/feed appearance, and structural theme controls.
+    val adaptiveExperienceEnabled: Boolean = false,
+    val carDashboardEnabled: Boolean = false,
+    val homeFeedOrder: String = "History,Relevant,Trending",
+    val homeDisplayMode: String = "Theme",
+    // Independent, persisted browsing preference; never reset on theme/navigation change.
+    val homeBrowseMode: String = "List",
+    val homeInitialVideoCount: Int = 20,
+    val studioHomeLayout: String = "Preset",
+    val studioNavigation: String = "Preset",
+    val studioPlayer: String = "Preset",
+    val studioMotion: String = "Preset",
+    val studioDensity: String = "Preset",
+    val studioCorners: String = "Preset",
+    val studioGlow: String = "Preset",
+
     // Appearance customization.
     val appearancePreset: String = "Glass Midnight",
     val fontScale: Float = 1.0f,
+    // Separate video-title size. Does not magnify toolbars/controls.
+    val videoTitleScale: Float = 1.0f,
     val themeAccentArgb: Long = 0xFF00D2FFL,
     val themeBackgroundArgb: Long = 0xFF080B11L,
     val themeTextArgb: Long = 0xFFFFFFFFL

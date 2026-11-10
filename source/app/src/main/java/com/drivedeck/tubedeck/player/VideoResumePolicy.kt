@@ -1,24 +1,48 @@
 package com.drivedeck.tubedeck.player
 
 /**
- * Pure, platform-independent playback-position policy. A stream's URL may
- * vary with playlist, search and short links; video identity must not.
+ * Only prompt when there is substantial, recent, unfinished playback with
+ * a reliable duration. Legacy entries without duration do not create prompts.
  */
 internal object VideoResumePolicy {
-    const val MIN_POSITION_MS = 5_000L
-    private const val END_GUARD_MS = 5_000L
+    const val MIN_POSITION_MS = 30_000L
+    const val DEFAULT_PROMPT_SECONDS = 3
+    const val MIN_PROMPT_SECONDS = 1
+    const val MAX_PROMPT_SECONDS = 15
+    private const val MAX_ENTRY_AGE_MS = 30L * 24 * 60 * 60 * 1000
 
     fun mediaKey(uri: String): String =
         YoutubeUrls.canonicalVideoUrl(uri) ?: uri.trim()
 
     fun canResume(positionMs: Long): Boolean = positionMs >= MIN_POSITION_MS
 
+    fun promptSeconds(seconds: Int): Int =
+        seconds.coerceIn(MIN_PROMPT_SECONDS, MAX_PROMPT_SECONDS)
+
     fun shouldSave(positionMs: Long, durationMs: Long = 0L): Boolean {
-        if (!canResume(positionMs)) return false
-        return durationMs <= 0L || positionMs < durationMs - END_GUARD_MS
+        if (!canResume(positionMs) || durationMs <= 0L) return false
+        val minimumMeaningfulProgress = maxOf(
+            MIN_POSITION_MS, (durationMs * 0.03).toLong().coerceAtMost(120_000L)
+        )
+        val finishGuard = maxOf(
+            15_000L, (durationMs * 0.05).toLong().coerceAtMost(120_000L)
+        )
+        return positionMs >= minimumMeaningfulProgress &&
+            positionMs < durationMs - finishGuard
     }
 
-    /** Prevent incomplete preparation from erasing a previously saved entry. */
+    fun shouldOfferPrompt(
+        positionMs: Long,
+        durationMs: Long,
+        updatedAtMs: Long,
+        nowMs: Long
+    ): Boolean {
+        if (updatedAtMs <= 0L || nowMs < updatedAtMs ||
+            nowMs - updatedAtMs > MAX_ENTRY_AGE_MS) return false
+        return shouldSave(positionMs, durationMs)
+    }
+
+    /** Avoid snapshotting a zero/IDLE position before a real playback starts. */
     fun shouldSnapshot(
         playbackPrepared: Boolean,
         promptVisible: Boolean,

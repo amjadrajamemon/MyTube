@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.9 signed TV test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v239-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download signed APK bundle from v2.3.9 verified CI run
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.9-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42613679381
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Verify exact original APK checksums and ZIP integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.9-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.9-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.9-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" >/dev/null; done
+          ls -lh dist
+
+      - name: Publish three direct TEST APK downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.3.9-signed-preview-20261109"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Preview exists; preserving original release assets."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.9-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.9-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.9-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target d50c16505c5a1cb787bba1aeac6b1c0489c64f49 \
+            --prerelease \
+            --title 'TubeDeck v2.3.9 signed TEST APKs — Android TV density and remote Back choices' \
+            --notes 'TEST BUILD, NOT FULLY DEVICE-VALIDATED. CI run 42613679381 compiled ARM64, ARMv7, Universal APKs, and passed unit tests, lint, v1/v2/v3 signature validation, package identity and ABI checks. TV Home vertical-category lists now use compact 92dp thumbnails to fit multiple videos instead of one oversized video per category, while preserving wrapped titles. TV remote Back choice saved in Settings > Playback: Mini-PiP, Close immediately, or Action menu. Embedded and native player hosts honor the choice on the first normal Back press; dialogs dismiss first. Improved TV D-pad focus groups, bring-into-view, menu focus styling, and detection for generic no-touch TV boxes. Physical device validation, OEM PiP support, and full SmartTube/YouTube TV navigation parity are NOT claimed. APKs are debug-signed with the prior pinned identity. Back up and test on device.'

@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.8 signed test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v238-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Retrieve compiled and signature-verified APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.8-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42586139952
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Verify original compiled APK checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.8-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.8-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.8-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" > /dev/null; done
+          ls -lh dist
+
+      - name: Publish three direct downloads as TEST prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.3.8-signed-preview-20261109"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Signed test release already exists; preserving original assets."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.8-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.8-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.8-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 8807af8e187166e50a37bc4e188be26c93dc0212 \
+            --prerelease \
+            --title "TubeDeck v2.3.8 — signed TEST APKs: persistent List/Tile + enlarged blackout eye" \
+            --notes 'PREVIEW / DEVICE TESTING BUILD. Compiled and signed APKs copied without rebuilding from GitHub Actions run 42586139952. Unit tests, lint, ABI/manifest, v1/v2/v3 signature and checksum verification passed. Home List mode now displays independent side-by-side vertically scrolling category lists with responsive swipeable panels on phones, and the List/Tile preference is persisted across theme changes, navigation and app restarts. Remaining categories reclaim space when Trending is disabled. The player blackout eye is larger, has a larger touch target, and has extra spacing on either side. Physical-device installation and parity with YouTube TV/SmartTube remain unverified. Emulator installation is a separate check and is not asserted to have passed. Back up and test on device before relying on this preview.'

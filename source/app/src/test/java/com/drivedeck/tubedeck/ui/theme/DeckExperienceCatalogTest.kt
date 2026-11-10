@@ -6,14 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Stage-D regression tests: all thirteen actual themes share one rendering
+ * Stage-D regression tests: all nineteen actual themes share one rendering
  * policy without collapsing into identical design signatures.
  */
 class DeckExperienceCatalogTest {
     @Test
     fun everyExistingThemeHasAnIndependentVisualLanguage() {
         val profiles = DeckThemeCatalog.presets
-        assertEquals(13, profiles.size)
+        assertEquals(19, profiles.size)
         val styles = profiles.map { DeckExperienceCatalog.tokens(it) }
         assertEquals(13, styles.map { it.backdrop }.toSet().size)
         assertTrue(profiles.all { it.homePresentation in DeckHomePresentation.entries })

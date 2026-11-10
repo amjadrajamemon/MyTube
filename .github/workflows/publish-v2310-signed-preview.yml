@@ -1,0 +1,60 @@
+name: Publish TubeDeck v2.3.10 signed Smart Offline Replay test APKs
+
+on:
+  push:
+    branches:
+      - feature/tubedeck-six-experiences-20261105
+    paths:
+      - .github/workflows/publish-v2310-signed-preview.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-signed-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Retrieve exact signed v2.3.10 APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: TubeDeck-v2.3.10-ARM64-ARMv7-Universal
+          repository: amjadrajamemon/MyTube
+          run-id: 42679131729
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+
+      - name: Check original checksums and archive integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/TubeDeck-v2.3.10-ARM64-debug.apk
+          test -s dist/TubeDeck-v2.3.10-ARMv7-debug.apk
+          test -s dist/TubeDeck-v2.3.10-Universal-debug.apk
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          for apk in dist/*.apk; do unzip -t "$apk" > /dev/null; done
+          ls -lh dist
+
+      - name: Publish three direct downloads as TEST prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v2.3.10-signed-preview-20261109"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Test release already exists; preserving prior APK assets."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            dist/TubeDeck-v2.3.10-ARM64-debug.apk \
+            dist/TubeDeck-v2.3.10-ARMv7-debug.apk \
+            dist/TubeDeck-v2.3.10-Universal-debug.apk \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target b4531b8a236d7f02ba47ff30e091152b7ed5be10 \
+            --prerelease \
+            --title 'TubeDeck v2.3.10 — Signed TEST APKs with uncapped Smart Offline Replay' \
+            --notes 'SIGNED TEST BUILD. CI run 42679131729 passed unit tests (including full-watch, skip, pause, resume and duplicate safeguards), lint, ARM64/ARMv7/Universal compilation, package metadata checks and APK v1/v2/v3 signature checks. New optional Settings > Smart Offline Replay automatically queues an eligible full uninterrupted native-player watch to the existing Offline Media download queue. There is NO fixed 2 GB capacity limit, no automatic eviction and no arbitrary total storage quota. Wi-Fi/Ethernet-only is enabled by default, with an optional override; only critical free-space protection remains. Existing offline or queued copies are deduplicated. Only save videos for which offline retention is authorized. IMPORTANT LIMITATIONS: Current implementation queues a new transfer via the existing download engine AFTER playback; it does NOT preserve the bytes that were already streamed. WebView playback is not tracked. Physical-device installation and actual online-download success are not yet verified; Android emulator install/start is a separate check. Test on device before relying on it. Use only permitted media.'

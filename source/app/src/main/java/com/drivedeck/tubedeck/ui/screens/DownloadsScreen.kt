@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.drivedeck.tubedeck.data.model.*
 import com.drivedeck.tubedeck.data.repository.DownloadQueuePolicy
+import com.drivedeck.tubedeck.data.repository.OfflineVaultPolicy
 import com.drivedeck.tubedeck.ui.components.tvInputHighlight
 import com.drivedeck.tubedeck.ui.theme.*
 import java.text.DateFormat
@@ -41,6 +42,11 @@ fun DownloadsScreen(
     downloadQueue: List<DownloadTask>,
     offlineMediaList: List<OfflineMedia>,
     downloadHistory: List<DownloadTask>,
+    vaultHealth: OfflineVaultHealth = OfflineVaultHealth(),
+    onRefreshVault: () -> Unit = {},
+    onPinMedia: (String, Boolean) -> Unit = { _, _ -> },
+    onOrganizeMedia: (String, String) -> Unit = { _, _ -> },
+    onShareMedia: (OfflineMedia) -> Unit = {},
     initialTab: Int = 0,
     onPauseTask: (String) -> Unit,
     onResumeTask: (String) -> Unit,
@@ -68,6 +74,10 @@ fun DownloadsScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var customUrl by rememberSaveable { mutableStateOf("") }
     var filterType by rememberSaveable { mutableStateOf("All") }
+    var vaultSortOrder by rememberSaveable { mutableStateOf("Recent") }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var organizeTarget by remember { mutableStateOf<OfflineMedia?>(null) }
+    var collectionDraft by remember { mutableStateOf("") }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedTaskIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteSelected by rememberSaveable { mutableStateOf(false) }
@@ -222,7 +232,7 @@ fun DownloadsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("All", "Videos", "Audio").forEach { filter ->
+                                listOf("All", "Videos", "Audio", "Pinned", "Missing").forEach { filter ->
                                     val isSelected = filterType == filter
                                     Surface(
                                         modifier = Modifier
@@ -278,14 +288,73 @@ fun DownloadsScreen(
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        val filteredList = offlineMediaList.filter { item ->
-                            val matchesType = when (filterType) {
-                                "Videos" -> !item.isAudioOnly
-                                "Audio" -> item.isAudioOnly
-                                else -> true
+                        Spacer(modifier = Modifier.height(7.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${vaultHealth.readyCount} ready · " +
+                                    "${OfflineVaultPolicy.readableSize(vaultHealth.savedBytes)} saved · " +
+                                    "${OfflineVaultPolicy.readableSize(vaultHealth.freeBytes)} free" +
+                                    if (vaultHealth.missingIds.isNotEmpty()) {
+                                        " · ${vaultHealth.missingIds.size} missing"
+                                    } else "",
+                                fontSize = 10.sp, color = TubeDeckTextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = onRefreshVault, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Refresh, "Check vault files", tint = TubeDeckAccentCyan,
+                                    modifier = Modifier.size(18.dp))
                             }
-                            matchesType
+                        }
+                        if (vaultHealth.cachedBytes > 0L) {
+                            Text(
+                                "Temporary retained direct-stream data: " +
+                                    OfflineVaultPolicy.readableSize(vaultHealth.cachedBytes),
+                                fontSize = 10.sp, color = TubeDeckTextSecondary
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                placeholder = { Text("Search saved videos / collections", fontSize = 11.sp) },
+                                leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
+                                modifier = Modifier.weight(1f),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                            )
+                            Box {
+                                TextButton(onClick = { sortMenuOpen = true }) {
+                                    Icon(Icons.Default.Sort, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(vaultSortOrder, fontSize = 10.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = sortMenuOpen,
+                                    onDismissRequest = { sortMenuOpen = false }
+                                ) {
+                                    listOf("Recent", "Oldest", "Title", "Largest", "Duration")
+                                        .forEach { sort ->
+                                            DropdownMenuItem(
+                                                text = { Text(sort) },
+                                                onClick = { vaultSortOrder = sort; sortMenuOpen = false }
+                                            )
+                                        }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val filteredList = remember(offlineMediaList, searchQuery, filterType,
+                            vaultSortOrder, vaultHealth.missingIds) {
+                            OfflineVaultPolicy.select(offlineMediaList, searchQuery, filterType,
+                                vaultSortOrder, vaultHealth.missingIds)
                         }
                         Text(
                             if (selectedFileIds.isEmpty()) "${filteredList.size} finished files" else "${selectedFileIds.size} selected",
@@ -381,7 +450,14 @@ fun DownloadsScreen(
                                         onCopy = { onCopyFiles(setOf(media.id), false) },
                                         onCut = { onCopyFiles(setOf(media.id), true) },
                                         onMove = { onMoveFiles(setOf(media.id)) },
-                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) },
+                                        isMissing = media.id in vaultHealth.missingIds,
+                                        onTogglePin = { onPinMedia(media.id, !media.isPinned) },
+                                        onSetCollection = {
+                                            organizeTarget = media
+                                            collectionDraft = media.collection
+                                        },
+                                        onShare = { onShareMedia(media) }
                                     )
                                 }
                             }
@@ -399,7 +475,14 @@ fun DownloadsScreen(
                                         onCopy = { onCopyFiles(setOf(media.id), false) },
                                         onCut = { onCopyFiles(setOf(media.id), true) },
                                         onMove = { onMoveFiles(setOf(media.id)) },
-                                        onDelete = { confirmDeleteFiles = setOf(media.id) }
+                                        onDelete = { confirmDeleteFiles = setOf(media.id) },
+                                        isMissing = media.id in vaultHealth.missingIds,
+                                        onTogglePin = { onPinMedia(media.id, !media.isPinned) },
+                                        onSetCollection = {
+                                            organizeTarget = media
+                                            collectionDraft = media.collection
+                                        },
+                                        onShare = { onShareMedia(media) }
                                     )
                                 }
                             }
@@ -633,6 +716,30 @@ fun DownloadsScreen(
         }
     }
 
+    organizeTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { organizeTarget = null },
+            title = { Text("Organize saved video") },
+            text = {
+                OutlinedTextField(
+                    value = collectionDraft,
+                    onValueChange = { collectionDraft = it.take(64) },
+                    label = { Text("Collection (optional)") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onOrganizeMedia(target.id, collectionDraft)
+                    organizeTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { organizeTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (confirmDeleteSelected) {
         AlertDialog(
             onDismissRequest = { confirmDeleteSelected = false },
@@ -684,7 +791,9 @@ fun DownloadsScreen(
 }
 @Composable
 fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, onSelectedChange: (Boolean) -> Unit,
-                     onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+                     onPlay: () -> Unit, onCopy: () -> Unit, onCut: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit,
+                     isMissing: Boolean, onTogglePin: () -> Unit, onSetCollection: () -> Unit,
+                     onShare: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, TubeDeckBorder, RoundedCornerShape(12.dp)).tvInputHighlight().clickable { onPlay() },
@@ -698,9 +807,22 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(media.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TubeDeckTextPrimary)
+            if (media.isPinned || isMissing || media.collection.isNotBlank()) {
+                Text(
+                    listOfNotNull(
+                        if (media.isPinned) "PINNED" else null,
+                        if (isMissing) "MISSING FILE" else null,
+                        media.collection.takeIf { it.isNotBlank() }
+                    ).joinToString(" · "),
+                    fontSize = 10.sp,
+                    color = if (isMissing) TubeDeckError else TubeDeckAccentMint
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(media.qualityLabel, fontSize = 10.sp, color = TubeDeckTextSecondary)
+                Text(media.qualityLabel + " · " +
+                    OfflineVaultPolicy.readableSize(media.fileSizeBytes),
+                    fontSize = 10.sp, color = TubeDeckTextSecondary)
                 Checkbox(checked = selected, onCheckedChange = onSelectedChange, enabled = enabled, modifier = Modifier.size(32.dp))
                 Box {
                     IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "File actions", tint = TubeDeckTextSecondary) }
@@ -708,6 +830,14 @@ fun OfflineMediaCard(media: OfflineMedia, selected: Boolean, enabled: Boolean, o
                         DropdownMenuItem(text = { Text("Copy") }, onClick = { menuOpen = false; onCopy() })
                         DropdownMenuItem(text = { Text("Cut") }, onClick = { menuOpen = false; onCut() })
                         DropdownMenuItem(text = { Text("Move") }, onClick = { menuOpen = false; onMove() })
+                        DropdownMenuItem(
+                            text = { Text(if (media.isPinned) "Unpin" else "Pin") },
+                            onClick = { menuOpen = false; onTogglePin() }
+                        )
+                        DropdownMenuItem(text = { Text("Organize in collection") },
+                            onClick = { menuOpen = false; onSetCollection() })
+                        DropdownMenuItem(text = { Text("Share / Send to local device") },
+                            onClick = { menuOpen = false; onShare() })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                     }
                 }
@@ -726,7 +856,11 @@ private fun OfflineMediaListRow(
     onCopy: () -> Unit,
     onCut: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    isMissing: Boolean,
+    onTogglePin: () -> Unit,
+    onSetCollection: () -> Unit,
+    onShare: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
@@ -761,12 +895,14 @@ private fun OfflineMediaListRow(
                     color = TubeDeckTextPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    listOf(media.qualityLabel, media.format)
+                    listOf(media.qualityLabel, media.format,
+                        OfflineVaultPolicy.readableSize(media.fileSizeBytes),
+                        if (media.isPinned) "Pinned" else "",
+                        if (isMissing) "Missing" else "",
+                        media.collection)
                         .filter { it.isNotBlank() }
                         .joinToString(" · "),
                     color = TubeDeckTextSecondary,
@@ -774,7 +910,9 @@ private fun OfflineMediaListRow(
                 )
             }
             IconButton(onClick = onPlay, enabled = enabled, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = TubeDeckAccentMint)
+                Icon(if (isMissing) Icons.Default.CloudOff else Icons.Default.PlayArrow,
+                     contentDescription = if (isMissing) "Missing file" else "Play",
+                     tint = if (isMissing) TubeDeckError else TubeDeckAccentMint)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.size(34.dp)) {
@@ -784,6 +922,14 @@ private fun OfflineMediaListRow(
                     DropdownMenuItem(text = { Text("Copy to…") }, onClick = { menuOpen = false; onCopy() })
                     DropdownMenuItem(text = { Text("Cut / move to…") }, onClick = { menuOpen = false; onCut() })
                     DropdownMenuItem(text = { Text("Move to…") }, onClick = { menuOpen = false; onMove() })
+                    DropdownMenuItem(
+                        text = { Text(if (media.isPinned) "Unpin" else "Pin") },
+                        onClick = { menuOpen = false; onTogglePin() }
+                    )
+                    DropdownMenuItem(text = { Text("Organize in collection") },
+                        onClick = { menuOpen = false; onSetCollection() })
+                    DropdownMenuItem(text = { Text("Share / Send to local device") },
+                        onClick = { menuOpen = false; onShare() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
                 }
             }

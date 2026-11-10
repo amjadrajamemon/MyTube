@@ -219,11 +219,21 @@ class MainActivity : ComponentActivity() {
             val activeAppearance = previewAppearance ?: settings
             TubeDeckTheme(
                 fontScale = activeAppearance.fontScale,
+                videoTitleScale = activeAppearance.videoTitleScale,
                 accentArgb = activeAppearance.themeAccentArgb,
                 backgroundArgb = activeAppearance.themeBackgroundArgb,
                 textArgb = activeAppearance.themeTextArgb,
                 appearancePreset = activeAppearance.appearancePreset,
-                lowResourceMode = settings.lowResourceMode
+                lowResourceMode = settings.lowResourceMode,
+                adaptiveExperienceEnabled = activeAppearance.adaptiveExperienceEnabled,
+                carDashboardEnabled = activeAppearance.carDashboardEnabled,
+                studioHomeLayout = activeAppearance.studioHomeLayout,
+                studioNavigation = activeAppearance.studioNavigation,
+                studioPlayer = activeAppearance.studioPlayer,
+                studioMotion = activeAppearance.studioMotion,
+                studioDensity = activeAppearance.studioDensity,
+                studioCorners = activeAppearance.studioCorners,
+                studioGlow = activeAppearance.studioGlow
             ) {
                 val googleSession = remember { GoogleAccountSession.get(applicationContext) }
                 val googleAccount by googleSession.account.collectAsStateWithLifecycle()
@@ -400,6 +410,13 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val offlineMediaList by repository.offlineMediaList.collectAsStateWithLifecycle()
+                val offlineVaultHealth by repository.offlineVaultHealth.collectAsStateWithLifecycle()
+                LaunchedEffect(currentScreen) {
+                    if (currentScreen == ActiveScreen.OFFLINE_VAULT ||
+                        currentScreen == ActiveScreen.DOWNLOADS) {
+                        repository.refreshOfflineVaultHealth()
+                    }
+                }
                 val downloadHistory by repository.downloadHistory.collectAsStateWithLifecycle()
                 val watchHistory by repository.watchHistory.collectAsStateWithLifecycle()
                 val recentSearches by repository.recentSearches.collectAsStateWithLifecycle()
@@ -533,13 +550,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openOnlineMedia(media: OfflineMedia) {
-                    val playbackHost = if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
+                    val selected = repository.preferredOfflineMedia(media)
+                    val offline = selected.mediaUri.startsWith("file:") ||
+                        selected.mediaUri.startsWith("content:")
+                    val playbackHost = if (offline) PlaybackHost.NATIVE
+                        else if (settings.desktopYoutubeUiEnabled) PlaybackHost.WEB
                         else PlaybackHostRouter.choose(settings.playerMode, media.mediaUri)
                     // Preserve the complete watch URL, including list=/mix context. The resolver
                     // canonicalizes internally for stream extraction; the player needs the original
                     // playlist context for queue loading, Previous/Next and continuous playback.
                     when (playbackHost) {
-                        PlaybackHost.NATIVE -> launchNativePlayer(media)
+                        PlaybackHost.NATIVE -> launchNativePlayer(selected)
                         PlaybackHost.WEB -> {
                             PlaybackSessionRegistry.stopForWeb()
                             pauseBrowserMediaForSwitch()
@@ -1189,6 +1210,15 @@ class MainActivity : ComponentActivity() {
                                     suggestionsEnabled = settings.homeSuggestionsEnabled,
                                     historyEnabled = settings.homeHistoryEnabled,
                                     trendingEnabled = settings.homeTrendingEnabled,
+                                    homeFeedOrder = settings.homeFeedOrder,
+                                    homeDisplayMode = settings.homeDisplayMode,
+                                    homeBrowseMode = settings.homeBrowseMode,
+                                    onHomeBrowseModeChange = { mode ->
+                                        repository.updateSettings(repository.settings.value.copy(
+                                            homeBrowseMode = if (mode == "Tile") "Tile" else "List"
+                                        ))
+                                    },
+                                    homeInitialVideoCount = settings.homeInitialVideoCount,
                                     countryCode = homeCountry,
                                     trendingStatus = homeTrendingStatus,
                                     viewStateKey = currentScreen.name,
@@ -1217,6 +1247,20 @@ class MainActivity : ComponentActivity() {
                                     downloadQueue = downloadQueue,
                                     offlineMediaList = offlineMediaList,
                                     downloadHistory = downloadHistory,
+                                    vaultHealth = offlineVaultHealth,
+                                    onRefreshVault = { repository.refreshOfflineVaultHealth() },
+                                    onPinMedia = { id, pinned -> repository.pinOfflineMedia(id, pinned) },
+                                    onOrganizeMedia = { id, group -> repository.organizeOfflineMedia(id, group) },
+                                    onShareMedia = { media ->
+                                        runCatching {
+                                            com.drivedeck.tubedeck.data.repository.OfflineMediaShare
+                                                .openChooser(this@MainActivity, media)
+                                        }.onFailure { error ->
+                                            Toast.makeText(applicationContext,
+                                                error.message ?: "Video cannot be shared",
+                                                Toast.LENGTH_LONG).show()
+                                        }
+                                    },
                                     initialTab = if (currentScreen == ActiveScreen.OFFLINE_VAULT) 0 else 1,
                                     onPauseTask = { repository.pauseTask(it) },
                                     onResumeTask = { repository.resumeTask(it) },
@@ -1251,8 +1295,16 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onPlayMedia = { media ->
-                                        playingMedia = media
-                                        navigateTo(ActiveScreen.PLAYER)
+                                        if (!com.drivedeck.tubedeck.data.repository.OfflineVaultStorage
+                                                .isReadable(applicationContext, media)) {
+                                            Toast.makeText(applicationContext,
+                                                "File unavailable. Reconnect the storage drive.",
+                                                Toast.LENGTH_LONG).show()
+                                            repository.refreshOfflineVaultHealth()
+                                        } else {
+                                            playingMedia = media
+                                            navigateTo(ActiveScreen.PLAYER)
+                                        }
                                     },
                                     onCustomDownload = { targetUrl ->
                                         downloadModalTargetUrl = targetUrl
@@ -1336,6 +1388,7 @@ class MainActivity : ComponentActivity() {
                                         xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                                         sponsorSegments = sponsorSegments,
                                         pipEnabled = settings.pipEnabled,
+                                        vaultDirectCacheEnabled = settings.vaultDirectCacheEnabled,
                     inPictureInPicture = isPipMode,
                                         autoLoadEpisodes = settings.autoLoadEpisodes,
                                         autoLoadUpNext = settings.autoLoadUpNext,
@@ -1347,6 +1400,7 @@ class MainActivity : ComponentActivity() {
                                         hideWatchedRecommendations = settings.hideWatchedRecommendations,
                                         lowResourceMode = settings.lowResourceMode,
                                         resumeAfterInterruptions = settings.resumeAfterInterruptions,
+                                        resumeDecisionSeconds = settings.resumeDecisionSeconds,
                                         subtitleTextScale = settings.subtitleTextScale,
                                         subtitleBottomInsetDp = settings.subtitleBottomInsetDp,
                                         remoteNextKeyCode = settings.remoteNextKeyCode,
@@ -1407,6 +1461,20 @@ class MainActivity : ComponentActivity() {
                                         },
                                         googleAccount = googleAccount,
                                         onGoogleAccountClick = onGoogleAccountClick,
+                                        onCompletedUninterruptedWatch = { completed ->
+                                            if (repository.enqueueSmartOfflineReplay(completed)) {
+                                                Toast.makeText(applicationContext,
+                                                    "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                                            } else if (repository.settings.value.vaultDirectCacheEnabled) {
+                                                lifecycleScope.launch {
+                                                    if (repository.promoteAuthorizedCache(completed)) {
+                                                        Toast.makeText(applicationContext,
+                                                            "Cached video saved to Offline Vault",
+                                                            Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        },
                                         onPlaybackPositionChanged = { activePlaybackPositionMs = it },
                                         onPlaybackRequestedChanged = { embeddedPlaybackRequested = it },
                                         foregroundPlaybackAllowed = !automaticAudioHandoff
@@ -1824,6 +1892,24 @@ class MainActivity : ComponentActivity() {
         }
 
         if (!playerActive) return
+        if (!isPipMode && isTvLikeNavigationDevice(this)) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            PlaybackBackSequenceTracker.reset()
+            playbackBackCoordinator.reset()
+            val prefs = repository.settings.value
+            when (com.drivedeck.tubedeck.player.TvBackButtonPolicy.decide(
+                prefs.tvBackButtonAction, prefs.pipEnabled
+            )) {
+                com.drivedeck.tubedeck.player.TvBackButtonAction.MINI_PIP ->
+                    triggerPip()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.CLOSE_IMMEDIATELY ->
+                    closeActivePlaybackCompletely()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.SHOW_ACTION_MENU ->
+                    showPlaybackExitChoices = true
+            }
+            return
+        }
         if (isPipMode && isTvLikeNavigationDevice(this)) {
             closeActivePlaybackCompletely()
             return

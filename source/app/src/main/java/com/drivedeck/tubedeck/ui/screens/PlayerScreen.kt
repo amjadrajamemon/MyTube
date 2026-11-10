@@ -119,6 +119,9 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DataSource
+import com.drivedeck.tubedeck.data.repository.AuthorizedStreamCache
+import com.drivedeck.tubedeck.data.repository.OfflineVaultPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -135,6 +138,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.drivedeck.tubedeck.auth.GoogleAccountProfile
 import com.drivedeck.tubedeck.data.model.OfflineMedia
+import com.drivedeck.tubedeck.player.SmartOfflineReplayWatch
 import com.drivedeck.tubedeck.data.model.ViewingMode
 import com.drivedeck.tubedeck.data.model.ViewingModePolicy
 import com.drivedeck.tubedeck.data.model.PlayerMode
@@ -166,6 +170,8 @@ import com.drivedeck.tubedeck.ui.components.FocusAnimatedThumbs
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.compose.AsyncImagePainter
+import com.drivedeck.tubedeck.player.AdaptiveQualityPolicy
+import com.drivedeck.tubedeck.player.AutoPlayableOptionsPolicy
 import com.drivedeck.tubedeck.player.PlaybackErrorAdvisor
 import com.drivedeck.tubedeck.player.SeekPreviewPolicy
 import com.drivedeck.tubedeck.player.VideoResumePolicy
@@ -188,6 +194,7 @@ fun PlayerScreen(
     playerMode: PlayerMode,
     sponsorSegments: List<SponsorSegment> = emptyList(),
     pipEnabled: Boolean = true,
+    vaultDirectCacheEnabled: Boolean = false,
     autoRotatePlayback: Boolean = true,
     inPictureInPicture: Boolean = false,
     autoLoadEpisodes: Boolean = false,
@@ -200,6 +207,7 @@ fun PlayerScreen(
     hideWatchedRecommendations: Boolean = true,
     lowResourceMode: Boolean = false,
     resumeAfterInterruptions: Boolean = true,
+    resumeDecisionSeconds: Int = VideoResumePolicy.DEFAULT_PROMPT_SECONDS,
     subtitleTextScale: Float = 1.0f,
     subtitleBottomInsetDp: Int = 0,
     remoteNextKeyCode: Int = 0,
@@ -230,6 +238,7 @@ fun PlayerScreen(
     onNextItem: (() -> Unit)? = null,
     playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
+    onCompletedUninterruptedWatch: ((OfflineMedia) -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
     onPlayPlaylistItem: ((Int) -> Unit)? = null,
@@ -315,6 +324,7 @@ fun PlayerScreen(
             xyAutoCompatibilityMode = carHeadUnit,
             sponsorSegments = sponsorSegments,
             pipEnabled = pipEnabled,
+            vaultDirectCacheEnabled = vaultDirectCacheEnabled,
             inPictureInPicture = inPictureInPicture,
             autoLoadEpisodes = autoLoadEpisodes,
             autoLoadUpNext = autoLoadUpNext,
@@ -326,6 +336,7 @@ fun PlayerScreen(
             hideWatchedRecommendations = hideWatchedRecommendations,
             lowResourceMode = lowResourceMode,
             resumeAfterInterruptions = resumeAfterInterruptions,
+            resumeDecisionSeconds = resumeDecisionSeconds,
             subtitleTextScale = subtitleTextScale,
             subtitleBottomInsetDp = subtitleBottomInsetDp,
             remoteNextKeyCode = remoteNextKeyCode,
@@ -357,6 +368,7 @@ fun PlayerScreen(
             onNextItem = onNextItem,
             playedVideoIds = playedVideoIds,
             onPlaybackEnded = onPlaybackEnded,
+            onCompletedUninterruptedWatch = onCompletedUninterruptedWatch,
             playlistItems = playlistItems,
             playlistIndex = playlistIndex,
             onPlayPlaylistItem = onPlayPlaylistItem,
@@ -539,11 +551,21 @@ fun WebPlayer(
                 DownloadActionStrip(onDownloadVideo, onDownloadPlaylist)
             }
             IconButton(
-                onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout() },
+                onClick = {
+                    com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context)
+                        .enableScreenBlackout()
+                },
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                    .padding(bottom = 10.dp).background(Color.Black.copy(alpha = .65f), CircleShape)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .size(60.dp)
+                    .background(Color.Black.copy(alpha = .65f), CircleShape)
             ) {
-                Icon(Icons.Default.VisibilityOff, "Black screen, continue audio", tint = Color.White)
+                Icon(
+                    Icons.Default.VisibilityOff,
+                    "Black screen, continue audio",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
             }
         }
     }
@@ -555,6 +577,7 @@ fun NativeExoPlayer(
     media: OfflineMedia,
     sponsorSegments: List<SponsorSegment>,
     pipEnabled: Boolean,
+    vaultDirectCacheEnabled: Boolean,
     inPictureInPicture: Boolean,
     autoLoadEpisodes: Boolean,
     autoLoadUpNext: Boolean,
@@ -566,6 +589,7 @@ fun NativeExoPlayer(
     hideWatchedRecommendations: Boolean,
     lowResourceMode: Boolean,
     resumeAfterInterruptions: Boolean,
+    resumeDecisionSeconds: Int,
     subtitleTextScale: Float,
     subtitleBottomInsetDp: Int,
     remoteNextKeyCode: Int,
@@ -597,6 +621,7 @@ fun NativeExoPlayer(
     onNextItem: (() -> Unit)? = null,
     playedVideoIds: Set<String> = emptySet(),
     onPlaybackEnded: (() -> Unit)? = null,
+    onCompletedUninterruptedWatch: ((OfflineMedia) -> Unit)? = null,
     playlistItems: List<PlaylistItem> = emptyList(),
     playlistIndex: Int = -1,
     onPlayPlaylistItem: ((Int) -> Unit)? = null,
@@ -645,13 +670,17 @@ fun NativeExoPlayer(
         }
     }
     val bandwidthMeter = remember(media.id) { DefaultBandwidthMeter.Builder(context).build() }
-    val dataSourceFactory = remember(media.id) {
+    val dataSourceFactory = remember(media.id, vaultDirectCacheEnabled) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0 Mobile Safari/537.36")
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
             .setAllowCrossProtocolRedirects(true)
-        DefaultDataSource.Factory(context, httpFactory).setTransferListener(bandwidthMeter)
+        val upstream = DefaultDataSource.Factory(context, httpFactory)
+            .setTransferListener(bandwidthMeter)
+        if (OfflineVaultPolicy.supportsAuthorizedCache(media.mediaUri, vaultDirectCacheEnabled)) {
+            AuthorizedStreamCache.sourceFactory(context, upstream)
+        } else upstream
     }
 
     var resolved by remember(media.id) { mutableStateOf<YoutubeStreamResolver.ResolvedMedia?>(null) }
@@ -730,6 +759,8 @@ fun NativeExoPlayer(
     var fallbackRecommendationsAttempted by remember(media.id) { mutableStateOf(false) }
     var fallbackRecommendationsError by remember(media.id) { mutableStateOf(false) }
     var manualRecoveryAttempts by remember(media.id) { mutableIntStateOf(0) }
+    // Playback Doctor: quality fallback is explicit and only applies on a user tap.
+    var recoveryQualityHeight by remember(media.id) { mutableIntStateOf(0) }
     var continuationModeHint by remember { mutableStateOf<String?>(null) }
     var continuationEpisodeShelf by remember(media.id) { mutableStateOf<YoutubeStreamResolver.DiscoveredPlaylist?>(null) }
     var continuationEpisodesLoading by remember(media.id) { mutableStateOf(false) }
@@ -772,14 +803,19 @@ fun NativeExoPlayer(
     var playbackRecoveryActive by remember(media.id) { mutableStateOf(false) }
     var firstFrameRendered by remember(media.id) { mutableStateOf(false) }
     var endActionDispatched by remember(media.id) { mutableStateOf(false) }
+    val smartReplayWatch = remember(media.id, media.mediaUri) { SmartOfflineReplayWatch() }
     var isPreparing by remember(media.id) { mutableStateOf(true) }
     var isBuffering by remember(media.id) { mutableStateOf(false) }
     var lastAutoSwitchMs by remember(media.id) { mutableLongStateOf(0L) }
+    // A stalled Auto stream must not rebound to an unusable high bitrate.
+    var autoDownshifted by remember(media.id) { mutableStateOf(false) }
     var autoStableSamples by remember(media.id) { mutableIntStateOf(0) }
+    var autoLowBufferSamples by remember(media.id) { mutableIntStateOf(0) }
     var autoUpgradeCount by remember(media.id) { mutableIntStateOf(0) }
     var lifecycleResumePending by remember(media.id) { mutableStateOf(false) }
     val playbackScope = rememberCoroutineScope()
     val latestOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
+    val latestOnCompletedUninterruptedWatch by rememberUpdatedState(onCompletedUninterruptedWatch)
     val liveDubEngine = remember(media.id) { LiveDubEngine(context.applicationContext) }
     val tvSafePlayback = isTvLikePlaybackDevice(context) || resourceLimits.constrained
     val pcmTap = remember(media.id) {
@@ -818,8 +854,10 @@ fun NativeExoPlayer(
             .setBufferDurationsMs(
                 resourceLimits.minBufferMs,
                 resourceLimits.maxBufferMs,
-                500,
-                1_250
+                if (resourceLimits.constrained) 1_000 else 1_500,
+                // Resuming after only 1.25 seconds caused short play/stall/play
+                // cycles on fluctuating LTE car head-unit connections.
+                if (resourceLimits.constrained) 3_500 else 2_750
             )
             .setTargetBufferBytes(if (resourceLimits.constrained) resourceLimits.targetBufferBytes else C.LENGTH_UNSET)
             .setPrioritizeTimeOverSizeThresholds(!resourceLimits.constrained)
@@ -1025,7 +1063,7 @@ fun NativeExoPlayer(
                     // Hardware Next may arrive before the metadata/title resolver.
                     // Watch-Next only requires the source video ID; title search is optional.
                     nextLookupInProgress = true
-                        playbackScope.launch {
+                    playbackScope.launch {
                             try {
                                 // First use the current video's actual Watch-Next
                                 // recommendations. Only fall back to title search when the
@@ -1178,10 +1216,51 @@ fun NativeExoPlayer(
         } else null
     }
     var showResumePrompt by remember(media.id) { mutableStateOf(savedResume != null) }
-    // Mutable holder is read when the stream actually starts, even if the user
-    // chooses Resume BEFORE the asynchronous stream resolver finishes.
+    // Mutable holder is read when asynchronous stream preparation completes.
     val selectedResumeStart = remember(media.id) {
         mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
+    }
+    val secondsToChoose = VideoResumePolicy.promptSeconds(resumeDecisionSeconds)
+    // Monotonic timestamp survives recompositions and saved state restoration
+    // on rotation; a new video identity receives a new deadline.
+    val promptDeadlineMs = rememberSaveable(media.id, savedResume?.updatedAt, secondsToChoose) {
+        SystemClock.elapsedRealtime() + secondsToChoose * 1_000L
+    }
+    var resumeCountdownSeconds by remember(media.id, savedResume?.updatedAt) {
+        mutableIntStateOf(secondsToChoose)
+    }
+
+    fun startOverFromBeginning() {
+        if (!showResumePrompt) return
+        selectedResumeStart.longValue = 0L
+        showResumePrompt = false
+        if (resumeEnabled) resumeStore.record(media.mediaUri, 0L)
+        if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
+        exoPlayer.playWhenReady = true
+    }
+
+    fun resumeSavedPosition() {
+        if (!showResumePrompt || savedResume == null) return
+        selectedResumeStart.longValue = savedResume.positionMs
+        showResumePrompt = false
+        if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(savedResume.positionMs)
+        exoPlayer.playWhenReady = true
+    }
+
+    // Auto-start from zero after the configured timeout. Do not let a media
+    // resolver refresh, player buffering event or ordinary recomposition restart
+    // the countdown. A decision closes the dialog and cancels this effect.
+    LaunchedEffect(media.id, showResumePrompt, secondsToChoose, savedResume?.updatedAt) {
+        if (!showResumePrompt || savedResume == null) return@LaunchedEffect
+        while (isActive && showResumePrompt) {
+            val millisLeft = promptDeadlineMs - SystemClock.elapsedRealtime()
+            if (millisLeft <= 0L) {
+                startOverFromBeginning()
+                break
+            }
+            resumeCountdownSeconds = ((millisLeft + 999L) / 1_000L).toInt()
+            delay(minOf(millisLeft, 200L))
+        }
     }
     val latestResumeEnabled by rememberUpdatedState(resumeEnabled)
     val latestResumePrompt by rememberUpdatedState(showResumePrompt)
@@ -1201,13 +1280,13 @@ fun NativeExoPlayer(
         }
     }
     LaunchedEffect(showResumePrompt, isPlaying) {
-        if (showResumePrompt && isPlaying) exoPlayer.pause()
+        if (showResumePrompt) exoPlayer.playWhenReady = false
     }
     // The final resume snapshot is taken in the ExoPlayer release effect,
     // BEFORE release(). A separate earlier DisposableEffect disposed too late
     // on some Compose hosts and silently saved an IDLE/zero position.
     LaunchedEffect(privateSession) {
-        if (privateSession) showResumePrompt = false
+        if (privateSession && showResumePrompt) startOverFromBeginning()
     }
     val youtubeVideo = YoutubeUrls.videoId(media.mediaUri) != null
     val themeProfile = LocalDeckThemeProfile.current
@@ -1297,7 +1376,7 @@ fun NativeExoPlayer(
                     .build()
             )
             exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            exoPlayer.playWhenReady = !showResumePrompt
             selectedHeight = 0
             autoQuality = true
             qualityLabel = "LIVE"
@@ -1327,7 +1406,7 @@ fun NativeExoPlayer(
         runCatching {
             exoPlayer.setMediaSource(preparedSource, position)
             exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            exoPlayer.playWhenReady = !showResumePrompt
         }.onFailure { sourceError ->
             isPreparing = false
             isBuffering = false
@@ -1346,10 +1425,22 @@ fun NativeExoPlayer(
             return
         }
         if (height == null) {
-            val target = chooseAutoHeight(context, sourceMedia.options.map { it.height }, bandwidthMeter.bitrateEstimate)
+            // Explicitly choosing Auto starts a fresh quality evaluation.
+            autoDownshifted = false
+            autoUpgradeCount = 0
+            autoLowBufferSamples = 0
+            autoStableSamples = 0
+            val playable = AutoPlayableOptionsPolicy.choices(
+                sourceMedia.options, sourceMedia.progressiveOptions, carHeadUnit,
+                sourceMedia.downloadOptions
+            )
+            val target = chooseAutoHeight(
+                context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
+            )
             loadResolvedStream(sourceMedia, target, autoSelected = true, preservePosition = true)
             onPlaybackPreferenceChanged(playbackSpeed, 0, seekIntervalSeconds)
         } else {
+            autoDownshifted = false
             loadResolvedStream(sourceMedia, height, autoSelected = false, preservePosition = true)
             onPlaybackPreferenceChanged(playbackSpeed, height, seekIntervalSeconds)
         }
@@ -1476,6 +1567,10 @@ fun NativeExoPlayer(
         val listener = object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 latestOnPlaybackRequestedChanged(playWhenReady)
+                // A deliberate pause disqualifies this one watch session.
+                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+                    smartReplayWatch.onManualPause()
+                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 if (playing && !latestForegroundPlaybackAllowed) {
@@ -1511,6 +1606,13 @@ fun NativeExoPlayer(
                     isPreparing = false
                     isBuffering = false
                     if (state == Player.STATE_ENDED && !endActionDispatched) {
+                        // Run before Auto-next swaps the media or LOOP_CURRENT seeks to zero.
+                        if (smartReplayWatch.finish(
+                                exoPlayer.currentPosition, exoPlayer.duration
+                            )
+                        ) {
+                            latestOnCompletedUninterruptedWatch?.invoke(media)
+                        }
                         endActionDispatched = true
                         when (latestContinuationMode) {
                             PlaybackContinuationMode.LOOP_CURRENT -> {
@@ -1614,12 +1716,15 @@ fun NativeExoPlayer(
                     reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT ||
                     reason == Player.DISCONTINUITY_REASON_SKIP
                 ) {
+                    smartReplayWatch.onSeekOrSkip()
                     currentCueText = ""
                     currentCuePresentationUs = -1L
                     if (liveDubEnabled) liveDubEngine.resetForSeek()
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
+                // A failed stream is not an uninterrupted start-to-finish watch.
+                smartReplayWatch.onSeekOrSkip()
                 PlaybackDiagnostics.record(context, "player_error", "${error.errorCodeName}: ${error.cause?.javaClass?.simpleName.orEmpty()}")
                 isPreparing = false
                 isBuffering = false
@@ -1661,22 +1766,34 @@ fun NativeExoPlayer(
 
                             val target = when {
                                 decoderFailure && decoderSafeHeight != null -> decoderSafeHeight
-                                autoQuality -> chooseAutoHeight(
-                                    context,
-                                    fresh.options.map { it.height },
-                                    bandwidthMeter.bitrateEstimate
-                                )
+                                autoQuality -> {
+                                    val heights = AutoPlayableOptionsPolicy.choices(
+                                        fresh.options, fresh.progressiveOptions, carHeadUnit,
+                                        fresh.downloadOptions
+                                    ).map { it.height }
+                                    val networkTarget = chooseAutoHeight(
+                                        context, heights, bandwidthMeter.bitrateEstimate
+                                    )
+                                    val retryTarget = AdaptiveQualityPolicy.retryHeight(
+                                        heights, selectedHeight, autoSelected = true
+                                    )
+                                    minOf(networkTarget, retryTarget)
+                                }
                                 else -> selectedHeight.takeIf { it > 0 }
                                     ?: fresh.options.maxOfOrNull { it.height }
                                     ?: 720
                             }
 
+                            val previousHeight = selectedHeight
                             loadResolvedStream(
                                 sourceMedia = fresh,
                                 requestedHeight = target,
                                 autoSelected = if (decoderFailure) false else autoQuality,
                                 preservePosition = true
                             )
+                            if (autoQuality && selectedHeight < previousHeight) {
+                                autoDownshifted = true
+                            }
                         } catch (cancel: CancellationException) {
                             throw cancel
                         } catch (recoveryError: Throwable) {
@@ -1765,7 +1882,9 @@ fun NativeExoPlayer(
                 if (tvSafePlayback) {
                     // TV boxes frequently ship fragile vendor codecs. Start on a single-file MP4
                     // representation at a conservative height; higher qualities remain selectable.
-                    val requestedTarget = if (preferredPlaybackQualityHeight > 0) {
+                    val requestedTarget = if (recoveryQualityHeight > 0) {
+                        recoveryQualityHeight
+                    } else if (preferredPlaybackQualityHeight > 0) {
                         preferredPlaybackQualityHeight
                     } else {
                         chooseAutoHeight(
@@ -1780,13 +1899,13 @@ fun NativeExoPlayer(
                     loadResolvedStream(
                         result,
                         safeTarget,
-                        autoSelected = preferredPlaybackQualityHeight <= 0,
+                        autoSelected = recoveryQualityHeight == 0 && preferredPlaybackQualityHeight <= 0,
                         preservePosition = false
                     )
-                } else if (preferredPlaybackQualityHeight > 0) {
+                } else if (recoveryQualityHeight > 0 || preferredPlaybackQualityHeight > 0) {
                     loadResolvedStream(
                         result,
-                        preferredPlaybackQualityHeight,
+                        recoveryQualityHeight.takeIf { it > 0 } ?: preferredPlaybackQualityHeight,
                         autoSelected = false,
                         preservePosition = false
                     )
@@ -1858,11 +1977,15 @@ fun NativeExoPlayer(
             resolved = fresh
             hasCaptions = fresh.subtitles.isNotEmpty() || youtubeVideo
             val target = if (autoQuality) {
-                chooseAutoHeight(
-                    context,
-                    fresh.options.map { it.height },
-                    bandwidthMeter.bitrateEstimate
+                val playable = AutoPlayableOptionsPolicy.choices(
+                    fresh.options, fresh.progressiveOptions, carHeadUnit,
+                                        fresh.downloadOptions
                 )
+                val estimated = chooseAutoHeight(
+                    context, playable.map { it.height }, bandwidthMeter.bitrateEstimate
+                )
+                if (autoDownshifted && selectedHeight > 0) minOf(estimated, selectedHeight)
+                else estimated
             } else {
                 selectedHeight.takeIf { it > 0 }
                     ?: fresh.options.maxOfOrNull { it.height }
@@ -1883,46 +2006,87 @@ fun NativeExoPlayer(
     }
 
     LaunchedEffect(firstFrameRendered, autoQuality, resolved, inPictureInPicture) {
-        // Never switch representations while Android is shrinking/holding the decoder in PiP.
-        // Several OEM codec stacks fail a decoder re-init during that surface transition.
-        if (!firstFrameRendered || !autoQuality || !youtubeVideo || inPictureInPicture || !resourceLimits.allowAdaptiveUpgrade) return@LaunchedEffect
-        // SmartTube-style resilience for extracted progressive/DASH URLs: continuously reassess
-        // the sustainable representation. Downshifts are fast; upgrades require repeated stable
-        // samples so fluctuating mobile links do not bounce between qualities.
+        // Extracted YouTube URLs are generally fixed-quality media, not a
+        // multi-representation DASH manifest. Changing them re-prepares the
+        // media source at the current position; do not claim seamless ABR.
+        if (!autoQuality || !youtubeVideo || inPictureInPicture) {
+            return@LaunchedEffect
+        }
+        // Monitor BEFORE the first frame as well: slow startup previously
+        // bypassed this entire loop and stayed stalled at the high resolution.
         while (isActive && autoQuality) {
-            delay(3_000)
+            delay(1_250L)
             val source = resolved ?: continue
-            val heights = source.options.map { it.height }.filter { it > 0 }
+            if (source.isLive && !source.liveManifestUrl.isNullOrBlank()) {
+                // ExoPlayer handles adaptive HLS live streams natively.
+                continue
+            }
+            if (!exoPlayer.playWhenReady || showResumePrompt ||
+                exoPlayer.currentMediaItem == null) {
+                autoLowBufferSamples = 0
+                autoStableSamples = 0
+                continue
+            }
+            val heights = AutoPlayableOptionsPolicy.choices(
+                source.options, source.progressiveOptions, carHeadUnit,
+                source.downloadOptions
+            ).map { it.height }
             if (heights.isEmpty()) continue
-
-            val recommended = chooseAutoHeight(context, heights, bandwidthMeter.bitrateEstimate)
-            val current = selectedHeight.takeIf { it > 0 } ?: recommended
-            val now = android.os.SystemClock.elapsedRealtime()
-            val bufferedAheadMs = (exoPlayer.bufferedPosition - exoPlayer.currentPosition).coerceAtLeast(0L)
-
-            val urgentDownshift = recommended < current &&
-                (bufferedAheadMs < 8_000L || exoPlayer.playbackState == Player.STATE_BUFFERING)
-            val stableUpgrade =
+            val current = selectedHeight.takeIf { it > 0 } ?: continue
+            val recommended = chooseAutoHeight(
+                context, heights, bandwidthMeter.bitrateEstimate
+            )
+            val bufferedAheadMs = (exoPlayer.bufferedPosition - exoPlayer.currentPosition)
+                .coerceAtLeast(0L)
+            val bufferingNow = exoPlayer.playbackState == Player.STATE_BUFFERING
+            val lowBuffer = bufferingNow || bufferedAheadMs < 6_000L
+            autoLowBufferSamples = if (lowBuffer) {
+                (autoLowBufferSamples + 1).coerceAtMost(12)
+            } else 0
+            val stableUpgrade = !autoDownshifted &&
+                resourceLimits.allowAdaptiveUpgrade &&
                 autoUpgradeCount < 1 &&
-                    recommended > current &&
-                    bufferedAheadMs >= 30_000L &&
-                    exoPlayer.isPlaying
-
-            if (stableUpgrade) autoStableSamples += 1 else autoStableSamples = 0
-
-            val canSwitch = now - lastAutoSwitchMs >= 15_000L
-            val upgradeReady = autoStableSamples >= 6
-            if (canSwitch && (urgentDownshift || upgradeReady)) {
-                val isUpgrade = recommended > current
+                recommended > current &&
+                bufferedAheadMs >= 35_000L &&
+                exoPlayer.isPlaying
+            autoStableSamples = if (stableUpgrade) {
+                (autoStableSamples + 1).coerceAtMost(20)
+            } else 0
+            val now = android.os.SystemClock.elapsedRealtime()
+            val decision = AdaptiveQualityPolicy.decide(
+                heights = heights,
+                current = current,
+                recommended = recommended,
+                bufferedAheadMs = bufferedAheadMs,
+                buffering = bufferingNow,
+                lowBufferSamples = autoLowBufferSamples,
+                stableSamples = autoStableSamples,
+                upgradesSoFar = autoUpgradeCount,
+                allowUpgrade = resourceLimits.allowAdaptiveUpgrade,
+                millisSinceLastSwitch = now - lastAutoSwitchMs,
+                downshiftedBefore = autoDownshifted
+            )
+            if (decision != null && decision.targetHeight != current) {
+                val previousHeight = selectedHeight
                 loadResolvedStream(
                     sourceMedia = source,
-                    requestedHeight = recommended,
+                    requestedHeight = decision.targetHeight,
                     autoSelected = true,
                     preservePosition = true
                 )
-                if (isUpgrade) autoUpgradeCount += 1
+                val switchedHeight = selectedHeight
+                PlaybackDiagnostics.record(
+                    context, "auto_quality",
+                    "${previousHeight}p -> ${switchedHeight}p; " +
+                        "buffer=${bufferedAheadMs}ms; " +
+                        "bandwidth=${bandwidthMeter.bitrateEstimate}; " +
+                        "startup=${!firstFrameRendered}"
+                )
+                if (switchedHeight < previousHeight) autoDownshifted = true
+                if (decision.upgrade && switchedHeight > previousHeight) autoUpgradeCount += 1
                 lastAutoSwitchMs = now
                 autoStableSamples = 0
+                autoLowBufferSamples = 0
             }
         }
     }
@@ -2032,6 +2196,7 @@ fun NativeExoPlayer(
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition
+            smartReplayWatch.sample(currentPosition, exoPlayer.duration)
             onPlaybackPositionChanged(currentPosition)
             val seconds = currentPosition / 1000f
             sponsorSegments.firstOrNull { seconds >= it.startTime && seconds < it.endTime - .1f }?.let {
@@ -2103,15 +2268,10 @@ fun NativeExoPlayer(
         tvPendingControlFocus = true
     }
 
-    BackHandler(
-        enabled = tvNavigation && controlsVisible && !inPictureInPicture &&
-            !showSettings && !showQuickActions && !showEqualizer &&
-            !showCaptionMenu && !showQualityMenu && !showComments && !viewingMenuVisible &&
-            !showPlaybackModeCards
-    ) {
-        controlsVisible = false
-        tvRestoreSurfaceFocus = true
-    }
+    // The TV user chose what Back must do during video playback:
+    // Mini-PiP, close immediately, or show the exit menu. Ordinary control
+    // chrome must NOT swallow that first Back. Actual dialogs/menus retain
+    // their higher-priority Back handlers above.
 
     LaunchedEffect(controlsVisible, tvRestoreSurfaceFocus) {
         if (!controlsVisible && tvRestoreSurfaceFocus) {
@@ -2523,11 +2683,16 @@ fun NativeExoPlayer(
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    // Theater mode uses the reference-style right-side episode tray
+                    // in landscape; compact portraits retain the familiar bottom sheet.
+                    .align(if (cinematicPlayer && !compactPortrait)
+                        Alignment.CenterEnd else Alignment.BottomCenter)
+                    .then(if (cinematicPlayer && !compactPortrait)
+                        Modifier.widthIn(max = 430.dp) else Modifier)
                     .padding(
                         start = 10.dp,
                         end = 10.dp,
-                        bottom = if (compactPortrait) 70.dp else 78.dp
+                        bottom = if (compactPortrait) 70.dp else if (cinematicPlayer) 6.dp else 78.dp
                     )
                     .pointerInput(showPlaybackModeCards) {
                         var downwardDrag = 0f
@@ -2709,7 +2874,19 @@ fun NativeExoPlayer(
                 Box(
                     Modifier.fillMaxSize()
                         .onFocusChanged { tvControlsFocused = it.hasFocus }
-                        .background(Color.Black.copy(alpha = playerOverlayOpacity))
+                        .then(
+                            if (cinematicPlayer) Modifier.background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Black.copy(alpha = .56f),
+                                        Color.Black.copy(alpha = .08f),
+                                        Color.Black.copy(alpha = .68f)
+                                    )
+                                )
+                            ) else Modifier.background(
+                                Color.Black.copy(alpha = playerOverlayOpacity)
+                            )
+                        )
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                 ) {
                     Row(
@@ -2734,6 +2911,10 @@ fun NativeExoPlayer(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            if (cinematicPlayer && !compactPortrait) {
+                                Text("CINEMA  •  NOW PLAYING", color = TubeDeckAccentCyan,
+                                    fontSize = 9.sp, maxLines = 1)
+                            }
                             Text(media.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (themeProfile.playerChrome == DeckPlayerChrome.HUD ||
                                 themeProfile.playerChrome == DeckPlayerChrome.CONSOLE ||
@@ -3170,15 +3351,27 @@ fun NativeExoPlayer(
                                 }
 
 
+                                // Eye is intentionally larger and isolated from adjacent
+                                // control hit boxes. Padding is outside the 52dp+ touch target,
+                                // preventing accidental bookmark/fullscreen taps.
                                 IconButton(
-                                    onClick = { com.drivedeck.tubedeck.data.repository.TubeDeckRepository.get(context).enableScreenBlackout(); controlsVisible = false },
-                                    modifier = Modifier.size(controllerHeight)
+                                    onClick = {
+                                        com.drivedeck.tubedeck.data.repository.TubeDeckRepository
+                                            .get(context).enableScreenBlackout()
+                                        controlsVisible = false
+                                    },
+                                    modifier = Modifier
+                                        .padding(horizontal = 9.dp)
+                                        .size((controllerHeight + 16.dp).coerceAtLeast(52.dp))
+                                        .tvInputHighlight(RoundedCornerShape(12.dp))
                                 ) {
                                     Icon(
                                         Icons.Default.VisibilityOff,
                                         "Black screen, continue audio",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(controllerIconSize)
+                                        tint = TubeDeckAccentCyan,
+                                        modifier = Modifier.size(
+                                            (controllerIconSize + 10.dp).coerceAtLeast(29.dp)
+                                        )
                                     )
                                 }
 
@@ -3319,7 +3512,7 @@ fun NativeExoPlayer(
                     Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(42.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("Native stream unavailable", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Playback Doctor", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
                         Text(advice.message, color = Color.White.copy(alpha = .95f), fontSize = 13.sp)
                         Spacer(Modifier.height(5.dp))
@@ -3330,9 +3523,31 @@ fun NativeExoPlayer(
                             TextButton(
                                 onClick = { manualRecoveryAttempts += 1 },
                                 enabled = manualRecoveryAttempts < 3
-                            ) { Text("Retry stream") }
-                            TextButton(onClick = { showBookmarks = true }) { Text("Saved moments") }
+                            ) { Text("Retry") }
+                            if (advice.cause == PlaybackErrorAdvisor.Cause.DECODER ||
+                                advice.cause == PlaybackErrorAdvisor.Cause.UNKNOWN ||
+                                advice.cause == PlaybackErrorAdvisor.Cause.EXPIRED_STREAM
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        recoveryQualityHeight = 360
+                                        manualRecoveryAttempts += 1
+                                    },
+                                    enabled = manualRecoveryAttempts < 3 &&
+                                        YoutubeUrls.videoId(media.mediaUri) != null
+                                ) { Text("Try 360p") }
+                            }
+                            TextButton(onClick = { showBookmarks = true }) { Text("Moments") }
                         }
+                        TextButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(
+                                "TubeDeck Playback Doctor",
+                                PlaybackDiagnostics.report(context) + "\nFailure: " + resolveError.orEmpty()
+                            ))
+                            Toast.makeText(context, "Playback report copied", Toast.LENGTH_SHORT).show()
+                        }) { Text("Copy diagnostics") }
                         Spacer(Modifier.height(12.dp))
                         if (YoutubeUrls.videoId(media.mediaUri) != null) {
                             Text("The web player may work for this video.", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
@@ -3383,37 +3598,33 @@ fun NativeExoPlayer(
 
     if (showResumePrompt && savedResume != null) {
         AlertDialog(
-            onDismissRequest = {
-                selectedResumeStart.longValue = 0L
-                showResumePrompt = false
-                resumeStore.record(media.mediaUri, 0L)
-                if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
-                exoPlayer.playWhenReady = true
-            },
-            title = { Text("Resume previous video?") },
+            onDismissRequest = ::startOverFromBeginning,
+            title = { Text("Continue watching?") },
             text = {
-                Text("You were watching this video at " +
-                    formatDuration(savedResume.positionMs) +
-                    ". Continue from this point, or start over?")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Last watched at " + formatDuration(savedResume.positionMs) +
+                            ". Resume there or start from the beginning?"
+                    )
+                    Text(
+                        "Starting over in ${resumeCountdownSeconds}s unless you select Resume.",
+                        color = TubeDeckTextSecondary, fontSize = 13.sp
+                    )
+                    LinearProgressIndicator(
+                        progress = {
+                            resumeCountdownSeconds.toFloat() / secondsToChoose.toFloat()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    selectedResumeStart.longValue = savedResume.positionMs
-                    showResumePrompt = false
-                    if (exoPlayer.currentMediaItem != null) {
-                        exoPlayer.seekTo(savedResume.positionMs)
-                    }
-                    exoPlayer.playWhenReady = true
-                }) { Text("Resume") }
+                TextButton(onClick = ::resumeSavedPosition) {
+                    Text("Resume · " + formatDuration(savedResume.positionMs))
+                }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    selectedResumeStart.longValue = 0L
-                    showResumePrompt = false
-                    resumeStore.record(media.mediaUri, 0L)
-                    if (exoPlayer.currentMediaItem != null) exoPlayer.seekTo(0L)
-                    exoPlayer.playWhenReady = true
-                }) { Text("Start over") }
+                TextButton(onClick = ::startOverFromBeginning) { Text("Start over") }
             }
         )
     }
@@ -6251,17 +6462,16 @@ private fun selectResolvedOption(
     requestedHeight: Int,
     compatibilityMode: Boolean
 ): YoutubeStreamResolver.VideoOption? {
-    val candidates = if (compatibilityMode) {
-        resolved.progressiveOptions.filter { it.videoMimeType == "video/mp4" && it.height <= 480 }
-            .ifEmpty { resolved.options.filter { it.videoMimeType == "video/mp4" } }
-            .ifEmpty { resolved.options }
-    } else resolved.options
+    val candidates = AutoPlayableOptionsPolicy.choices(
+        resolved.options, resolved.progressiveOptions, compatibilityMode,
+        resolved.downloadOptions
+    )
     val height = PlaybackQualityPolicy.chooseHeight(candidates.map { it.height }, requestedHeight, compatibilityMode)
     return candidates.firstOrNull { it.height == height }
 }
 
 private fun buildResolvedSource(
-    factory: DefaultDataSource.Factory,
+    factory: DataSource.Factory,
     resolved: YoutubeStreamResolver.ResolvedMedia,
     option: YoutubeStreamResolver.VideoOption
 ): MediaSource {

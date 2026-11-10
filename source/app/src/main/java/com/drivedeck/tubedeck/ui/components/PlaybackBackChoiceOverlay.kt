@@ -1,5 +1,6 @@
 package com.drivedeck.tubedeck.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -49,6 +50,8 @@ fun PlaybackBackChoiceOverlay(
     modifier: Modifier = Modifier
 ) {
     val tvNavigation = isTvLikeNavigationDevice(LocalContext.current)
+    // Back while the chooser is open dismisses it, never starts a second PiP/exit cycle.
+    BackHandler { onTimeout() }
     val closeFocusRequester = remember { FocusRequester() }
     var visible by remember { mutableStateOf(true) }
     LaunchedEffect(tvNavigation) {
@@ -84,8 +87,8 @@ fun PlaybackBackChoiceOverlay(
         tonalElevation = 6.dp
     ) {
         Row(
-            modifier = Modifier.background(Color.Transparent).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.background(Color.Transparent).padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (tvNavigation) 12.dp else 5.dp)
         ) {
             OutlinedButton(
                 onClick = onCloseVideo,
@@ -94,23 +97,25 @@ fun PlaybackBackChoiceOverlay(
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close")
                 Spacer(Modifier.width(3.dp))
-                Text("Close", fontSize = 10.5.sp)
+                Text("Close", fontSize = if (tvNavigation) 14.sp else 11.sp)
             }
             OutlinedButton(
                 onClick = onAudioOnly,
+                modifier = Modifier.tvInputHighlight(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckAccentCyan)
             ) {
                 Icon(Icons.Default.Headphones, contentDescription = "Audio")
                 Spacer(Modifier.width(3.dp))
-                Text("Audio", fontSize = 10.5.sp)
+                Text("Audio", fontSize = if (tvNavigation) 14.sp else 11.sp)
             }
             OutlinedButton(
                 onClick = onPictureInPicture,
+                modifier = Modifier.tvInputHighlight(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TubeDeckAccentMint)
             ) {
                 Icon(Icons.Default.PictureInPictureAlt, contentDescription = pipLabel)
                 Spacer(Modifier.width(3.dp))
-                Text(pipLabel, fontSize = 10.5.sp)
+                Text(pipLabel, fontSize = if (tvNavigation) 14.sp else 11.sp)
             }
         }
     }

@@ -490,6 +490,7 @@ class NativePlayerActivity : ComponentActivity() {
                     xyAutoCompatibilityMode = settings.xyAutoCompatibilityMode,
                     sponsorSegments = sponsorSegments,
                     pipEnabled = settings.pipEnabled,
+                    vaultDirectCacheEnabled = settings.vaultDirectCacheEnabled,
                     inPictureInPicture = isPipMode,
                     autoLoadEpisodes = settings.autoLoadEpisodes,
                     autoLoadUpNext = settings.autoLoadUpNext,
@@ -581,6 +582,19 @@ class NativePlayerActivity : ComponentActivity() {
                     } else null,
                     googleAccount = googleAccount,
                     onGoogleAccountClick = onGoogleAccountClick,
+                    onCompletedUninterruptedWatch = { completed ->
+                        if (repository.enqueueSmartOfflineReplay(completed)) {
+                            Toast.makeText(applicationContext,
+                                "Smart Offline Replay queued", Toast.LENGTH_SHORT).show()
+                        } else if (repository.settings.value.vaultDirectCacheEnabled) {
+                            lifecycleScope.launch {
+                                if (repository.promoteAuthorizedCache(completed)) {
+                                    Toast.makeText(applicationContext,
+                                        "Cached video saved to Offline Vault", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
                     onPlaybackPositionChanged = { currentPlaybackPositionMs = it },
                     onPlaybackRequestedChanged = {
                         playbackRequested = it
@@ -852,7 +866,7 @@ class NativePlayerActivity : ComponentActivity() {
         closingPlayer = false
         playerActive = true
         currentPlaybackPositionMs = initialPlaybackPositionMs
-        currentMedia = media
+        currentMedia = repository.preferredOfflineMedia(media)
         syncPlaylistQueue(media)
         if (recordWatch && !media.title.equals("Now Playing", ignoreCase = true)) {
             repository.recordWatch(media)
@@ -935,6 +949,36 @@ class NativePlayerActivity : ComponentActivity() {
         }
 
         val now = SystemClock.elapsedRealtime()
+        if (enteringPip) {
+            // PiP entry is asynchronous. Do not reinterpret a second rapid Back as a chooser
+            // request while Android is still animating the first Back into PiP.
+            return
+        }
+
+        // TV/Google TV Back is intentionally deterministic. The user chooses
+        // Mini-PiP, immediate close or the focused exit menu under Playback settings.
+        // In-player controls and dialogs already consume their own first Back.
+        if (!isPipMode &&
+            com.drivedeck.tubedeck.ui.components.isTvLikeNavigationDevice(this)
+        ) {
+            playbackBackDecisionJob?.cancel()
+            playbackBackDecisionJob = null
+            PlaybackBackSequenceTracker.reset()
+            playbackBackCoordinator.reset()
+            val prefs = repository.settings.value
+            when (com.drivedeck.tubedeck.player.TvBackButtonPolicy.decide(
+                prefs.tvBackButtonAction, prefs.pipEnabled
+            )) {
+                com.drivedeck.tubedeck.player.TvBackButtonAction.MINI_PIP ->
+                    enterPlayerPip()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.CLOSE_IMMEDIATELY ->
+                    closePlaybackCompletely()
+                com.drivedeck.tubedeck.player.TvBackButtonAction.SHOW_ACTION_MENU ->
+                    showPlaybackExitChoices = true
+            }
+            return
+        }
+
         val rapidCount = PlaybackBackSequenceTracker.record(now)
         if (rapidCount >= 3) {
             playbackBackDecisionJob?.cancel()
@@ -944,12 +988,6 @@ class NativePlayerActivity : ComponentActivity() {
             playbackBackCoordinator.onChooserDismissed()
             PlaybackBackSequenceTracker.reset()
             if (isPipMode) moveTaskToBack(true)
-            return
-        }
-
-        if (enteringPip) {
-            // PiP entry is asynchronous. Do not reinterpret a second rapid Back as a chooser
-            // request while Android is still animating the first Back into PiP.
             return
         }
 

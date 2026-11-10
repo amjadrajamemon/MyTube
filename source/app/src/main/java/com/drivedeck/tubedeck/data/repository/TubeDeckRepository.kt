@@ -3,6 +3,9 @@ package com.drivedeck.tubedeck.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import com.drivedeck.tubedeck.player.SmartOfflineReplayPolicy
 import android.telephony.TelephonyManager
 import java.util.Locale
 import com.drivedeck.tubedeck.player.PlaylistQueuePolicy
@@ -85,6 +88,124 @@ class TubeDeckRepository private constructor(private val context: Context) {
     val downloadQueue: StateFlow<List<DownloadTask>> = _downloadQueue.asStateFlow()
     private val _offlineMediaList = MutableStateFlow(loadOfflineMedia())
     val offlineMediaList: StateFlow<List<OfflineMedia>> = _offlineMediaList.asStateFlow()
+    private val _offlineVaultHealth = MutableStateFlow(OfflineVaultHealth())
+    private val waitingForWifi = "Waiting for Wi-Fi / Ethernet"
+
+    private fun isWifiOrEthernet(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
+    private fun recheckSmartReplayNetwork() {
+        val allowed = isWifiOrEthernet()
+        val toCancel = mutableListOf<String>()
+        synchronized(lock) {
+            var changed = false
+            val updated = _downloadQueue.value.map { task ->
+                when {
+                    !allowed && task.wifiOnly && task.status in listOf(TaskStatus.QUEUED, TaskStatus.DOWNLOADING) -> {
+                        changed = true
+                        if (task.status == TaskStatus.DOWNLOADING) toCancel += task.id
+                        task.copy(status = TaskStatus.PAUSED, speed = waitingForWifi,
+                            errorMessage = waitingForWifi)
+                    }
+                    allowed && task.wifiOnly && task.status == TaskStatus.PAUSED &&
+                        task.errorMessage == waitingForWifi -> {
+                        changed = true
+                        task.copy(status = TaskStatus.QUEUED, speed = "Queued", errorMessage = null)
+                    }
+                    else -> task
+                }
+            }
+            if (changed) setQueue(updated)
+        }
+        toCancel.forEach { id ->
+            MediaDownloader.cancel(id)
+            synchronized(lock) { activeJobs[id]?.cancel() }
+        }
+        processQueue()
+    }
+    val offlineVaultHealth: StateFlow<OfflineVaultHealth> = _offlineVaultHealth.asStateFlow()
+
+    fun refreshOfflineVaultHealth() {
+        scope.launch {
+            val items = synchronized(lock) { _offlineMediaList.value.toList() }
+            val health = runCatching {
+                OfflineVaultStorage.inspect(context, items, _settings.value.downloadDir)
+                    .copy(cachedBytes = AuthorizedStreamCache.retainedCacheBytes(context))
+            }.getOrNull() ?: return@launch
+            _offlineVaultHealth.value = health
+        }
+    }
+
+    fun pinOfflineMedia(id: String, pinned: Boolean) {
+        synchronized(lock) {
+            val changed = _offlineMediaList.value.map {
+                if (it.id == id) it.copy(isPinned = pinned) else it
+            }
+            _offlineMediaList.value = changed
+            saveOfflineMedia(changed)
+        }
+    }
+
+    fun organizeOfflineMedia(id: String, collection: String) {
+        synchronized(lock) {
+            val changed = _offlineMediaList.value.map {
+                if (it.id == id) it.copy(collection = collection.trim().take(64)) else it
+            }
+            _offlineMediaList.value = changed
+            saveOfflineMedia(changed)
+        }
+    }
+
+    fun preferredOfflineMedia(media: OfflineMedia): OfflineMedia {
+        if (!_settings.value.offlineFirstEnabled) return media
+        val uri = Uri.parse(media.mediaUri)
+        if (uri.scheme == "file" || uri.scheme == "content") return media
+        // Preserve Mix / playlist context: those navigation/continuation queues
+        // need the original online URL, not a local file replacement.
+        if (YoutubeUrls.playlistId(media.mediaUri) != null) return media
+        val key = media.videoId.ifBlank { YoutubeUrls.videoId(media.mediaUri).orEmpty() }
+        if (key.isEmpty()) return media
+        return synchronized(lock) {
+            _offlineMediaList.value.firstOrNull {
+                it.videoId == key && !it.isAudioOnly && OfflineVaultStorage.isReadable(context, it)
+            }?.copy(title = media.title.ifBlank { it.title }) ?: media
+        }
+    }
+
+    suspend fun promoteAuthorizedCache(media: OfflineMedia): Boolean {
+        val preferences = _settings.value
+        if (!preferences.smartOfflineReplayEnabled ||
+            !OfflineVaultPolicy.supportsAuthorizedCache(media.mediaUri, preferences.vaultDirectCacheEnabled)) return false
+        val original = synchronized(lock) {
+            _offlineMediaList.value.any { it.mediaUri == media.mediaUri ||
+                (media.videoId.isNotBlank() && it.videoId == media.videoId && OfflineVaultStorage.isReadable(context, it)) }
+        }
+        if (original) return false
+        val promoted = AuthorizedStreamCache.promoteIfComplete(
+            context, media, preferences.downloadDir, preferences.downloadTreeUri
+        )
+            ?: return false
+        synchronized(lock) {
+            _offlineMediaList.value = listOf(promoted) +
+                _offlineMediaList.value.filterNot { it.id == promoted.id }
+            saveOfflineMedia(_offlineMediaList.value)
+        }
+        refreshOfflineVaultHealth()
+        return true
+    }
+
+    fun clearIncompleteAuthorizedCache() {
+        scope.launch {
+            AuthorizedStreamCache.clearIncompleteCache(context)
+            refreshOfflineVaultHealth()
+        }
+    }
     private val _fileClipboard = MutableStateFlow<FileClipboard?>(null)
     val fileClipboard: StateFlow<FileClipboard?> = _fileClipboard.asStateFlow()
     private val _downloadHistory = MutableStateFlow(loadHistory())
@@ -138,6 +259,24 @@ class TubeDeckRepository private constructor(private val context: Context) {
         }
         DownloadQueueNotifier.update(context, _downloadQueue.value, force = true)
         processQueue()
+        refreshOfflineVaultHealth()
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        runCatching {
+            cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+                override fun onLost(network: android.net.Network) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+                override fun onCapabilitiesChanged(
+                    network: android.net.Network, capabilities: NetworkCapabilities
+                ) {
+                    scope.launch { delay(350); recheckSmartReplayNetwork() }
+                }
+            })
+        }
+        recheckSmartReplayNetwork()
     }
 
     fun updateSettings(value: TubeDeckSettings) {
@@ -146,6 +285,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
         _settings.value = next
         prefs.edit().apply {
             putString("downloadDir", next.downloadDir); putString("downloadTreeUri", next.downloadTreeUri)
+            putBoolean("smartOfflineReplayEnabled", next.smartOfflineReplayEnabled)
+            putBoolean("smartOfflineReplayWifiOnly", next.smartOfflineReplayWifiOnly)
+            putBoolean("offlineFirstEnabled", next.offlineFirstEnabled)
+            putBoolean("vaultDirectCacheEnabled", next.vaultDirectCacheEnabled)
             remove("maxConcurrent")
             putString("instantMode", next.instantMode.name); putString("instantQuality", next.instantQuality)
             putString("customMode", next.customMode.name); putString("customQuality", next.customQuality)
@@ -170,6 +313,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("blockBannerAds", next.blockBannerAds)
             putBoolean("blockTrackers", next.blockTrackers); putBoolean("sponsorBlockEnabled", next.sponsorBlockEnabled)
             putBoolean("blockShortsEnabled", next.blockShortsEnabled); putBoolean("pipEnabled", next.pipEnabled)
+            putString("tvBackButtonAction", com.drivedeck.tubedeck.player.TvBackButtonPolicy.normalize(next.tvBackButtonAction))
             putBoolean("autoLoadEpisodes", next.autoLoadEpisodes)
             putBoolean("autoLoadUpNext", next.autoLoadUpNext)
             putBoolean("sideBySideEpisodeFeeds", next.sideBySideEpisodeFeeds)
@@ -185,12 +329,27 @@ class TubeDeckRepository private constructor(private val context: Context) {
             putBoolean("hideWatchedRecommendations", next.hideWatchedRecommendations)
             putBoolean("lowResourceMode", next.lowResourceMode)
             putBoolean("resumeAfterInterruptions", next.resumeAfterInterruptions)
+            putInt("resumeDecisionSeconds", next.resumeDecisionSeconds.coerceIn(1, 15))
             putFloat("subtitleTextScale", next.subtitleTextScale.coerceIn(0.8f, 1.8f))
             putInt("subtitleBottomInsetDp", next.subtitleBottomInsetDp.coerceIn(0, 120))
             putInt("remoteNextKeyCode", next.remoteNextKeyCode.coerceAtLeast(0))
             putInt("remotePreviousKeyCode", next.remotePreviousKeyCode.coerceAtLeast(0))
+            putBoolean("adaptiveExperienceEnabled", next.adaptiveExperienceEnabled)
+            putBoolean("carDashboardEnabled", next.carDashboardEnabled)
+            putString("homeFeedOrder", next.homeFeedOrder)
+            putString("homeDisplayMode", next.homeDisplayMode)
+            putString("homeBrowseMode", if (next.homeBrowseMode == "Tile") "Tile" else "List")
+            putInt("homeInitialVideoCount", next.homeInitialVideoCount.coerceIn(10, 50))
+            putString("studioHomeLayout", next.studioHomeLayout)
+            putString("studioNavigation", next.studioNavigation)
+            putString("studioPlayer", next.studioPlayer)
+            putString("studioMotion", next.studioMotion)
+            putString("studioDensity", next.studioDensity)
+            putString("studioCorners", next.studioCorners)
+            putString("studioGlow", next.studioGlow)
             putString("appearancePreset", next.appearancePreset)
             putFloat("fontScale", next.fontScale.coerceIn(0.80f, 1.35f))
+            putFloat("videoTitleScale", next.videoTitleScale.coerceIn(1f, 1.5f))
             putLong("themeAccentArgb", next.themeAccentArgb)
             putLong("themeBackgroundArgb", next.themeBackgroundArgb)
             putLong("themeTextArgb", next.themeTextArgb)
@@ -213,6 +372,10 @@ class TubeDeckRepository private constructor(private val context: Context) {
     private fun loadSettings() = TubeDeckSettings(
         downloadDir = prefs.getString("downloadDir", "MyTube")?.takeIf { it.matches(Regex("[a-zA-Z0-9 _-]{1,40}")) } ?: "MyTube",
         downloadTreeUri = prefs.getString("downloadTreeUri", null),
+        smartOfflineReplayEnabled = prefs.getBoolean("smartOfflineReplayEnabled", false),
+        smartOfflineReplayWifiOnly = prefs.getBoolean("smartOfflineReplayWifiOnly", true),
+        offlineFirstEnabled = prefs.getBoolean("offlineFirstEnabled", true),
+        vaultDirectCacheEnabled = prefs.getBoolean("vaultDirectCacheEnabled", false),
         instantMode = enumValue(prefs.getString("instantMode", null), DownloadMode.VIDEO),
         instantQuality = prefs.getString("instantQuality", "Best") ?: "Best",
         customMode = enumValue(prefs.getString("customMode", null), DownloadMode.VIDEO),
@@ -245,6 +408,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
         sponsorBlockEnabled = prefs.getBoolean("sponsorBlockEnabled", true),
         blockShortsEnabled = prefs.getBoolean("blockShortsEnabled", true),
         pipEnabled = prefs.getBoolean("pipEnabled", true),
+        tvBackButtonAction = com.drivedeck.tubedeck.player.TvBackButtonPolicy.normalize(prefs.getString("tvBackButtonAction", "Action menu")),
         autoLoadEpisodes = prefs.getBoolean("autoLoadEpisodes", false),
         autoLoadUpNext = prefs.getBoolean("autoLoadUpNext", false),
         sideBySideEpisodeFeeds = prefs.getBoolean("sideBySideEpisodeFeeds", true),
@@ -259,12 +423,27 @@ class TubeDeckRepository private constructor(private val context: Context) {
         hideWatchedRecommendations = prefs.getBoolean("hideWatchedRecommendations", true),
         lowResourceMode = prefs.getBoolean("lowResourceMode", false),
         resumeAfterInterruptions = prefs.getBoolean("resumeAfterInterruptions", true),
+        resumeDecisionSeconds = prefs.getInt("resumeDecisionSeconds", 3).coerceIn(1, 15),
         subtitleTextScale = prefs.getFloat("subtitleTextScale", 1.0f).coerceIn(0.8f, 1.8f),
         subtitleBottomInsetDp = prefs.getInt("subtitleBottomInsetDp", 0).coerceIn(0, 120),
         remoteNextKeyCode = prefs.getInt("remoteNextKeyCode", 0).coerceAtLeast(0),
         remotePreviousKeyCode = prefs.getInt("remotePreviousKeyCode", 0).coerceAtLeast(0),
+        adaptiveExperienceEnabled = prefs.getBoolean("adaptiveExperienceEnabled", false),
+        carDashboardEnabled = prefs.getBoolean("carDashboardEnabled", false),
+        homeFeedOrder = prefs.getString("homeFeedOrder", "History,Relevant,Trending") ?: "History,Relevant,Trending",
+        homeDisplayMode = prefs.getString("homeDisplayMode", "Theme") ?: "Theme",
+        homeBrowseMode = prefs.getString("homeBrowseMode", "List").takeIf { it == "Tile" } ?: "List",
+        homeInitialVideoCount = prefs.getInt("homeInitialVideoCount", 20).coerceIn(10, 50),
+        studioHomeLayout = prefs.getString("studioHomeLayout", "Preset") ?: "Preset",
+        studioNavigation = prefs.getString("studioNavigation", "Preset") ?: "Preset",
+        studioPlayer = prefs.getString("studioPlayer", "Preset") ?: "Preset",
+        studioMotion = prefs.getString("studioMotion", "Preset") ?: "Preset",
+        studioDensity = prefs.getString("studioDensity", "Preset") ?: "Preset",
+        studioCorners = prefs.getString("studioCorners", "Preset") ?: "Preset",
+        studioGlow = prefs.getString("studioGlow", "Preset") ?: "Preset",
         appearancePreset = prefs.getString("appearancePreset", "Glass Midnight") ?: "Glass Midnight",
         fontScale = prefs.getFloat("fontScale", 1.0f).coerceIn(0.80f, 1.35f),
+        videoTitleScale = prefs.getFloat("videoTitleScale", 1.0f).coerceIn(1f, 1.5f),
         themeAccentArgb = prefs.getLong("themeAccentArgb", 0xFF00D2FFL),
         themeBackgroundArgb = prefs.getLong("themeBackgroundArgb", 0xFF080B11L),
         themeTextArgb = prefs.getLong("themeTextArgb", 0xFFFFFFFFL)
@@ -332,8 +511,14 @@ class TubeDeckRepository private constructor(private val context: Context) {
         )
 
     private suspend fun publicTrending(region: String, limit: Int = 12): List<HomeVideo> {
+        // A proper Trending kiosk, region-aware and independent of user search keywords.
+        // Keep the search fallback solely for upstream extractor outages.
+        val kiosk = runCatching {
+            YoutubeStreamResolver.trendingVideosPage(region, null, limit).first
+        }.getOrDefault(emptyList())
+        if (kiosk.isNotEmpty()) return kiosk.map(::relatedToHome)
         val countryName = Locale("", region).displayCountry.ifBlank { region }
-        return YoutubeStreamResolver.searchVideos("popular trending videos $countryName", limit)
+        return YoutubeStreamResolver.searchVideos("popular videos in $countryName", limit)
             .map(::relatedToHome)
     }
 
@@ -739,6 +924,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
      * When the provider has no next-page cursor, the UI shows an end-of-feed state.
      */
     fun loadMoreHomeFeed(feed: String) {
+        // Disabling a feed must also disable all background pagination/network work.
+        val current = _settings.value
+        if ((feed == "History" && !current.homeHistoryEnabled) ||
+            (feed == "Relevant" && !current.homeSuggestionsEnabled) ||
+            (feed == "Trending" && !current.homeTrendingEnabled)) return
         if (feed == "History") {
             if (historyMoreJob?.isActive == true || feed in _moreFeedsExhausted.value) return
             historyMoreJob = scope.launch {
@@ -783,11 +973,24 @@ class TubeDeckRepository private constructor(private val context: Context) {
         homePageJobs[feed] = scope.launch {
             _moreFeedsLoading.value = _moreFeedsLoading.value + feed
             try {
-                val (items, nextCursor) = YoutubeStreamResolver.searchVideosPage(
-                    query, homePageCursors[feed], limit = 36
-                )
+                val (items, nextCursor) = if (feed == "Trending") {
+                    runCatching {
+                        YoutubeStreamResolver.trendingVideosPage(
+                            country, homePageCursors[feed], limit = 36
+                        )
+                    }.getOrNull()?.takeIf { it.first.isNotEmpty() }
+                        ?: YoutubeStreamResolver.searchVideosPage(
+                            query, null, limit = 36
+                        )
+                } else {
+                    YoutubeStreamResolver.searchVideosPage(
+                        query, homePageCursors[feed], limit = 36
+                    )
+                }
                 ensureActive()
-                if (homePageQueries[feed] != query) return@launch
+                if (homePageQueries[feed] != query ||
+                    (feed == "Trending" && !_settings.value.homeTrendingEnabled) ||
+                    (feed == "Relevant" && !_settings.value.homeSuggestionsEnabled)) return@launch
                 val target = if (feed == "Relevant") _homeSuggestions else _homeTrending
                 val seen = target.value.mapTo(hashSetOf()) { it.videoId }
                 val watched = if (feed == "Relevant") _watchHistory.value.mapTo(hashSetOf()) { it.videoId }
@@ -1037,6 +1240,73 @@ class TubeDeckRepository private constructor(private val context: Context) {
         return task.id
     }
 
+    /**
+     * Auto-retain a qualifying, permitted watch using the existing foreground
+     * offline-media queue. No GB quota, retention count, or eviction policy.
+     * This is a real download after playback (NOT a promoted ExoPlayer cache).
+     * Call only after a positive SmartOfflineReplayWatch.finish() event.
+     */
+    fun enqueueSmartOfflineReplay(media: OfflineMedia): Boolean {
+        val setting = _settings.value
+        if (!setting.smartOfflineReplayEnabled) return false
+        val videoId = YoutubeUrls.videoId(media.mediaUri) ?: return false
+        // Enqueue even while offline or on cellular. A persistent task-specific
+        // network gate pauses it until Wi-Fi/Ethernet returns automatically.
+        val networkPermitted = true
+        // No fixed total storage limit: only avoid starting with critically low free
+        // space. The download engine continues to enforce actual filesystem limits.
+        val enoughFreeSpace = runCatching {
+            val actualStagingFolder = MediaDownloader.folder(context, setting.downloadDir)
+            OfflineVaultPolicy.shouldSaveFreeSpace(actualStagingFolder.usableSpace, 0L)
+        }.getOrDefault(false)
+        val queued = synchronized(lock) {
+            val exists = _offlineMediaList.value.any {
+                it.videoId == videoId && OfflineVaultStorage.isReadable(context, it)
+            }
+            val alreadyDownloading = _downloadQueue.value.any {
+                it.videoId == videoId && it.status in setOf(
+                    TaskStatus.QUEUED, TaskStatus.DOWNLOADING, TaskStatus.PAUSED
+                )
+            }
+            if (!SmartOfflineReplayPolicy.eligibleForAutomaticSave(
+                    enabled = setting.smartOfflineReplayEnabled,
+                    completed = true,
+                    videoId = videoId,
+                    alreadySaved = exists,
+                    alreadyQueued = alreadyDownloading,
+                    networkPermitted = networkPermitted,
+                    enoughFreeStorage = enoughFreeSpace
+                )
+            ) {
+                false
+            } else {
+                val now = System.currentTimeMillis()
+                val sessionId = currentOrNewSessionIdLocked(now)
+                val newTask = DownloadTask(
+                    id = UUID.randomUUID().toString(),
+                    url = "https://www.youtube.com/watch?v=$videoId",
+                    videoId = videoId,
+                    title = media.title.ifBlank { "Video $videoId" },
+                    thumbnailUrl = media.thumbnailUrl.ifBlank { getVideoThumbnail(videoId) },
+                    mode = DownloadMode.VIDEO,
+                    quality = setting.instantQuality,
+                    outputFormat = "MP4/WebM",
+                    createdAt = now,
+                    sessionId = sessionId,
+                    eventAt = now,
+                    wifiOnly = setting.smartOfflineReplayWifiOnly
+                )
+                val retained = _downloadQueue.value.filterNot {
+                    it.status == TaskStatus.COMPLETED && it.sessionId != sessionId
+                }
+                setQueue(retained + newTask)
+                true
+            }
+        }
+        if (queued) processQueue()
+        return queued
+    }
+
     fun enqueuePlaylist(items: List<PlaylistItem>, mode: DownloadMode, quality: String): Int {
         val now = System.currentTimeMillis()
         val tasks = synchronized(lock) {
@@ -1082,6 +1352,13 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 val next = _downloadQueue.value.firstOrNull {
                     it.status == TaskStatus.QUEUED && it.id !in activeJobs
                 } ?: break
+                if (next.wifiOnly && !isWifiOrEthernet()) {
+                    updateTask(next.id) {
+                        it.copy(status = TaskStatus.PAUSED, speed = waitingForWifi,
+                            errorMessage = waitingForWifi)
+                    }
+                    continue
+                }
                 updateTask(next.id) { it.copy(status = TaskStatus.DOWNLOADING, speed = "Resolving…") }
                 val job = scope.launch(start = CoroutineStart.LAZY) { runTask(next.id) }
                 activeJobs[next.id] = job
@@ -1498,7 +1775,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("mode", task.mode.name); put("quality", task.quality); put("outputFormat", task.outputFormat)
                 put("progress", task.progress.toDouble()); put("downloadedBytes", task.downloadedBytes)
                 put("totalBytes", task.totalBytes); put("status", task.status.name)
-                put("retryCount", task.retryCount)
+                put("retryCount", task.retryCount); put("wifiOnly", task.wifiOnly)
                 put("createdAt", task.createdAt); put("sessionId", task.sessionId)
                 put("eventAt", task.eventAt); put("errorMessage", task.errorMessage)
             })
@@ -1539,6 +1816,7 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 },
                 errorMessage = persistedError,
                 retryCount = persistedRetryCount,
+                wifiOnly = item.optBoolean("wifiOnly", false),
                 createdAt = createdAt,
                 sessionId = item.optLong("sessionId", createdAt),
                 eventAt = item.optLong("eventAt", createdAt)
@@ -1608,9 +1886,11 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 put("isAudioOnly", media.isAudioOnly); put("qualityLabel", media.qualityLabel)
                 put("format", media.format); put("fileSizeBytes", media.fileSizeBytes)
                 put("durationSeconds", media.durationSeconds); put("downloadDate", media.downloadDate)
+                put("isPinned", media.isPinned); put("collection", media.collection)
             })
         }
         stateStore.write("offline_media.json", array.toString())
+        refreshOfflineVaultHealth()
         prefs.edit().remove("offline_media_json").apply()
     }
     private fun loadOfflineMedia(): List<OfflineMedia> {
@@ -1621,7 +1901,8 @@ class TubeDeckRepository private constructor(private val context: Context) {
                 item.optString("thumbnailUrl"), item.getString("mediaUri"),
                 item.optBoolean("isAudioOnly"), item.optString("qualityLabel"),
                 item.optString("format"), item.optLong("fileSizeBytes"),
-                item.optLong("durationSeconds"), item.optLong("downloadDate")
+                item.optLong("durationSeconds"), item.optLong("downloadDate"),
+                item.optBoolean("isPinned", false), item.optString("collection", "")
             )
         }.filter { media ->
             // A SAF folder or removable USB drive may be temporarily unavailable at
